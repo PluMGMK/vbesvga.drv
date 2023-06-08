@@ -1,0 +1,1186 @@
+
+;----------------------------Module-Header------------------------------;
+; Module Name: polyline.mac
+;
+; Brief Description: Macros used by polyline drawer.
+;
+; Created: 3/30/87
+; Author: Kent Settle	(kentse)
+;
+; Copyright (c) 1983 - 1987  Microsoft Corporation
+;-----------------------------------------------------------------------;
+;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
+
+;---------------------------Public-Macro--------------------------------;
+; x_axial_cases
+;
+; x_axial_cases	handles all of the x axial special case output for the
+; run length slice algorithm DDA (explained in POLYLINE.ASM).  included
+; in this macro is special case code for solid lines written to the EGA,
+; solid lines written to bitmaps and styled lines written to the EGA or
+; to bitmaps.  depending on the type of line and its destination, this
+; macro is used in PLYSOLID.ASM, POLYBITM.ASM or POLYSTYL.ASM.
+;
+; the reason for breaking the x axial cases out separately is that with
+; this algorithm a set number of consecutive horizontal bits can be set at
+; once.  this number is calculated before this macro is used (BitCount), so
+; the output process is make faster.  completely horizontal lines are not 
+; handled by this macro.  they are handled faster by (styled)(bitmap)
+; x_axial_final.
+;
+; Entry:
+;	CX = hFirst (number of bits in first line segment).
+;	SI = ErrTerm.
+;
+; Returns:
+;	CX = hLast (number of bits in last line segment).
+;	DS:DI = pointer to current destination byte (CurByte).
+;	DX = EGA_BASE + GRAF_DATA.
+;	AL = rotating bit mask.
+;
+; Error Returns: None.
+;
+; Registers Destroyed: BX,SI,flags.
+;
+; Registers Preserved: None.
+;
+; Calls: StyledProc
+;	 BitmapProc
+;
+; History:
+;  Thu 30-Apr-1987 11:25:00	-by-	Kent Settle	    [kentse]
+; Added huge bitmap handling.
+;  Wed 08-Apr-1987 10:32:33	-by-	Kent Settle	    [kentse]
+; Modified to draw all lines moving right.
+;  Mon 23-Feb-1987 12:56:41	-by-	Kent Settle	    [kentse]
+; Major re-write.
+;  Tue 28-Oct-1986 16:05:04	-by-    Tony Pisculli	    [tonyp]
+; Created.
+;-----------------------------------------------------------------------;
+
+;---------------------------Pseudo-Code---------------------------------;
+; x_axial_cases
+;
+; {
+;    // if line moving left, then we dont want to draw the first point.
+;
+;    DS:DI => current destination byte;
+;    BL = RotBitMask;
+;
+;    if (moving right)
+;        HFirst++;
+;    else
+;    {
+;        // act as if point had been drawn.
+;
+;        rotate bit mask right one bit;
+;        if (done with current byte)
+;            move to next byte;
+;        if (styled line)
+;            adjust StyleLength;
+;    }
+;
+;    // draw the first segment of the polyline.  it has length HFirst bits.
+;
+;    if (styled line)
+;        styled_draw_first_x_axial_segment();
+;    else if (solid line to bitmap)
+;        bitmap_draw_first_x_axial_segment();
+;    else
+;        draw_first_x_axial_segment();
+;
+;    jump to the next scan line;
+;
+;    // if there are many bits to set for each intermediate segment, 
+;    // ie >= 8, then jump to big_intermediate, which is faster for long
+;    // segments.  else, fall through to short_intermediate which is
+;    // faster for short segments.
+;
+;    if (BitCount >= 8)
+;        jump to big_intermediate;
+;
+;    // short intermediate run length loop. there will be either one or
+;    // two bytes involved per intermediate segment.
+;
+;short_intermediate:
+;    DDAcount--;			// decrement intermediate counter.
+;    if (DDAcount == 0)
+;        jump to end_of_intermediate;
+;
+;    // this is the top of the intermediate loop.  there will be DDAcount 
+;    // intermediate horizontal segments, each of length BitCount or
+;    // BitCount + 1, depending on the error term.
+;
+;    loopcount = BitCount;
+;
+;    if (ErrTerm < 0)
+;        ErrTerm += ErrAdj;
+;    else
+;    {
+;        loopcount++;
+;        ErrTerm += ErrReset;
+;    }
+;
+;intermediate_run:
+;    shift bit mask for first byte into AL;
+;    shift bit mask for second byte into AH;
+;
+;    output first byte to destination;
+;    if (styled line)
+;        adjust StyleLength;
+;
+;    if (only one byte to do)
+;        jump to just_one_byte;
+;
+;    // we have two bytes here, so we need to set up for the second byte.
+;
+;    DI++;				// point to the next byte.
+;    get bit mask for second byte;
+;
+;    output second byte to destination;
+;    if (styled line)
+;        adjust StyleLength;
+;
+;just_one_byte:
+;    if (done with byte)
+;        DI++;				// point to next byte.
+;
+;    jump to next scan line;
+;    check for segment overflow;
+;
+;    if (styled line)
+;        adjust StyleLength;
+;
+;    DDAcount--;   			// decrement intermediate counter.
+;    if (DDAcount == 0)
+;        jump to end_of_intermediate;
+;
+;    // set up for the next intermediate segment.
+;
+;    loopcount = BitCount;
+;
+;    if (ErrTerm < 0)
+;        ErrTerm += ErrAdj;
+;    else
+;        ErrTerm += ErrReset;
+;
+;    jump to intermediate_run;
+;
+;    // all of the intermediate segments have been drawn.  we now need to 
+;    // output the last segment, which is of length HLast.
+;
+;end_of_intermediate:
+;    CX = HLast;
+;    if (moving left)
+;        CX++;				// draw last point if moving left.
+;
+;    if (styled line)
+;        jump to styled_draw_last_x_axial_segment;
+;    else if (solid line to bitmap)
+;        jump to bitmap_draw_last_x_axial_segment;
+;    else
+;        jump to draw_last_x_axial_segment;
+;
+;    // bit intermediate run loop.  we have at least two bytes per
+;    // intermediate line segment.
+;
+;big_intermediate:
+;    DDAcount--;			// decrement intermediate counter.
+;    if (DDAcount == 0)
+;        jump to end_of_big_intermediate;
+;
+;    // this is the top of the intermediate loop.  there will be DDAcount 
+;    // intermediate horizontal segments, each of length BitCount or 
+;    // BitCount + 1 depending on the error term.
+;
+;    loopcount = BitCount;
+;
+;    if (ErrTerm < 0)
+;        ErrTerm += ErrAdj;
+;    else
+;        loopcount++;
+;        ErrTerm += ErrReset;
+;
+;big_intermediate_run:
+;    set up bit mask in AL for first partial byte of segment;
+;
+;    output byte to destination;
+;    if (styled line)
+;        adjust StyleLength;
+;
+;    // if this segment is long enough, we will have a whole byte or
+;    // multiple bytes to output here.
+;
+;    set bit mask to set all bits in the byte;
+;
+;    while (number of whole bytes --)
+;    {
+;        output byte to destination;
+;        point to next byte;
+;        if (styled line)
+;            adjust StyleLength;
+;    }
+;
+;    // now handle the partial byte at the end of the segment.
+;
+;    set up bit mask for last partial byte in AL;
+;
+;    output byte to destination;
+;    jump to next scanline;
+;    check for segment overflow;
+;    if (styled line)
+;        adjust StyleLength;
+; 
+;    DDAcount--;			// decrement intermediate counter.
+;    if (DDAcount == 0)
+;        jump to end_of_big_intermediate;
+;
+;    loopcount = BitCount;
+;
+;    if (ErrTerm < 0)
+;        ErrTerm += ErrAdj;
+;    else
+;        loopcount++;
+;        ErrTerm += ErrReset;
+;
+;    jump to big_intermediate_run;	// go do next segment.
+;
+;end_of_big_intermediate:
+;    CX = HLast;
+;    if (moving left)
+;        CX++;				// draw last point if moving left.
+;
+;    if (styled line)
+;        jump to styled_draw_last_x_axial_segment;
+;    else if (solid line to bitmap)
+;        jump to bitmap_draw_last_x_axial_segment;
+;    else
+;        jump to draw_last_x_axial_segment;
+; }
+;-----------------------------------------------------------------------;
+
+x_axial_cases	macro	BITMAP,STYLED,HUGE
+	local	small_initial_run
+	local	big_initial_run
+	local	intermediate_loop
+	local	error_le_zero,error_gt_zero
+	local	intermediate_run
+	local	end_of_intermediate
+	local	one_byte,two_bytes
+	local	just_one_byte,just_two_bytes
+	local	big_intermediate_loop
+	local	err_gt_zero,err_le_zero
+	local	big_intermediate_run
+	local	short_intermediate
+	local	big_intermediate
+	local	end_of_big_intermediate
+	local	store_loop1,end_store_loop1
+	local	store_loop2,end_store_loop2
+	local	output_last_initial_byte
+	local	x_axial_moving_left,x_axial_moving_right
+	local	x_axial_right, x_axial_going_right
+	local	set_up_for_next_seg,done_with_weg
+	local	moving_left,left_loop,right_loop
+	local	pre_left,end_pre_setup
+
+
+	lds	di,CurByte		;; DS:DI => current ega byte.
+	mov	bl,RotBitMask
+
+	push	si			;; save error term.
+
+IFE STYLED
+	test	CaseFlags,STEP_LEFT	;; if this is a left moving line, then
+	jz	x_axial_going_right	;; we dont want to draw first point of line.
+
+	ror	bl,1			;; rotate bitmask as if point was done.
+	adc	di,0			;; move to next byte if done with 
+	jmp	short x_axial_moving_left
+ENDIF
+
+x_axial_going_right:
+	inc	cx			;; CX = hFirst + 1.
+
+;; draw hFirst pixels as one line segment.  this will be the first segment
+;; of the polyline we are currently drawing.
+
+x_axial_moving_left:
+IF STYLED
+	call	styled_draw_first_x_axial_segment ;; go draw right moving line.
+ELSE
+  IF BITMAP
+	call	bitmap_draw_first_x_axial_segment ;; go draw right moving line.
+  ELSE
+	call	draw_first_x_axial_segment	;; go draw right moving line.
+  ENDIF
+ENDIF
+	pop	si			;; restore error term.
+	add	di,AddVertStep		;; jump to the next scan line.
+
+IF STYLED
+	mov	cx,YMinorDist
+	sub	StyleLength,cx		;; adjust style length.
+	xchg	al,bl			;; AL = rotbitmask.
+ELSE
+	mov	bl,al			;; restore BL = bit offset
+
+;; if there are many bits to set for each segment, ie >= 8, then jump
+;; to big_intermediate, which is faster for long segments.  else, fall
+;; through to short_intermediate which is faster for short segments.
+
+	cmp	BitCount,8
+	jge	big_intermediate	;; jump if more than 8 bits.
+
+;; short intermediate run length loop.	we can have one or two bytes
+;; involved, but no more.
+
+short_intermediate:
+	mov	ax,BitCount
+	mov	bh,al			;; BH = BitCount.
+					;; BL = BitOffset.
+					;; DX = EGA_BASE + GRAF_DATA.
+					;; SI = ErrTerm.
+
+	dec	DDAcount		;; decrement # of intermediate segments.
+	jz	end_of_intermediate	;; done if no more intermediate points.
+
+;; this is the top of the intermediate loop.  there will be DDAcount intermediate
+;; horizontal segments, each of length BitCount or BitCount + 1 depending on
+;; the error term.
+
+intermediate_loop:
+	mov	cl,bh			;; CL = BitCount.
+	or	si,si			;; ErrTerm >= 0 ?
+	jl	error_le_zero		;; jump if not.
+
+error_gt_zero:
+	inc	cl			;; CL = BitCount + 1.
+	add	si,ErrReset		;; add ErrReset to error term.
+	jmp	short intermediate_run
+
+error_le_zero:
+	add	si,ErrAdj		;; add ErrReset to error term.
+
+					;; BL = BitOffset.
+					;; BH = BitCount.
+					;; CL = BitCount or BitCount + 1.
+					;; SI = ErrTerm.
+intermediate_run:
+	mov	ax,0FF00h
+	shr	ax,cl			;; shift CL bits into AL.
+	xor	ah,ah			;; zero out AH.
+
+	mov	ch,cl			;; CH = BitCount.
+	mov	cl,bl			;; CL = BitOffset.
+	add	bl,ch			;; BL = BitCount + BitOffset.
+
+	ror	ax,cl			;; rotate bits into AH.
+
+  IF BITMAP
+	push	ax
+	lahf				;; save carry flag in AH.
+	call	word ptr BitmapProc
+	sahf				;; restore carry flag.
+	pop	ax
+  ELSE
+	out	dx,al			;; set up bitmask for first byte.
+	push	ax
+	lahf				;; save carry flag in AH.
+	or	byte ptr [di],0FFh	;; move byte into memory.
+	sahf				;; restore carry flag.
+	pop	ax
+  ENDIF
+	jnc	just_one_byte		;; jump if only one byte.
+
+;; we have two bytes here, so we need to set up to handle the second byte.
+
+just_two_bytes:
+	inc	di			;; point to the next byte.
+	mov	al,ah			;; get bit mask for second byte.
+
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	out	dx,al			;; set up bitmask register.
+	or	byte ptr [di],0FFh	;; move byte into memory.
+  ENDIF
+
+	xor	al,al			;; zero out AL.
+
+just_one_byte:
+	shr	al,1			;; jump to next byte if done with
+					;; current byte.
+	adc	di,AddVertStep		;; jump to next scan line.
+  IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+  ENDIF
+	and	bl,7
+	dec	DDAcount
+	jz	end_of_intermediate	;; done.
+
+;; the next six intructions are identical to those at the top of the loop
+;; however, this is the most likely case, and a jump is saved by their
+;; duplication here.
+
+	mov	cl,bh			;; CL = BitCount.
+	or	si,si			;; ErrTerm >= 0 ?
+	jl	error_le_zero		;; jump if not.
+	inc	cl			;; CL = BitCount + 1.
+	add	si,ErrReset		;; add ErrReset to error term.
+	jmp	short intermediate_run
+
+;; all of the intermediate segments have been taken care of.  we now need
+;; need to output the last segment which is of length HLast.
+
+end_of_intermediate:
+	mov	cx,HLast
+	test	CaseFlags,STEP_LEFT
+	jz	x_axial_right
+	inc	cx			;; do last point if moving left.
+
+x_axial_right:
+
+
+  IF BITMAP
+	jmp	bitmap_draw_last_x_axial_segment   ;; go do final points.
+  ELSE
+	jmp	draw_last_x_axial_segment	   ;; go do final points.
+  ENDIF
+ENDIF
+
+;; big intermediate run loop.  we have at least two bytes involved here.
+
+big_intermediate:
+	dec	DDAcount
+	jz	end_of_big_intermediate ;; jump if done with intermediate segments.
+
+;; this is the top of the intermediate loop.  there will be DDAcount intermediate
+;; horizontal segments, each of length BitCount or BitCount + 1 depending on
+;; the error term.
+
+big_intermediate_loop:
+	mov	cx,BitCount		;; CX = BitCount.
+	or	si,si			;; ErrTerm >= 0 ?
+	jl	err_le_zero		;; jump if not.
+
+err_gt_zero:
+	inc	cx			;; CX = BitCount + 1.
+	add	si,ErrReset		;; add ErrReset to error code.
+	jmp	short big_intermediate_run
+
+err_le_zero:
+	add	si,ErrAdj		;; add ErrAdj to error code.
+
+;; set up to output the first byte of this segment.  
+
+big_intermediate_run:
+IF STYLED
+	jcxz	set_up_for_next_seg
+
+	test	CaseFlags,STEP_LEFT	; are we moving left or right?
+	jnz	moving_left		; jump if moving left.
+
+; draw the line moving left to right.
+
+	mov	bx,XMajorDist
+
+right_loop:
+	call	word ptr StyledProc	; output the byte.
+	sub	StyleLength,bx		; adjust style length.
+	ror	al,1			; rotate bitmask.
+	adc	di,0			; move to next byte if necessary.
+	loop	right_loop		; go do next pixel.
+	jmp	short done_with_seg	; skip over left moving stuff.
+
+; draw the line moving right to left.
+
+moving_left:
+	mov	bx,XMajorDist
+
+left_loop:
+	call	word ptr StyledProc	; output the byte.
+	sub	StyleLength,bx		; adjust style length.
+	rol	al,1			; rotate bitmask.
+	sbb	di,0			; move to next byte if necessary.
+	loop	left_loop		; go do next pixel.
+
+done_with_seg:
+
+ELSE
+
+	mov	al,0FFh 		;; AL = 11111111.
+	xchg	bx,cx			;; CL = bit offset.
+	shr	al,cl			;; shift bits in AL into place.
+	xchg	bx,cx			;; swap BX and CX back.
+
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	out	dx,al			;; set up bitmask register.
+	or	byte ptr [di],0FFh	;; move byte into memory.
+  ENDIF
+
+;; if this segment is long enough, we will have a whole byte or multiple
+;; bytes to output here.
+
+	inc	di			;; point to next byte (moving right).
+
+	sub	bl,8
+	neg	bl			;; BL = number of bits written.
+	xor	bh,bh
+	sub	cx,bx			;; CX = number of bits still to write.
+	mov	bx,cx
+	and	bl,7			;; BL = number of remaining bits.
+	shiftr	cx,3			;; CX = number of whole bytes to write.
+	jle	end_store_loop2
+
+	mov	al,0FFh 		;; bitmask to enable all bits.
+
+  IFE BITMAP
+	out	dx,al			;; set up bitmask register.
+  ENDIF
+
+;; this loop writes CX whole bytes into memory.
+
+store_loop2:
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	or	byte ptr [di],0FFh	;; move point into memeory.
+  ENDIF
+
+	inc	di			;; point to next byte.
+	loop	store_loop2		;; go do next byte.
+
+;; now we handle the partial byte at the end of the segment.
+
+end_store_loop2:
+	mov	cl,bl			;; CL = number of remaining bits.
+	mov	ax,0FF00h
+	shr	ax,cl			;; shift CX bits into AL.
+
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	out	dx,al			;; set up bitmask register.
+	or	byte ptr [di],0FFh	;; move byte into memory.
+  ENDIF
+
+	add	di,AddVertStep
+  IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+  ENDIF
+ENDIF
+
+set_up_for_next_seg:
+IF STYLED
+	add	di,AddVertStep
+	mov	cx,YMinorDist
+	sub	StyleLength,cx
+ENDIF
+	dec	DDAcount		;; are we done yet?
+	jz	end_of_big_intermediate ;; jump if so.
+
+;; the next six intructions are identical to those at the top of the loop
+;; however, this is the most likely case, and a jump is saved by their
+;; duplication here.
+
+	mov	cx,BitCount		;; CX = BitCount.
+	or	si,si			;; ErrTerm >= 0 ?
+	jl	err_le_zero		;; jump if not.
+
+	inc	cx			;; CX = BitCount + 1.
+	add	si,ErrReset		;; add ErrReset to error code.
+	jmp	short big_intermediate_run
+
+;; go output the last segment of the polyline which is HLast bytes long.
+
+end_of_big_intermediate:
+	mov	cx,HLast
+IFE STYLED
+	test	CaseFlags,STEP_LEFT
+	jz	x_axial_moving_right
+	inc	cx			;; do last point if moving left.
+ENDIF
+
+x_axial_moving_right:
+
+IF STYLED
+	mov	bl,al
+	jmp	styled_draw_first_x_axial_segment   ;; go do final points.
+ELSE
+  IF BITMAP
+	jmp	bitmap_draw_last_x_axial_segment   ;; go do final points.
+  ELSE
+	jmp	draw_last_x_axial_segment	   ;; go do final points.
+  ENDIF
+ENDIF
+	endm
+
+;---------------------------Public-Macro--------------------------------;
+; y_axial_cases
+;
+; y_axial_cases	handles all of the y axial special case output for the
+; run length slice algorithm DDA (explained in POLYLINE.ASM).  included
+; in this macro is special case code for solid lines written to the EGA,
+; solid lines written to bitmaps and styled lines written to the EGA or
+; to bitmaps.  depending on the type of line and its destination, this
+; macro is used in PLYSOLID.ASM, POLYBITM.ASM or POLYSTYL.ASM.
+;
+; the reason for breaking the y axial cases out separately is that with
+; this algorithm a set number of consecutive vertical bits can be set at
+; once.  this number is calculated before this macro is used (BitCount), so
+; the output process is make faster.  completely vertical lines are not 
+; handled by this macro.  they are handled faster by (styled)(bitmap)
+; y_axial_final.
+;
+; Entry: 
+;	CX = hFirst (number of bits in first line segment).
+;	SI = ErrTerm.
+;
+; Returns: 
+;	CX = hLast (number of bits in last line segment).
+;	DS:DI = pointer to current destination byte (CurByte).
+;	DX = EGA_BASE + GRAF_DATA.
+;	AL = rotating bit mask.
+;
+; Error Returns: None.
+;
+; Registers Destroyed: BX,SI,flags.
+;
+; Registers Preserved: None.
+;
+; Calls: StyledProc
+;	 BitmapProc
+;
+; History:
+;  Thu 30-Apr-1987 11:25:00	-by-	Kent Settle	    [kentse]
+; Added huge bitmap handling.
+;  Wed 08-Apr-1987 10:32:33	-by-	Kent Settle	    [kentse]
+; Modified to draw all lines moving right.
+;  Mon 23-Feb-1987 12:56:41	-by-	Kent Settle	    [kentse]
+; Major re-write.
+;  Tue 28-Oct-1986 16:05:04	-by-    Tony Pisculli	    [tonyp]
+; Created.
+;-----------------------------------------------------------------------;
+
+;---------------------------Pseudo-Code---------------------------------;
+; y_axial_cases
+;
+; {
+;    // we are drawing lines from right to left.  if this line was originally
+;    // moving left, then we dont want to draw the first point.
+;
+;    DS:DI => current destination byte;
+;    if (moving right)
+;        HFirst++;			// draw first point.
+;    else
+;    {
+;        jump to next scan line;
+;        check for segment overflow;
+;        if (styled line)
+;            adjust StyleLength;
+;    }
+;
+;    counter = HFirst;			// set counter for first segment.
+;
+;    jump to intermediate_run;
+;
+;error_lt_zero:
+;    ErrTerm += ErrAdj;			// adjust error term.
+;
+;intermediate_run:
+;    // since this is a Y-major axial case, we will be setting multiple vertical
+;    // bits.  CX gives us the number of vertical bits grouped together.  this
+;    // loop simply writes the specified number of vertical bytes as defined by
+;    // the given bit mask.
+;
+;    while (counter--)
+;    {
+;        output byte to destination;
+;        jump to next scan line;
+;        check for segment overflow;
+;        if (styled)
+;            adjust StyleLength;
+;    }
+;
+;    // set up for next vertical segment.
+;
+;    rotate bit mask;
+;    if (done with byte)
+;        DI++;				// move to next byte.
+;    if (styled)
+;        adjust StyleLength;
+;
+;    DDAcount--;
+;    if (DDAcount == 0)
+;        jump to intermediate;
+;
+;    // set up for next line segment.
+;
+;    counter = BitCount;
+;    if (ErrTerm < 0)
+;        jump to error_lt_zero;
+;
+;    counter++;
+;    ErrTerm += ErrReset;		// adjust error term.
+;    jump to intermediate_run;
+;
+;end_of_intermediate:
+;    // the final line segment is drawn by the (styled)(bitmap)
+;    // draw_last_y_axial_segment routine.
+;
+;    jump to draw_last_y_axial_segment;	// go draw last segment.        
+; }
+;-----------------------------------------------------------------------;
+
+y_axial_cases	macro	BITMAP,STYLED,HUGE
+	local	error_le_zero
+	local	intermediate_run
+	local	intermediate_run_loop
+	local	end_of_intermediate
+	local	end_intermediate_run
+	local	y_axial_moving_left,y_axial_moving_right
+	local	y_axial_going_right
+	local	already_rotated,rotate_it_left
+
+
+	lds	di,CurByte		;; DS:DI => current EGA byte.
+
+IFE STYLED
+	test	CaseFlags,STEP_LEFT
+	jz	y_axial_going_right
+
+	add	di,AddVertStep		;; jump to next scan line.
+  IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+  ENDIF
+	jmp	short y_axial_moving_left
+ENDIF
+
+y_axial_going_right:
+	inc	cx			;; CX = hFirst + 1.
+
+y_axial_moving_left:
+	mov	bx,DDAcount		;; BX = DDAcount.
+	mov	al,RotBitMask		;; AL = RotBitMask.
+
+;; initial run length.	the first time through set HFirst consecutive
+;; vertical bits.
+
+	jmp	short intermediate_run
+
+;; intermediate run length loop.
+
+	even				;; align on word boundary.
+error_le_zero:
+	add	si,ErrAdj		;; add ErrAdj to error term.
+
+intermediate_run:
+	jcxz	end_intermediate_run	;; jump if no bits to set.
+
+IFE BITMAP
+	out	dx,al			;; set up bit mask register.
+ENDIF
+
+IF STYLED
+	push	bx
+	mov	bx,YMajorDist
+ENDIF
+
+;; since this is a Y-major axial case, we will be setting multiple vertical
+;; bits.  CX gives us the number of vertical bits grouped together.  this
+;; loop simply writes the specified number of vertical bytes as defined by
+;; the given bit mask.
+
+intermediate_run_loop:
+IF STYLED
+	call	word ptr StyledProc
+ELSE
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	or	byte ptr [di],0FFh	;; output byte to memory.
+  ENDIF
+ENDIF
+
+	add	di,AddVertStep		;; move one scan line.
+IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+ENDIF
+
+IF STYLED
+	call	word ptr OverflowProc	;; check for segment overflow.
+	sub	StyleLength,bx
+ENDIF
+	loop	intermediate_run_loop
+
+IF STYLED
+	pop	bx
+ENDIF
+
+end_intermediate_run:
+IF STYLED
+	test	CaseFlags,STEP_LEFT	;; are we moving left or right?
+	jnz	rotate_it_left
+
+	ror	al,1			;; move to the next horizontal byte
+	adc	di,0			;; when we are done with the current one.
+	jmp	short already_rotated
+
+rotate_it_left:
+	rol	al,1
+	sbb	di,0
+
+already_rotated:
+	mov	cx,XMinorDist
+	sub	StyleLength,cx
+ELSE
+	ror	al,1
+	adc	di,0
+ENDIF
+
+	dec	bx			;; decrement segment counter.
+	jz	end_of_intermediate	;; jump if done with intermediate points.
+
+	mov	cx,BitCount		;; CX = BitCount.
+	or	si,si			;; is ErrTerm >= 0?
+	jl	error_le_zero		;; jump if not.
+
+	inc	cx			;; CX = BitCount + 1.
+	add	si,ErrReset		;; add ErrReset to error term.
+	jmp	short intermediate_run
+
+;; output the last vertical segment of length HLast.
+
+end_of_intermediate:
+	mov	cx,HLast
+IFE STYLED
+	test	CaseFlags,STEP_LEFT
+	jz	y_axial_moving_right
+	inc	cx			;; do last point if moving left.
+ENDIF
+
+y_axial_moving_right:
+
+IF STYLED
+	jmp	styled_draw_last_y_axial_segment
+ELSE
+  IF BITMAP
+	jmp	bitmap_draw_last_y_axial_segment
+  ELSE
+	jmp	draw_last_y_axial_segment		;; go finish up.
+  ENDIF
+ENDIF
+	endm
+
+;---------------------------Public-Macro--------------------------------;
+; diagonal_cases
+;
+; diagonal_cases handles all of the diagonal special case output for the
+; run length slice algorithm DDA (explained in POLYLINE.ASM).  included
+; in this macro is special case code for solid lines written to the EGA,
+; solid lines written to bitmaps and styled lines written to the EGA or
+; to bitmaps.  depending on the type of line and its destination, this
+; macro is used in PLYSOLID.ASM, POLYBITM.ASM or POLYSTYL.ASM.
+;
+; the reason for breaking the y axial cases out separately is that with
+; this algorithm a set number of consecutive digonal bits can be set at
+; once.  this number is calculated before this macro is used (BitCount), so
+; the output process is make faster.  completely diagonal lines are not 
+; handled by this macro.  they are handled faster by (styled)(bitmap)
+; diagonal_final.  by diagonal bits it is meant that both x and y coordinates
+; are incremented or decremented, as necessary, at the same time.
+;
+; Entry: 
+;	CX = hFirst (number of bits in first line segment).
+;	SI = ErrTerm.
+;
+; Returns: 
+;	CX = hLast (number of bits in last line segment).
+;	DS:DI = pointer to current destination byte (CurByte).
+;	DX = EGA_BASE + GRAF_DATA.
+;	AL = rotating bit mask.
+;
+; Error Returns: None.
+;
+; Registers Destroyed: BX,SI,flags.
+;
+; Registers Preserved: None.
+;
+; Calls: StyledProc
+;	 BitmapProc
+;
+; History:
+;  Thu 30-Apr-1987 11:25:00	-by-	Kent Settle	    [kentse]
+; Added huge bitmap handling.
+;  Wed 08-Apr-1987 10:32:33	-by-	Kent Settle	    [kentse]
+; Modified to draw all lines moving right.
+;  Mon 23-Feb-1987 12:56:41	-by-	Kent Settle	    [kentse]
+; Major re-write.
+;  Tue 28-Oct-1986 16:05:04	-by-    Tony Pisculli	    [tonyp]
+; Created.
+;-----------------------------------------------------------------------;
+
+;---------------------------Pseudo-Code---------------------------------;
+; diagonal_cases
+;
+; {
+;    DS:DI => current destination byte;
+;
+;    // we are drawing lines from right to left.  if this line was originally
+;    // moving left, then we dont want to draw the first point.
+;
+;    if (moving left)
+;    {
+;        rotate bitmask;
+;        if (done with byte)
+;            DI++;			// move to the next byte.
+;        jump to next scan line;
+;        check for segment overflow;
+;        if (styled line)
+;            adjust StyledLength;
+;        HFirst--;			// one less point in first segment.
+;    }
+;
+;    counter = HFirst;			// set loop counter for first segment.
+;    jump to intermediate_run
+;    
+;error_lt_zero:
+;    ErrTerm += ErrAdj;			// adjust error term.
+;    decrement counter;
+;
+;    // output diagonal segment of length counter.
+;
+;intermediate_run:
+;    while (counter--)
+;    {
+;        output byte to destination;
+;        rotate bitmask;
+;        if (done with byte)
+;            DI++;			// point to next byte.
+;        jump to next scan line;
+;        check for segment overflow;
+;        if (styled line)
+;            adjust StyleLength;
+;    }
+;
+;    // set up to handle jump to next line segment.
+;
+;    output byte to destination;
+;    if (y major)
+;    {
+;        jump to next scan line;
+;        check for segment overflow;
+;        if (styled)
+;            adjust StyleLength;
+;    }
+;    else // x major
+;    {
+;        rotate bitmask;
+;        if (done with byte)
+;            DI++:			// move to next byte.
+;        if (styled)
+;            adjust StyleLength;
+;    }
+;     
+;    DDAcount--;
+;    if (DDAcount == 0)
+;        jump to end_intemediate;	// done with all but last segment.
+;   
+;    // set up for next line segment.
+;
+;    counter = BitCount;
+;    if (ErrTerm < 0)
+;        jump to error_lt_zero;
+;
+;    ErrTerm += ErrReset;
+;    jump to intermediate_run;
+;
+;end_intermediate:
+;    // the final line segment is drawn by the (styled)(bitmap)
+;    // draw_last_diagonal_segment routine.
+;
+;    jump to draw_last_diagonal_segment;  // go draw final segment.
+; }
+;-----------------------------------------------------------------------;
+
+diagonal_cases	macro	YvX,BITMAP,STYLED,HUGE
+	local	error_le_zero
+	local	intermediate_run
+	local	end_of_intermediate
+	local	end_intermediate_stuff
+	local	end_of_int_run_loop
+	local	diagonal_moving_right,diagonal_moving_right_again
+	local	check_intermediate_run
+	local	rotate_it_left,already_rotated
+	local	right_loop,rotate_left,rotated_already
+
+	mov	al,RotBitMask		;; AL = RotBitMask.
+	lds	di,CurByte		;; DS:DI => current EGA byte.
+
+IFE STYLED
+	test	CaseFlags,STEP_LEFT
+	jz	diagonal_moving_right
+
+	ror	al,1			;; jump to next scan line if we
+	adc	di,AddVertStep		;; are done with current byte.
+  IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+  ENDIF
+	dec	cx			;; skip first point if moving left.
+ENDIF
+
+;; the first time through draw the first diagonal segment, which is
+;; HFirst bits long.
+
+diagonal_moving_right:
+	mov	bx,DDAcount		;; BX = DDAcount.
+	jmp	short check_intermediate_run
+
+;; intermediate run length loop.
+
+	even				;; align on word boundary.
+error_le_zero:
+	add	si,ErrAdj		;; add ErrAdj to error term.
+	dec	cx			;; CX = BitCount -1.
+
+check_intermediate_run:
+	jcxz	end_of_int_run_loop	;; jump if no bits to set.
+
+IF STYLED
+	push	bx
+	mov	bx,Hypot
+ENDIF
+
+intermediate_run:
+IF STYLED
+	test	CaseFlags,STEP_LEFT	;; are we moving left.
+	jnz	rotate_left
+
+; draw right moving line.
+
+right_loop:
+	call	word ptr StyledProc
+	ror	al,1	      		;; jump to next scanline. jump to next
+	adc	di,AddVertStep		;; byte if done with current one.
+	call	word ptr OverflowProc	;; check for segment overflow.
+	sub	StyleLength,bx
+	loop	right_loop
+	jmp	short rotated_already
+
+; draw left moving line.
+
+rotate_left:
+	call	word ptr StyledProc
+	rol	al,1
+	sbb	di,SubVertStep
+	call	word ptr OverflowProc	;; check for segment overflow.
+	sub	StyleLength,bx
+	loop	rotate_left
+
+rotated_already:
+
+ELSE
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	out	dx,al			;; set up bitmask register.
+	or	byte ptr [di],0FFh	;; move byte into memory.
+  ENDIF
+
+	ror	al,1			;; jump to next scan line if we
+	adc	di,AddVertStep		;; are done with current byte.
+
+  IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+  ENDIF
+	loop	intermediate_run
+ENDIF
+
+IF STYLED
+	pop	bx
+ENDIF
+
+end_of_int_run_loop:
+IF STYLED
+	call	word ptr StyledProc
+ELSE
+  IF BITMAP
+	call	word ptr BitmapProc
+  ELSE
+	out	dx,al			;; set up bitmask register.
+	or	byte ptr [di],0FFh	;; move byte into memory.
+  ENDIF
+ENDIF
+
+IF YvX
+;; since we are in a Y-major diagonal case, we move to the next scan line.
+
+	add	di,AddVertStep		;; move to next scan line.
+
+  IF BITMAP
+	call	word ptr OverflowProc	;; check for segment overflow.
+  ENDIF
+
+  IF STYLED
+	call	word ptr OverflowProc	;; check for segment overflow.
+	mov	cx,YMajorDist
+  	sub	StyleLength,cx
+  ENDIF
+ELSE
+;; since we are in an X-major diagonal case, we move to the next horizontal
+;; byte when we are done with the current one.
+  IFE STYLED
+	ror	al,1			;; move to next horizontal byte if
+	adc	di,0			;; done with current byte.
+  ELSE
+	test	CaseFlags,STEP_LEFT	;; are we moving left or right?
+	jnz	rotate_it_left
+
+	ror	al,1
+	adc	di,0
+	jmp	short already_rotated
+
+rotate_it_left:
+	rol	al,1
+	sbb	di,0
+
+already_rotated:
+	mov	cx,XMajorDist
+	sub	StyleLength,cx
+  ENDIF
+ENDIF
+
+	dec	bx
+	jz	end_intermediate_stuff	;; jump if done with intermediate points.
+
+	mov	cx,BitCount		;; CX = BitCount.
+	or	si,si			;; is ErrTerm >= 0?
+	jl	error_le_zero		;; jump if not.
+
+	add	si,ErrReset		;; add ErrReset to error term.
+	jmp	short check_intermediate_run
+
+;; draw the last segment, which is HLast diagonal bits long.
+
+end_intermediate_stuff:
+	mov	cx,HLast
+IFE STYLED
+	test	CaseFlags,STEP_LEFT
+	jz	diagonal_moving_right_again
+	inc	cx			;; do last point if moving left.
+ENDIF
+
+diagonal_moving_right_again:
+
+IF STYLED
+	jmp	styled_draw_last_diagonal_segment	;; go finish up.
+ELSE
+  IF BITMAP
+	jmp	bitmap_draw_last_diagonal_segment	;; go finish up.
+  ELSE
+	jmp	draw_last_diagonal_segment		;; go finish up.
+  ENDIF
+ENDIF
+	endm

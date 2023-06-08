@@ -1,0 +1,819 @@
+;----------------------------Module-Header------------------------------;
+; Module Name: ROPTABLE.BLT
+;
+; Raster operation code templates for BitBLT.
+;
+; Created: In Windows' distant past (c. 1983)
+;
+; Copyright (c) 1983 - 1987  Microsoft Corporation
+;
+; This file defines the code templates for all raster operations which
+; BitBLT supports.
+;
+; This file is part of a set that makes up the Windows BitBLT function
+; at driver-level.
+;-----------------------------------------------------------------------;
+;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
+
+
+ROP macro lbl
+  lbl label near
+endm
+
+
+ROP_flag_D = 0
+ROP_flag_P = PATTERN_PRESENT
+ROP_flag_S = SOURCE_PRESENT
+ROP_flag_a = 0
+ROP_flag_n = NEGATE_NEEDED
+ROP_flag_o = 0
+ROP_flag_x = 0
+
+ENDROP macro lbl,ne,whocares
+  local flag
+  if1
+    flag = 0
+    irpc z,lbl
+      flag = flag AND NOT NEGATE_NEEDED
+      flag = flag OR ROP_flag_&&z
+    endm
+    ROP&ne = (offset lbl)-(offset roptable)	;;Start with offset
+    ROP&ne = ROP&ne OR flag
+    ENDROP1 ROP&ne,%((offset $)-(offset lbl))
+  endif
+endm
+
+
+
+ENDROP1 macro lbl,len
+  if len					;;Skip 0
+    lbl = lbl OR (ROPLen&len SHL 10)		;;Set size index
+  endif
+endm
+
+
+
+	public	roptable
+roptable	label	word
+
+	errn$	roptable			;Must be at offset 0
+
+	ROP	Sn
+	ENDROP	Sn,0033,0008
+
+
+	errn$	roptable			;Must be at offset 0
+
+	dw	ROP0000,ROP0001,ROP0002,ROP0003
+	dw	ROP0004,ROP0005,ROP0006,ROP0007
+	dw	ROP0008,ROP0009,ROP000A,ROP000B
+	dw	ROP000C,ROP000D,ROP000E,ROP000F
+	dw	ROP0010,ROP0011,ROP0012,ROP0013
+	dw	ROP0014,ROP0015,ROP0016,ROP0017
+	dw	ROP0018,ROP0019,ROP001A,ROP001B
+	dw	ROP001C,ROP001D,ROP001E,ROP001F
+	dw	ROP0020,ROP0021,ROP0022,ROP0023
+	dw	ROP0024,ROP0025,ROP0026,ROP0027
+	dw	ROP0028,ROP0029,ROP002A,ROP002B
+	dw	ROP002C,ROP002D,ROP002E,ROP002F
+	dw	ROP0030,ROP0031,ROP0032,ROP0033
+	dw	ROP0034,ROP0035,ROP0036,ROP0037
+	dw	ROP0038,ROP0039,ROP003A,ROP003B
+	dw	ROP003C,ROP003D,ROP003E,ROP003F
+	dw	ROP0040,ROP0041,ROP0042,ROP0043
+	dw	ROP0044,ROP0045,ROP0046,ROP0047
+	dw	ROP0048,ROP0049,ROP004A,ROP004B
+	dw	ROP004C,ROP004D,ROP004E,ROP004F
+	dw	ROP0050,ROP0051,ROP0052,ROP0053
+	dw	ROP0054,ROP0055,ROP0056,ROP0057
+	dw	ROP0058,ROP0059,ROP005A,ROP005B
+	dw	ROP005C,ROP005D,ROP005E,ROP005F
+	dw	ROP0060,ROP0061,ROP0062,ROP0063
+	dw	ROP0064,ROP0065,ROP0066,ROP0067
+	dw	ROP0068,ROP0069,ROP006A,ROP006B
+	dw	ROP006C,ROP006D,ROP006E,ROP006F
+	dw	ROP0070,ROP0071,ROP0072,ROP0073
+	dw	ROP0074,ROP0075,ROP0076,ROP0077
+	dw	ROP0078,ROP0079,ROP007A,ROP007B
+	dw	ROP007C,ROP007D,ROP007E,ROP007F
+
+
+
+	errn$	roptable,-256			;Must be 256 bytes afterwards
+	db	2,3,4,5,7,9,11,13
+
+
+
+
+
+;	The actual raster operation templates follow.
+;
+;	Entry:	AL     =  Source byte
+;		DH     =  Pattern Bytes
+;		ES:DI --> Destination byte
+;
+;	Exit:	AL     =  Result
+;		DH     =  Pattern Bytes
+;		ES:DI --> Destination byte
+;		AH	  IS possibly the destination byte
+;
+;	Uses:	AL,AH,DH,DL
+
+
+;-----------------------------------------------------------------
+; In Wes' World:
+;	The actual raster operation templates follow.
+;
+;	Entry:	AX     =  Source word
+;		DX     =  Pattern Word
+;		ES:DI --> Destination word
+;
+;	Exit:	AX     =  Result
+;		DX     =  Pattern Word
+;		ES:DI --> Destination word
+;		BP,BX??	  IS possibly the destination word
+;
+;	Uses:	AL,AH,DH,DL
+;-----------------------------------------------------------------
+
+
+ROP	DDx
+	xor	al,al
+ENDROP	DDx,0000,0042
+
+
+ROP	DPna
+ROP	Pn
+	mov	al,dh
+ENDROP	Pn,000F,0001
+	not	al
+ROP	PDSanon
+	and	al,es:[di]
+ENDROP	DPna,000A,0329
+ROP	PSnon
+	not	al
+ROP	DPSona
+ROP	PSon
+	or	al,dh
+ENDROP	PDSanon,0008,0F08
+ENDROP	PSon,0003,00AA
+ENDROP	PSnon,000C,0324
+ROP	PDSnaon
+	not	al
+ROP	PDSaon
+	and	al,es:[di]
+ENDROP	DPSona,0002,0C89
+	or	al,dh
+ENDROP	PDSnaon,000D,0B25
+ENDROP	PDSaon,0007,02C5
+
+
+ROP	DPon
+	mov	al,dh
+ROP	PDSonon
+	or	al,es:[di]
+ENDROP	DPon,0005,00A9
+ROP	DPSnoon
+	not	al
+ROP	DPSoon
+	or	al,dh
+ENDROP	PDSonon,000E,08A5
+ROP	DSon
+ROP	PDSona
+	or	al,es:[di]
+ENDROP	DPSnoon,0004,0C88
+ENDROP	DPSoon,0001,0289
+ENDROP	DSon,0011,00A6
+	not	al
+	and	al,dh
+ENDROP	PDSona,0010,0C85
+
+
+ROP	SDPxnon
+	mov	ah,es:[di]
+	xor	ah,dh
+	not	ah
+	or	al,ah
+ENDROP	SDPxnon,0012,0868
+
+
+ROP	SSPxDSxaxn
+	mov	dl,al
+ROP	SPxDSxa
+	mov	ah,dh
+	xor	ah,al
+	xor	al,es:[di]
+	and	al,ah
+ENDROP	SPxDSxa,0024,0D55
+	xor	al,dl
+ENDROP	SSPxDSxaxn,0017,1D54
+
+
+ROP	PSDPSanaxx
+ROP	SDPSanaxn
+	mov	dl,al
+	and	al,dh
+ROP	DSna
+	not	al
+	and	al,es:[di]
+ENDROP	DSna,0022,0326
+	xor	al,dl
+ENDROP	SDPSanaxn,0019,1CC8
+	xor	al,dh
+ENDROP	PSDPSanaxx,0016,5CCA
+
+
+ROP	PDSPanaxn
+ROP	DPSana
+	and	al,dh
+ROP	PDSnaxn
+	not	al
+	and	al,es:[di]
+ENDROP	DPSana,002A,0CC9
+	xor	al,dh
+ENDROP	PDSnaxn,002D,060A
+ENDROP	PDSPanaxn,0025,1CC5
+
+
+
+
+ROP	DPSaon
+ROP	PDSPaox
+	and	al,dh
+ROP	PDSox
+	or	al,es:[di]
+ENDROP	DPSaon,0015,02C9
+	xor	al,dh
+ENDROP	PDSox,001E,01A5
+ENDROP	PDSPaox,001A,06C5
+
+
+ROP	SDPSxaxn
+	mov	dl,al
+ROP	DPSxa
+	xor	al,dh
+	and	al,es:[di]
+ENDROP	DPSxa,0028,0369
+	xor	al,dl
+ENDROP	SDPSxaxn,001B,0768
+
+
+ROP	DSPDxaxn
+	mov	ah,es:[di]
+	mov	dl,ah
+	xor	dl,dh
+	and	al,dl
+	xor	al,ah
+ENDROP	DSPDxaxn,001D,0766
+
+
+ROP	DPSnaa
+ROP	PSna
+	not	al
+ROP	DPSaan
+	and	al,dh
+ENDROP	PSna,0030,032A
+	and	al,es:[di]
+ENDROP	DPSnaa,0020,0F09
+ENDROP	DPSaan,007F,03C9
+
+
+ROP	PSDnaon
+	mov	ah,es:[di]
+	not	ah
+	and	al,ah
+	or	al,dh
+ENDROP	PSDnaon,000B,0B2A
+
+
+ROP	SPDnaon
+	mov	ah,es:[di]
+	not	ah
+	and	ah,dh
+	or	al,ah
+ENDROP	SPDnaon,0023,0B24
+
+
+ROP	PDSPxaxn
+	xor	al,dh
+	and	al,es:[di]
+	xor	al,dh
+ENDROP	PDSPxaxn,0027,1868
+
+
+ROP	SDPSaox
+ROP	PSDPSaoxxn
+	mov	dl,al
+	and	al,dh
+	or	al,es:[di]
+	xor	al,dl
+ENDROP	SDPSaox,0026,06C8
+	xor	al,dh
+ENDROP	PSDPSaoxxn,0029,16CA
+
+
+ROP	SSPxPDxaxn
+	mov	dl,al
+ROP	SPxPDxa
+	mov	ah,es:[di]
+	xor	ah,dh
+	xor	al,dh
+	and	al,ah
+ENDROP	SPxPDxa,0018,0D59
+	xor	al,dl
+ENDROP	SSPxPDxaxn,002B,1D58
+
+
+ROP	DSPDSoaxxn
+ROP	SPDSoax
+	mov	dl,al
+ROP	PDSoan
+	mov	ah,es:[di]
+	or	al,ah
+	and	al,dh
+ENDROP	PDSoan,001F,0385
+	xor	al,dl
+ENDROP	SPDSoax,002C,0784
+	xor	al,ah
+ENDROP	DSPDSoaxxn,0079,1786
+
+
+
+
+ROP	PSDPxox
+ROP	SDPxon
+	mov	ah,es:[di]
+	xor	ah,dh
+	or	al,ah
+ENDROP	SDPxon,0021,0248
+	xor	al,dh
+ENDROP	PSDPxox,002E,064A
+
+
+ROP	PSDnoan
+	mov	ah,es:[di]
+	not	ah
+	or	al,ah
+ROP	PSan
+	and	al,dh
+ENDROP	PSan,003F,00EA
+ENDROP	PSDnoan,002F,0E2A
+
+
+ROP	SDPnaon
+	mov	ah,dh
+	not	ah
+	and	ah,es:[di]
+	or	al,ah
+ENDROP	SDPnaon,0031,0B28
+
+
+ROP	SDPaon
+ROP	PSDPaox
+	mov	ah,es:[di]
+	and	ah,dh
+	or	al,ah
+ENDROP	SDPaon,0013,02C8
+	xor	al,dh
+ENDROP	PSDPaox,001C,06CA
+
+
+
+ROP	SDPSoox
+	mov	dl,al
+	or	al,dh
+	or	al,es:[di]
+	xor	al,dl
+ENDROP	SDPSoox,0032,0688
+
+
+ROP	SPDSaox
+	mov	dl,al
+	and	al,es:[di]
+	or	al,dh
+	xor	al,dl
+ENDROP	SPDSaox,0034,06C4
+
+
+ROP	DPSDxaxn
+	mov	ah,es:[di]
+	xor	al,ah
+	and	al,dh
+	xor	al,ah
+ENDROP	DPSDxaxn,0035,1864
+
+
+ROP	SDPox
+	mov	ah,es:[di]
+	or	ah,dh
+	xor	al,ah
+ENDROP	SDPox,0036,01A8
+
+
+ROP	PSDPoax
+ROP	SDPoan
+	mov	ah,es:[di]
+	or	ah,dh
+	and	al,ah
+ENDROP	SDPoan,0037,0388
+ROP	PSx
+	xor	al,dh
+ENDROP	PSx,003C,004A
+ENDROP	PSDPoax,0038,078A
+
+
+ROP	SPDnox
+	mov	ah,es:[di]
+	not	ah
+	or	ah,dh
+	xor	al,ah
+ENDROP	SPDnox,0039,0604
+
+
+ROP	SPDSxox
+	mov	dl,al
+ROP	PDSxon
+	xor	al,es:[di]
+	or	al,dh
+ENDROP	PDSxon,0009,0245
+	xor	al,dl
+ENDROP	SPDSxox,003A,0644
+
+
+ROP	SPDnoan
+	mov	ah,es:[di]
+	not	ah
+	or	ah,dh
+	and	al,ah
+ENDROP	SPDnoan,003B,0E24
+
+
+ROP	SPDSonox
+	mov	dl,al
+	or	al,es:[di]
+	not	al
+	or	al,dh
+	xor	al,dl
+ENDROP	SPDSonox,003D,18A4
+
+
+ROP	DPSxnan
+	xor	al,dh
+ROP	SPDSnaox
+	mov	dl,al			;(wasted for DPSxnan)
+	not	al
+	and	al,es:[di]
+ENDROP	DPSxnan,007D,0C69
+	or	al,dh
+	xor	al,dl
+ENDROP	SPDSnaox,003E,1B24
+
+
+ROP	SPDSanaxn
+	mov	dl,al
+ROP	PDSana
+ROP	DSan
+	and	al,es:[di]
+ENDROP	DSan,0077,00E6
+	not	al
+	and	al,dh
+ENDROP	PDSana,0070,0CC5
+	xor	al,dl
+ENDROP	SPDSanaxn,0043,1CC4
+
+
+ROP	PSDPxaxn
+ROP	SDPxa
+	mov	ah,es:[di]
+	xor	ah,dh
+	and	al,ah
+ENDROP	SDPxa,0048,0368
+	xor	al,dh
+ENDROP	PSDPxaxn,0047,076A
+
+
+ROP	DSPDaox
+ROP	PDSPDaoxxn
+	mov	ah,es:[di]
+	mov	dl,ah
+	and	dl,dh
+	or	al,dl
+	xor	al,ah
+ENDROP	DSPDaox,0046,06C6
+	xor	al,dh
+ENDROP	PDSPDaoxxn,0049,16C5
+
+ROP	DPSDoax
+	mov	ah,es:[di]
+	or	al,ah
+	and	al,dh
+	xor	al,ah
+ENDROP	DPSDoax,004A,0789
+
+
+ROP	DPSanon
+	and	al,dh
+ROP	PDSnox
+ROP	DSnon
+	not	al
+	or	al,es:[di]
+ENDROP	DPSanon,0040,0F0A
+ENDROP	DSnon,0044,0328
+	xor	al,dh
+ENDROP	PDSnox,004B,0605
+
+
+ROP	SDPana
+	mov	ah,es:[di]
+	and	ah,dh
+	not	ah
+	and	al,ah
+ENDROP	SDPana,004C,0CC8
+
+
+ROP	SSPxDSxoxn
+	mov	dl,al
+ROP	SPxDSxo
+	mov	ah,al
+	xor	ah,dh
+	xor	al,es:[di]
+	or	al,ah
+ENDROP	SPxDSxo,007E,0955
+	xor	al,dl
+ENDROP	SSPxDSxoxn,004D,1954
+
+
+ROP	PDSPxox
+ROP	DPSxon
+	xor	al,dh
+	or	al,es:[di]
+ENDROP	DPSxon,0041,0249
+	xor	al,dh
+ENDROP	PDSPxox,004E,0645
+
+
+ROP	PDna
+ROP	Dn
+	mov	al,es:[di]
+ENDROP	Dn,0055,0009
+	not	al
+	and	al,dh
+ENDROP	PDna,0050,0325
+
+
+ROP	DPSDaox
+	mov	ah,es:[di]
+	and	al,ah
+	or	al,dh
+	xor	al,ah
+ENDROP	DPSDaox,0052,06C9
+
+
+ROP	SPDSxaxn
+	mov	dl,al
+ROP	PDSxa
+	xor	al,es:[di]
+	and	al,dh
+ENDROP	PDSxa,0060,0365
+	xor	al,dl
+ENDROP	SPDSxaxn,0053,0764
+
+
+ROP	DPx
+	mov	al,dh
+ROP	PDSxnon
+	xor	al,es:[di]
+ENDROP	DPx,005A,0049
+ROP	DPSnoan
+	not	al
+ROP	PDSPoax
+ROP	DPSoan
+	or	al,dh
+ENDROP	PDSxnon,0006,0865
+ROP	PDSax
+	and	al,es:[di]
+ENDROP	DPSnoan,005D,0E29
+ENDROP	DPSoan,0057,0389
+	xor	al,dh
+ENDROP	PDSPoax,0058,0785
+ENDROP	PDSax,0078,01E5
+
+
+ROP	DPSnox
+	not	al
+ROP	DPSox
+	or	al,dh
+ROP	PDSxnan
+	xor	al,es:[di]
+ENDROP	DPSox,0056,01A9
+ENDROP	DPSnox,0059,0609
+	not	al
+	and	al,dh
+ENDROP	PDSxnan,006F,0C65
+
+
+ROP	DPSDonox
+	mov	ah,es:[di]
+	or	al,ah
+	not	al
+	or	al,dh
+	xor	al,ah
+ENDROP	DPSDonox,005B,18A9
+
+
+ROP	DPSDxox
+	mov	ah,es:[di]
+	xor	al,ah
+	or	al,dh
+	xor	al,ah
+ENDROP	DPSDxox,005C,0649
+
+
+ROP	DSPnaon
+ROP	PDSPnaox
+	mov	ah,dh
+	not	ah
+	and	al,ah
+	or	al,es:[di]
+ENDROP	DSPnaon,0051,0B26
+	xor	al,dh
+ENDROP	PDSPnaox,005E,1B29
+
+
+ROP	DPan
+	mov	al,dh
+	and	al,es:[di]
+ENDROP	DPan,005F,00E9
+
+
+ROP	DSPDSaoxxn
+	mov	dl,al
+	mov	ah,es:[di]
+	and	al,ah
+	or	al,dh
+	xor	al,dl
+	xor	al,ah
+ENDROP	DSPDSaoxxn,0061,16C6
+
+
+ROP	SDPnox
+	mov	ah,dh
+	not	ah
+	or	ah,es:[di]
+	xor	al,ah
+ENDROP	SDPnox,0063,0608
+
+
+ROP	DPSnaxn
+	not	al
+ROP	DPSax
+	and	al,dh
+ROP	DSx
+ROP	PDSxxn
+	xor	al,es:[di]
+ENDROP	DSx,0066,0046
+ENDROP	DPSax,006A,01E9
+ENDROP	DPSnaxn,0065,0606
+	xor	al,dh
+ENDROP	PDSxxn,0069,0145
+
+
+ROP	SDPSonox
+ROP	PSDPSonoxxn
+	mov	dl,al
+ROP	DPSonon
+	or	al,dh
+	not	al
+	or	al,es:[di]
+ENDROP	DPSonon,0054,08A9
+	xor	al,dl
+ENDROP	SDPSonox,0067,18A8
+	xor	al,dh
+ENDROP	PSDPSonoxxn,0068,58A6
+
+
+ROP	SDPSoax
+ROP	PSDPSoaxxn
+	mov	dl,al
+	or	al,dh
+	and	al,es:[di]
+	xor	al,dl
+ENDROP	SDPSoax,0064,0788
+	xor	al,dh
+ENDROP	PSDPSoaxxn,006B,178A
+
+
+ROP	SDPax
+	mov	ah,es:[di]
+	and	ah,dh
+	xor	al,ah
+ENDROP	SDPax,006C,01E8
+
+
+ROP	DSPDoax
+ROP	PDSPDoaxxn
+	mov	ah,es:[di]
+	mov	dl,ah
+	or	ah,dh
+	and	al,ah
+	xor	al,dl
+ENDROP	DSPDoax,0062,0786
+	xor	al,dh
+ENDROP	PDSPDoaxxn,006D,1785
+
+
+ROP	SDPSnoax
+	mov	dl,al
+	not	al
+	or	al,dh
+	and	al,es:[di]
+	xor	al,dl
+ENDROP	SDPSnoax,006E,1E28
+
+
+ROP	SSDxPDxaxn
+	mov	dl,al
+ROP	SDxPDxa
+	mov	ah,es:[di]
+	xor	al,ah
+	xor	ah,dh
+	and	al,ah
+ENDROP	SDxPDxa,0042,0D5D
+	xor	al,dl
+ENDROP	SSDxPDxaxn,0071,1D5C
+
+
+ROP	SDPSxox
+	mov	dl,al
+	xor	al,dh
+	or	al,es:[di]
+	xor	al,dl
+ENDROP	SDPSxox,0072,0648
+
+
+ROP	SDPnoan
+	mov	ah,dh
+	not	ah
+	or	ah,es:[di]
+	and	al,ah
+ENDROP	SDPnoan,0073,0E28
+
+
+ROP	DSPDxox
+	mov	ah,es:[di]
+	mov	dl,ah
+	xor	ah,dh
+	or	al,ah
+	xor	al,dl
+ENDROP	DSPDxox,0074,0646
+
+
+ROP	SDPSnaox
+	mov	dl,al
+ROP	DPSnaon
+	not	al
+	and	al,dh
+	or	al,es:[di]
+ENDROP	DPSnaon,0045,0B29
+	xor	al,dl
+ENDROP	SDPSnaox,0076,1B28
+
+
+ROP	DSPnoan
+ROP	PDSPnoax
+	mov	ah,dh
+	not	ah
+	or	al,ah
+	and	al,es:[di]
+ENDROP	DSPnoan,0075,0E26
+ROP	DPSxnon
+	xor	al,dh
+ENDROP	PDSPnoax,007A,1E29
+ROP	PDSnoan
+ROP	SPDSnoax
+	mov	dl,al			;(wasted for DPSxnon)
+	not	al
+	or	al,es:[di]
+ENDROP	DPSxnon,0014,0869
+	and	al,dh
+ENDROP	PDSnoan,004F,0E25
+	xor	al,dl
+ENDROP	SPDSnoax,007C,1E24
+
+ROP	SDPxnan
+	mov	ah,es:[di]
+	xor	ah,dh
+	not	ah
+	and	al,ah
+ENDROP	SDPxnan,007B,0C68
+
+
+
+foobar	macro	y
+if2
+	%out Size of the table is y.
+endif
+endm
+
+foobar	%(offset $)-(offset roptable)-256-8
+

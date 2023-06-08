@@ -1,0 +1,111 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; devconst.blt
+;
+; Copyright (c) 1991 Microsoft Corporation.  All Rights Reserved.
+;
+; Device-specific constants.
+;
+; Created: In Windows' distant past (c. 1983)
+;
+; This file is part of a set that makes up the Windows BitBLT function
+; at driver-level.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;	MAX_BLT_SIZE is the maximum stack space required for the BITBLT
+;	code.  This is a hard number to compute.  It must be based on
+;	the worst case situation:
+;
+;		worst phase alignment
+;		worst color conversions
+;		first byte present
+;		last byte present
+;		full inner loop
+;		jump into the inner loop
+;
+;	and any other factor which could increase the size of the code.
+
+
+;MAX_BLT_SIZE    =       452             ;Max stack space a BLT will require
+MAX_BLT_SIZE    =       600              ;Max stack space a BLT will require
+
+	page
+
+;	The DEV structure contains all the information taken from the
+;	PDevices passed in.  PDevices are copied to the frame to reduce
+;	the number of long pointer loads required.  Having the data
+;	contained in the structure allows MOVSW to be used when copying
+;	the data.
+;
+;	width_bits	The number of pixels wide the device is.
+;
+;	height		The number of scans high the device is.
+;
+;	width_b		The width of a scan in bytes.
+;
+;	lp_bits		The pointer to the actual bits of the device.
+;			It will be adjusted as necessary to point to the
+;			first byte to be modified by the BLT operation.
+;
+;	plane_w		Width of one plane of data.  Only used if the
+;			device is a small color bitmap.
+;
+;	seg_index	Index to get to the next segment of the bitmap.
+;			Only defined if the bitmap is a huge bitmap.
+;
+;	scans_seg	Number of scan lines per 64K segment.  Only
+;			defined if the bitmap is a huge bitmap.
+;
+;	fill_bytes	Number of unused bytes per 64K segment.  Only
+;			defined if the bitmap is a huge bitmap.
+;
+;	dev_flags	Device Specific Flags
+;			IS_DEVICE   - This is the physical device
+;			IS_COLOR    - Device is a color device
+;                       IS_DIB      - Device is a DIB bitmap
+;			SPANS_SEG   - BLT will span 64K segment of the device
+;
+;	comp_test	JC or JNC opcode, used in the huge bitmap scan line
+;			update code.  This opcode is based on whether the
+;			BLT is Y+, or Y-.
+;
+;	comp_value	Range of addresses to compare the offset against
+;			to determine if overflow occured.  comp_test is the
+;			conditional jump to use for no overflow after doing
+;			a compare with the offset register and this value.
+;
+;	next_scan	Bias to get to the next (previous) scan line.
+
+
+DEV		struc
+
+  width_bits	dw	?		;Width in bits
+  height	dw	?		;Height in scans
+  width_b       dw      ?               ;Width in bytes
+  dev_format    dw      ?               ;Bitmap/dib format bmPlanes+bmBitsPixel
+  lp_bits       dd      ?               ;Pointer to the bits
+  seg_index	dw	?		;Index to next segment if huge bitmap
+  scans_seg	dw	?		;Scans per segment if huge
+  fill_bytes	dw	?		;Filler bytes per segment if huge
+  dev_flags	db	?		;Device flags as given above
+  init_page	db	?		;Initial display page
+  comp_value	dw	?		;Huge bitmap overflow range
+  next_scan     dw      ?               ;Index to next scan
+                dw      ?               ;extra word for 32 bit offsets
+  lp_init       dd      ?               ;Initial bitmap pointer
+                dw      ?               ;extra word for 32 bit offsets
+  lp_bi         dd      ?               ;points to BITMAPINFO if DIB
+
+DEV		ends
+
+;       Constants for use in dev_flags field of DEV structure:
+
+IS_COLOR 	equ	00000001b	;Device is color
+IS_DEVICE	equ	00000010b	;Physical Device
+IS_DIB          equ     00000100b       ;DIB bitmap
+
+OFF_lp_bits	equ	wptr lp_bits[0]	;Offset  portion of lp_bits
+SEG_lp_bits	equ	wptr lp_bits[2]	;Segment portion of lp_bits
+
+OFF_lp_init	equ	wptr lp_init[0]
+SEG_lp_init	equ	wptr lp_init[2]

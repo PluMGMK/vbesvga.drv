@@ -1,0 +1,122 @@
+/* Resource file for 256-color display driver */
+
+#define  OEMRESOURCE
+#include "windows.h"
+#include "96dpi.h"
+
+/***************************************************************/
+/* 120 dpi resources                                           */
+/*-------------------------------------------------------------*/
+/* Note that cursors and icons are the same for 96 dpi and     */
+/* 120 dpi.  We do not map IDs for cursors and icons.          */
+/***************************************************************/
+
+OCR_NORMAL           cursor       PRELOAD FIXED    normal.cur
+OCR_WAIT             cursor       PRELOAD FIXED    wait.cur
+OCR_SIZENWSE         cursor       PRELOAD          sizenwse.cur
+OCR_SIZENESW         cursor       PRELOAD          sizenesw.cur
+OCR_SIZEWE           cursor       PRELOAD          sizewe.cur
+OCR_SIZENS           cursor       PRELOAD          sizens.cur
+OCR_IBEAM            cursor                        ibeam.cur
+OCR_CROSS            cursor                        cross.cur
+OCR_UP               cursor                        up.cur
+OCR_SIZE             cursor                        size.cur
+OCR_ICON             cursor                        icon.cur
+
+OIC_SAMPLE           icon                          sample.ico
+OIC_HAND             icon                          hand.ico
+OIC_QUES             icon                          ques.ico
+OIC_BANG             icon                          bang.ico
+OIC_NOTE             icon                          note.ico
+
+OBM_OLD_RESTORE      bitmap                        orest.bmp
+OBM_OLD_REDUCE       bitmap                        ored.bmp
+OBM_OLD_ZOOM         bitmap                        ozoom.bmp
+OBM_OLD_RGARROW      bitmap                        oright.bmp
+OBM_OLD_LFARROW      bitmap                        oleft.bmp
+OBM_OLD_UPARROW      bitmap                        oup.bmp
+OBM_OLD_DNARROW      bitmap                        odown.bmp
+OBM_OLD_CLOSE        bitmap                        oclose.bmp
+
+OBM_RESTORE          bitmap       PRELOAD          restore.bmp
+OBM_RESTORED         bitmap       PRELOAD          restored.bmp
+OBM_REDUCE           bitmap       PRELOAD          min.bmp
+OBM_REDUCED          bitmap       PRELOAD          mind.bmp
+OBM_ZOOM             bitmap       PRELOAD          max.bmp
+OBM_ZOOMD            bitmap       PRELOAD          maxd.bmp
+OBM_RGARROW          bitmap       PRELOAD          right.bmp
+OBM_RGARROWD         bitmap       PRELOAD          rightd.bmp
+OBM_LFARROW          bitmap       PRELOAD          left.bmp
+OBM_LFARROWD         bitmap       PRELOAD          leftd.bmp
+OBM_UPARROW          bitmap       PRELOAD          up.bmp
+OBM_UPARROWD         bitmap       PRELOAD          upd.bmp
+OBM_DNARROW          bitmap       PRELOAD          down.bmp
+OBM_DNARROWD         bitmap       PRELOAD          downd.bmp
+OBM_CLOSE            bitmap       PRELOAD          sysmenu.bmp
+OBM_CHECK            bitmap                        ocheck.bmp
+OBM_BTSIZE           bitmap                        obtsize.bmp
+OBM_SIZE             bitmap                        osize.bmp
+OBM_CHECKBOXES       bitmap                        obutton.bmp
+OBM_BTNCORNERS       bitmap                        obtncorn.bmp
+OBM_COMBO            bitmap                        combo.bmp
+OBM_MNARROW          bitmap                        mnarrow.bmp
+
+OBM_UPARROWI         bitmap       PRELOAD          upi.bmp
+OBM_DNARROWI         bitmap       PRELOAD          downi.bmp
+OBM_LFARROWI         bitmap       PRELOAD          lefti.bmp
+OBM_RGARROWI         bitmap       PRELOAD          righti.bmp
+
+1                    oembin       PRELOAD          config.bin
+2                    oembin                        colortab.bin
+3                    oembin       PRELOAD          fonts.bin
+
+/*****************************************/
+/* FOR MULTI-RES                         */
+/*****************************************/
+
+/* 96 dpi resources */
+/* the _96_ defines are the above + 2000d */
+
+OBM_96_OLD_RESTORE   bitmap                        "../res96/orest.bmp"
+OBM_96_OLD_REDUCE    bitmap                        "../res96/ored.bmp"
+OBM_96_OLD_ZOOM      bitmap                        "../res96/ozoom.bmp"
+OBM_96_OLD_RGARROW   bitmap                        "../res96/oright.bmp"
+OBM_96_OLD_LFARROW   bitmap                        "../res96/oleft.bmp"
+OBM_96_OLD_UPARROW   bitmap                        "../res96/oup.bmp"
+OBM_96_OLD_DNARROW   bitmap                        "../res96/odown.bmp"
+OBM_96_OLD_CLOSE     bitmap                        "../res96/oclose.bmp"
+
+OBM_96_RESTORE       bitmap       PRELOAD          "../res96/restore.bmp"
+OBM_96_RESTORED      bitmap       PRELOAD          "../res96/restored.bmp"
+OBM_96_REDUCE        bitmap       PRELOAD          "../res96/min.bmp"
+OBM_96_REDUCED       bitmap       PRELOAD          "../res96/mind.bmp"
+OBM_96_ZOOM          bitmap       PRELOAD          "../res96/max.bmp"
+OBM_96_ZOOMD         bitmap       PRELOAD          "../res96/maxd.bmp"
+OBM_96_RGARROW       bitmap       PRELOAD          "../res96/right.bmp"
+OBM_96_RGARROWD      bitmap       PRELOAD          "../res96/rightd.bmp"
+OBM_96_LFARROW       bitmap       PRELOAD          "../res96/left.bmp"
+OBM_96_LFARROWD      bitmap       PRELOAD          "../res96/leftd.bmp"
+OBM_96_UPARROW       bitmap       PRELOAD          "../res96/up.bmp"
+OBM_96_UPARROWD      bitmap       PRELOAD          "../res96/upd.bmp"
+OBM_96_DNARROW       bitmap       PRELOAD          "../res96/down.bmp"
+OBM_96_DNARROWD      bitmap       PRELOAD          "../res96/downd.bmp"
+OBM_96_CLOSE         bitmap       PRELOAD          "../res96/sysmenu.bmp"
+OBM_96_CHECK         bitmap                        "../res96/ocheck.bmp"
+OBM_96_BTSIZE        bitmap                        "../res96/obtsize.bmp"
+OBM_96_SIZE          bitmap                        "../res96/osize.bmp"
+OBM_96_CHECKBOXES    bitmap                        "../res96/obutton.bmp"
+OBM_96_BTNCORNERS    bitmap                        "../res96/obtncorn.bmp"
+OBM_96_COMBO         bitmap                        "../res96/combo.bmp"
+OBM_96_MNARROW       bitmap                        "../res96/mnarrow.bmp"
+
+OBM_96_UPARROWI      bitmap       PRELOAD          "../res96/upi.bmp"
+OBM_96_DNARROWI      bitmap       PRELOAD          "../res96/downi.bmp"
+OBM_96_LFARROWI      bitmap       PRELOAD          "../res96/lefti.bmp"
+OBM_96_RGARROWI      bitmap       PRELOAD          "../res96/righti.bmp"
+
+2001                 oembin       PRELOAD          "../res96/config.bin"
+2003                 oembin       PRELOAD          "../res96/fonts.bin"
+
+FONTS                oembin                        fonts.bin
+
+#include "v731vga.rcv"

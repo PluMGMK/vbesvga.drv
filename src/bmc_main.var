@@ -1,0 +1,59 @@
+;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
+
+	parmD	lp_dest_dev		; -> pointer to own bitmap structure
+	parmW	set_or_get		; 0 => set, 1 => get
+SET_CODE	equ	0		; setbitmapbits	code
+GET_CODE	equ	1		; getbitmapbitscode
+	parmW	init_scan		; start copy at this scan
+	parmW	num_scans		; number of scans to copy
+	parmD	lp_bits_ext		; -> external bitmap bits
+	parmD	lp_info_ext 		; -> Pointer to info block
+	parmD	lp_drawmode
+        parmD   lpColorInfo             ; GDI supplied color match value
+
+	localB	fbsd			; own format mono or color
+SD_COLOR                equ     01000000b
+SD_HUGE                 equ     00100000b
+CAN_CROSS_SEG           equ     00010000b
+	localD	lp_bits_dev		; -> internal bitmap bits
+	localW	scans_copied		; Number of scanlines copied
+	localW	scanline_count		; Number of scanlines to copy
+	localW	bitmap_width		; Width in pixels of the bitmap
+	localW	bitmap_height		; Height of the bitmap in scans
+
+        localW  scans_per_seg           ; Scanlines per segment
+	localW	huge_scans_left		; Count of scans left in huge segment
+        localW  int_aligned_width       ; Index to next scan line
+	localW	int_move_count		; # of full bitmap bits per scanline
+	localW	int_remaining_pixel_count ; Flags for a partial byte
+	localW	full_byte_proc		; Routine which xlates full bytes
+	localW	partial_byte_proc	; Routine which xlates partial bytes
+        localW  some_temp               ; temp variable to save counts
+	localW	ext_dword_adjust	; Alignment for each scan of buffer
+	localW	temp_byte_count		; Work area for conversion routines
+	localW	mono_shift_align_count	; Shift to align partial bytes
+	localD	scan_length		; length of one buffer scanline
+	localW	NextSegOff		; offset to next huge map segment
+	localW	filler_bytes		; filler bytes at segment end
+	localW	prev_offset		; lst scan offset in prev segment
+	localB	temp_bit_count		; Work area for conversion routines
+	localV	color_xlate,512 	; Color translation table 2 bytes/entry, so 256 * 2
+	localD  DeviceColorMatch	; GDI color match routine
+	localB	num_pels_per_src_byte	; number of pixels per source byte
+	localB	dl_bank
+        localD  LastRGB                 ; holds the last RGB value
+
+	localW	xlocation
+	localW	ylocation
+	localB	bit_position
+	localW	encode_rle		;ptr to specific encoding routine
+	localW	encode_absolute 	;ptr to specific encoding routine
+	localW	decode_rle		;ptr to specific encoding routine
+	localW	decode_absolute 	;ptr to specific encoding routine
+	localW	encode_scanline
+	localW	maximum_encodedline_length
+        localW  neg_filler_bytes
+	localW	rle_scanmask
+	localW	rle_getlength
+        localW  internal_align
+        localV  xlati_1_to_4, 32

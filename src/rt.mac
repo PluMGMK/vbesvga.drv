@@ -1,0 +1,181 @@
+;
+;--------------------------==========================--------------------------
+;--------------------------====< RUNTIME IFDEFS >====--------------------------
+;--------------------------==========================--------------------------
+;
+; The following macros allow the program to create run-time IFDEF/ELSE/ENDIF
+; conditions in his/her code. In order to create a run-time condition, a
+; memory variable will be created for all the condition checking. This memory
+; variable must be set/cleared before the first run-time condition check is
+; made. The variable will be initialized to a "value at compile time. The
+; following is an coding example:
+;
+;		;
+;		; declare the run-time conditional value in the NEAR code seg.
+;		;
+;			.CODE
+;		rtDECLARE OurConditon,value ; declared to equal "value"
+;		;
+;		; (a little later on...)
+;		;
+;			mov	OurCondition,TRUE	; may set for later use
+;		;
+;		; (sometime later...)
+;		;
+;		; perform the run-time conditional exection
+;		;
+;		rtIFDEF	OurCondition
+;			mov	ax,0
+;		rtELSE
+;			mov	ax,-1
+;		rtENDIF
+;		;
+;
+;
+;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
+??rttrue        EQU     1       ; uuummm, yeah...
+??rtfalse	EQU	0
+;
+?rtifon	=	0		; real-time IFDEF control flag
+?rtl1	=	0		; real-time IFDEF label generation counter
+;
+rtDECLARE macro xnam,xval
+	public ??&xnam
+ifb	<xval>
+??&xnam dw ??rtfalse
+else
+??&xnam dw xval
+endif
+	endm
+;
+rtGLOBAL macro xnam
+	extrn ??&xnam:word
+	endm
+;
+; rtIFDEF/rtIFNDEF/rtIF/rtIFE compliments Masm's "IFDEF" statement by
+; providing conditional runtime execution, instead of conditional assembly.
+;
+rtIFDEF macro xnam,xmask
+	?rtifon = ?rtifon + 1	;; tells rtELSE/rtENDIF that this macro has executed
+	?rtl1 = ?rtl1 + 1	;; local label counter
+IFB	<xmask>
+	test	cs:[??&xnam],-1
+ELSE
+	test	cs:[??&xnam],xmask
+ENDIF
+        rtJE    %?rtl1
+	endm
+;
+; rtIFNDEF is the inverse logical operation of rtIFDEF
+;
+rtIFNDEF macro xnam,xmask
+	?rtifon = ?rtifon + 1	;; tells rtELSE/rtENDIF that this macro has executed
+	?rtl1 = ?rtl1 + 1	;; local label counter
+IFB	<xmask>
+	test	cs:[??&xnam],-1
+ELSE
+	test	cs:[??&xnam],xmask
+ENDIF
+	rtJNE	%?rtl1
+	endm
+;
+; IF TRUE
+; 
+rtIF macro xnam,xmask
+	?rtifon = ?rtifon + 1	;; tells rtELSE/rtENDIF that this macro has executed
+	?rtl1 = ?rtl1 + 1	;; local label counter
+IFB	<xmask>
+	test	cs:[??&xnam],-1
+ELSE
+	test	cs:[??&xnam],xmask
+ENDIF
+	rtJE	%?rtl1
+	endm
+;
+; rtIFE is the inverse logical operation of rtIF, IF NOT TRUE
+;
+rtIFE macro xnam,xmask
+	?rtifon = ?rtifon + 1	;; tells rtELSE/rtENDIF that this macro has executed
+	?rtl1 = ?rtl1 + 1	;; local label counter
+IFB	<xmask>
+	test	cs:[??&xnam],-1
+ELSE
+	test	cs:[??&xnam],xmask
+ENDIF
+	rtJNE	%?rtl1
+	endm
+;
+; IF EQU evaluates the expression
+;
+rtIFEQU macro xnam,xmatch
+	?rtifon = ?rtifon + 1	;; tells rtELSE/rtENDIF that this macro has executed
+	?rtl1 = ?rtl1 + 1	;; local label counter
+	cmp	cs:[??&xnam],xmatch
+	rtJNE	%?rtl1
+	endm
+;
+; rtIFNEQU is the inverse logical operation of rtIFEQU, IF NOT EQU
+;
+rtIFNEQU macro xnam,xmatch
+	?rtifon = ?rtifon + 1	;; tells rtELSE/rtENDIF that this macro has executed
+	?rtl1 = ?rtl1 + 1	;; local label counter
+	cmp	cs:[??&xnam],xmatch
+	rtJE	%?rtl1
+	endm
+;
+; rtELSE/rtENDIF finish the set of runtime conditional execution macros.
+;
+rtELSE	macro
+	if	?rtifon-1
+	if1
+	%out	unbalance run-time IFDEF/ELSE/ENDIF
+	endif
+	.err
+	else
+	?rtlx = ?rtl1
+	?rtl1 = ?rtl1 + 1
+	rtJMP	%?rtl1
+rtLABEL %?rtlx
+	endif
+	endm
+;
+rtENDIF	macro
+	if	?rtifon-1
+	if1
+	%out	unbalance run-time IFDEF/ELSE/ENDIF
+	endif
+	.err
+	else
+rtLABEL %?rtl1
+	?rtifon = ?rtifon - 1
+	endif
+	endm
+;
+; rtJE forces MASM to create a "JE" instruction using the specified equate
+; as part of the target label name.
+;
+rtJE macro lbl
+	je	??&lbl
+	endm
+;
+rtJNE macro lbl
+	jne	??&lbl
+	endm
+;
+; rtJMP forces MASM to create a "JMP" instruction using the specified equate
+; as part of the target label name.
+;
+rtJMP macro lbl
+	jmp	??&lbl
+	endm
+;
+; rtLABEL forces MASM to create a label name using the specified equate
+;
+rtLABEL macro xnam
+??&xnam label near
+	endm
+;
+;--------------------------==========================--------------------------
+;--------------------------==========================--------------------------
+;--------------------------==========================--------------------------
+;

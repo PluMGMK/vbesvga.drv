@@ -1,0 +1,93 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+; display.def
+;
+; Copyright (c) 1991 Microsoft Corporation.  All Rights Reserved.
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+LIBRARY     DISPLAY
+
+DESCRIPTION 'DISPLAY : 100, 96, 96 : Multi-resolution 256 color driver.'
+
+;STUB        'WINSTUB.EXE'
+EXETYPE     WINDOWS
+
+DATA        PRELOAD FIXED SINGLE
+
+SEGMENTS
+    _TEXT	PRELOAD FIXED SHARED
+    _INIT	PRELOAD MOVEABLE DISCARDABLE SHARED
+    _BLUEMOON	PRELOAD MOVEABLE DISCARDABLE SHARED
+    _PALETTE	PRELOAD MOVEABLE DISCARDABLE SHARED
+    _LINES	MOVEABLE DISCARDABLE SHARED
+    _PIXEL	MOVEABLE DISCARDABLE SHARED
+    _SCANLINE	MOVEABLE DISCARDABLE SHARED
+    _TEXTSTUFF	MOVEABLE DISCARDABLE SHARED
+    _DIMAPS	MOVEABLE DISCARDABLE SHARED
+
+
+EXPORTS
+    BitBlt              @1
+    ColorInfo           @2
+    Control             @3
+    Disable             @4
+    Enable              @5
+    EnumDFonts          @6
+    EnumObj             @7
+    Output              @8
+    Pixel               @9
+    RealizeObject       @10
+    StrBlt              @11
+    ScanLR              @12
+    DeviceMode		@13	NODATA		;We nop this routine
+
+    ExtTextOut		@14
+    GetCharWidth	@15	NODATA
+    DeviceBitmap	@16	NODATA		;We don't handle this
+    FastBorder		@17
+    SetAttribute	@18	NODATA		;We don't handle this
+
+    DeviceBitmapBits	@19			;for device independent bitmaps
+    CreateBitmap	@20
+;   DIBScreenBlt	@21
+    DIBtoDevice   	@21
+
+    SetPalette		@22			;palette stuff, Win 3.0
+    GetPalette		@23
+    
+    SetPaletteTranslate @24
+    GetPaletteTranslate @25
+    UpdateColors	@26			;translate pixels on screen
+
+    StretchBlt		@27
+    StretchDIBits       @28
+
+;   SaveScreenBitmap	@92			;not used with VGA
+
+    Inquire		@101			;Mouse cursor stuff
+    SetCursor           @102
+    MoveCursor          @103
+    CheckCursor         @104
+
+;    do_polygon          @400
+;    do_polylines        @401
+;    do_scanlines        @402
+
+    GetDriverResourceID  @450
+    UserRepaintDisable	 @500
+
+IMPORTS
+    ScreenSwitchEnable		= KEYBOARD.100	;For DOS 3.x Box
+
+    __NEXTSEG			= KERNEL.114
+    __A000                      = KERNEL.174
+
+    AllocCSToDSAlias    	= KERNEL.170
+    AllocDSToCSAlias	      	= KERNEL.171
+    AllocSelector		= KERNEL.175
+    FreeSelector		= KERNEL.176
+    PrestoChangeoSelector	= KERNEL.177
+    __WinFlags			= KERNEL.178
+;   LongPtrAdd                  = KERNEL.180
+

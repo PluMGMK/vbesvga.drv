@@ -1,0 +1,86 @@
+;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
+
+lpDestDev	EQU	<[bp + 22H]>
+DestxOrg	EQU	<[bp + 20H]>
+DestyOrg	EQU	<[bp + 1EH]>
+lpSrcDev	EQU	<[bp + 1AH]>
+SrcxOrg 	EQU	<[bp + 18H]>
+SrcyOrg 	EQU	<[bp + 16H]>
+xExt		EQU	<[bp + 14H]>
+yExt		EQU	<[bp + 12H]>
+Rop		EQU	<[bp + 0EH]>
+lpPBrush	EQU	<[bp + 0AH]>
+lpDrawMode	EQU	<[bp + 06H]>
+
+my_data_seg		EQU	<[bp - 08H]> ;may need to access the data seg
+global_bank		EQU	<[bp - 09H]> ;last bank # set outside bitblt
+local_enable_flag	EQU	<[bp - 0AH]> ;Local copy of the enable flag
+device_flags		EQU	<[bp - 0CH]> ;tells things about src,dst devices
+rop_flags		EQU	<[bp - 0EH]> ;tells things about the ROP
+brush_accel_flags	EQU	<[bp - 10H]>
+src_xExt_bytes		EQU	<[bp - 12H]> ;width of src blt rect in bytes
+dst_xExt_bytes		EQU	<[bp - 14H]> ;width of dst blt rect in bytes
+src_width_bytes 	EQU	<[bp - 16H]> ;leftover bytes in src segment
+dst_width_bytes 	EQU	<[bp - 18H]> ;leftover bytes in dst segment
+src_fill_bytes          EQU     <[bp - 1AH]> ;leftover bytes in src segment
+dst_fill_bytes		EQU	<[bp - 1CH]> ;leftover bytes in dst segment
+src_swing_bytes 	EQU	<[bp - 1EH]> ;bytes from end of blt rect on one
+dst_swing_bytes 	EQU	<[bp - 20H]> ; scanline to start of blt rect on next
+src_blt_segment 	EQU	<[bp - 22H]> ;start segment of src
+src_blt_offset		EQU	<[bp - 24H]> ;start offset of src
+dst_blt_segment 	EQU	<[bp - 26H]> ;start segment of dst
+dst_blt_offset		EQU	<[bp - 28H]> ;start offset of dst
+compblt_segment 	EQU	<[bp - 2AH]>
+compblt_offset		EQU	<[bp - 2CH]>
+WorkSelector		EQU	<[bp - 2EH]>
+any_jmp_address 	EQU	<[bp - 30H]> ;temp storage for a compiled address
+
+first_edge_mask 	EQU	<[bp - 32H]> ;used in DST_IS_MONO blts
+inner_loop_count	EQU	<[bp - 34H]> ;used in DST_IS_MONO blts
+last_edge_mask		EQU	<[bp - 36H]> ;used in DST_IS_MONO blts
+align_rotate_count	EQU	<[bp - 38H]> ;used in MONO/COLOR to MONO blts
+colors			EQU	<[bp - 3AH]> ;bgcolor:fgcolor = hibyte:lobyte
+mono_bits		EQU	<[bp - 3CH]> ;bgmonobit:fgmonobit = hibyte:lobyte
+pattern_offset		EQU	<[bp - 3EH]> ;used in blts with patterns
+rop_offset		EQU	<[bp - 40H]> ;offset of ropcode in roptable
+rop_length		EQU	<[bp - 42H]> ;length of the rop code
+pattern_work		EQU	<[bp - 82H]> ;temporary workspace for pattern
+pattern_space		EQU    <[bp - 102H]> ;pattern will be placed on 64 byte bdry
+
+vert_dir		EQU	<[bp - 104H]>
+horz_dir		EQU	<[bp - 106H]>
+dst_page		EQU	<[bp - 108H]> ;used in some DST is SCREEN blts
+dst_bank		EQU	<[bp - 10AH]> ;used in some DST is SCREEN blts
+src_page		EQU	<[bp - 10CH]> ;used in some SRC is SCREEN blts
+src_bank		EQU	<[bp - 10EH]> ;used in some SRC is SCREEN blts
+first_edge_mask_count	EQU	<[bp - 110H]>
+nibble_function 	EQU	<[bp - 112H]>
+pattern_row_counter	EQU	<[bp - 114H]>
+same_pattern_row_counter  EQU	<[bp - 116H]>
+src_more_than_1byte	EQU	<[bp - 118H]>
+nibble_count		EQU	<[bp - 11AH]>
+
+color_xlat_table	EQU	<[bp - 21AH]>	;for speed, tbl copied to stack
+cblt_code_end           EQU     <[bp - 218H]>   ;last byte in cblt_code
+cblt_code		EQU	<[bp - 31AH]>	;space for compiled blt code
+local_board_flags	EQU	<[bp - 31CH]>	;Video_Board_Flags onto stack
+src_left_edge		EQU	<[bp - 31EH]>	;leftedge of srcrect after clip
+src_top_edge		EQU	<[bp - 320H]>	;topedge of srcrect after clip
+dst_left_edge		EQU	<[bp - 322H]>	;leftedge of dstrect after clip
+dst_top_edge            EQU     <[bp - 324H]>   ;topedge of dstrect after clip
+background_mode 	EQU	<[bp - 326H]>	;background mode for xpar blts
+dst2_page		EQU	<[bp - 328H]> ;leftover bytes in dst segment
+first_edge_count	EQU	<[bp - 32AH]>
+right_edge_count	EQU	<[bp - 32CH]>
+full_byte_count 	EQU	<[bp - 32EH]>
+dst2_width_bytes	EQU	<[bp - 330H]>
+dst2_blt_offset 	EQU	<[bp - 332H]>
+blt216_scandir_func	EQU	<[bp - 334H]>
+blt216_reg_cd		EQU	<[bp - 336H]>
+
+
+
+BLT_STACK_SIZE		EQU	0350H
+SOURCE_PRESENT	equ	0010000000000000b
+PATTERN_PRESENT	equ	0100000000000000b
+NEGATE_NEEDED	equ	1000000000000000b
