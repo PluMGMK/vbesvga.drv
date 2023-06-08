@@ -178,6 +178,7 @@
 ;
 
 JAK_TEXT	EQU	1
+DBG_OUTPUT_STRS	EQU 1
 
 IF	JAK_TEXT
 	externNP jak_non_justified_text
@@ -189,11 +190,6 @@ ENDIF
 	externA  stack_top		; Stack probe location
         externA  __NEXTSEG              ; absolute value for segment calcs
 
-;        externNP color_opaque_output
-;        externNP color_transp_output
-;        externNP pcolor_opaque_output
-;        externNP pcolor_transp_output
-;
 	public	 process_stack_data
 ;
 sBegin	Code
@@ -303,6 +299,29 @@ build_restart:
 	mov	ah,accel
 	mov	cx,count
 	mov	di,x
+
+if	DBG_OUTPUT_STRS
+	push	ax
+	push	cx
+	push	dx
+	push	si
+
+@@:	mov	ah,4	; write to stdaux
+	lodsb
+	mov	dl,al	; char to write
+	int	21h
+	loop	@B
+	mov	dl,0Dh	; \r
+	int	21h
+	mov	dl,0Ah	; \n
+	int	21h
+
+	pop	si
+	pop	dx
+	pop	cx
+	pop	ax
+endif
+
 	jmp	build_proc
 ;
 build_ret_addr: 			; build routines return here
@@ -2376,8 +2395,10 @@ rtELSE
 rtENDIF
 ;
 	errnz	SIZE_PATTERN-8
-	cmp	BitsaPixel,8		; is this a color map?
-	jnz	@F			; no...
+	; PluM: originally, this assumed mono if BitsaPixel != 8, which is a
+	; very bad assumption in general, but especially since we can have >8!
+	cmp	BitsaPixel,1		; is this a color map?
+	je	@F			; no...
 	jmp	bx			; yes, do quick processing
 ;
 @@:
@@ -2973,4 +2994,3 @@ endif;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 sEnd	Code
 
 	end
-

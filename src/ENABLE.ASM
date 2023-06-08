@@ -58,6 +58,7 @@ incDevice	= 1
 	externFP FreeSelector		; free an allocated selector
 	externFP AllocCSToDSAlias
 	externFP GetPrivateProfileString
+        externFP GetPrivateProfileInt   ; Kernel!GetProfileInt
 
 ifdef PALETTES
 	externFP SetPaletteTranslate    ;in color\ega\vga\palette.asm
@@ -89,18 +90,23 @@ SYSINI	STRUC
     SYSINI_RETVAL	DW	0
 SYSINI	ENDS
 
-boot_category   db      "V7VGA.DRV",0
+boot_category   db      "VBESVGA.DRV",0
 
-res_member	db	"WidthxHeight",0
-mode67_res      db      "640x480",0
-mode68_res      db      "720x512",0
-mode69_res      db      "800x600",0
-mode6a_res      db      "1024x768",0
-sysini_modestruc	LABEL	BYTE
-SYSINI	<mode67_res,7,0>
-SYSINI	<mode68_res,7,1>
-SYSINI	<mode69_res,7,2>
-SYSINI	<mode6a_res,8,3>
+chk_member	db	"PMIDcheck",0
+chk_disable	db	"disable",0	; allow disabling it if it crashes
+chk_none	db	"none",0
+chk_sum		db	"sum",0
+chk_sanity	db	"sanity",0
+sysini_chkstruc	LABEL	BYTE
+SYSINI	<chk_disable,7,-1>
+SYSINI	<chk_none,4,0>
+SYSINI	<chk_sum,3,1>
+SYSINI	<chk_sanity,6,2>
+
+edid_member	db	"UseEDID",0
+width_member	db	"Width",0
+height_member	db	"Height",0
+depth_member	db	"Depth",0
 
 font_member	db	"fontsize",0
 dpi_96		db	"small",0
@@ -151,6 +157,9 @@ sBegin	InitSeg
 assumes cs,InitSeg
 
 
+	externNP FindMode		;from vesafns.asm
+	externNP SetupPMInt		;from vesafns.asm
+	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
 	externB  physical_device	;Device physical data
 	externB  info_table_base	;GDIInfo table
@@ -207,24 +216,35 @@ ifdef	INT3
 	int	3
 endif
 	WriteAux <'Enable'>
-;----------------------------------------------------------------------------;
-; initialize the palette translation table by invoking SetPaletteTranslate   ;
-; with a NULL pointer. Do this only if the palette manager is supported      ;
-;----------------------------------------------------------------------------;
-
-ifdef	PALETTES
-	xor	ax,ax
-	farPtr  <lpNULL>,ax,ax		; set up a null pointer
-
-	arg	lpNULL
-	cCall	SetPaletteTranslate     ; initialize the palette trans. table
-endif
 
 ;----------------------------------------------------------------------------;
 
 ;	Autores detect
 
 	call	enable_read_profile		;sets up resolution, etc.
+	test	ax,ax
+	jnz	@F
+
+	; fail immediately (AX == 0)
+	jmp	exit_enable
+
+@@:
+;----------------------------------------------------------------------------;
+; initialize the palette translation table by invoking SetPaletteTranslate   ;
+; with a NULL pointer. Do this only if the palette manager is supported      ;
+;----------------------------------------------------------------------------;
+
+ifdef	PALETTES
+	test	[info_table_base.dpRaster],RC_PALETTE
+	jz	@F
+
+	xor	ax,ax
+	farPtr  <lpNULL>,ax,ax		; set up a null pointer
+
+	arg	lpNULL
+	cCall	SetPaletteTranslate     ; initialize the palette trans. table
+@@:
+endif
 
 	push	ds
         mov     dx,cs                           ;Set up ds=cs
@@ -256,30 +276,6 @@ endif
 	pop	ds
         assumes ds,Data
 ;MMENDS
-
-;THIS USED TO BE
-Comment ~
-        push    es
-	cCall	AllocCSToDSAlias, <cs>
-	mov	es, ax
-	push	ax			; save a copy on the stack
-	assumes es, InitSeg
-	mov	ax,ScreenSelector
-	mov	word ptr es:[physical_device.bmType],	ax
-	mov	word ptr es:[physical_device.bmBits+2], ax
-	xor	bx,bx
-	mov	es,bx			;invalidate es before freeing it
-	cCall	FreeSelector
-	pop	es
-;
-	lea	si,physical_device	;DS:SI --> physical device to copy
-	mov	cx,PHYS_DEVICE_SIZE	;Set move count
-	rep	movsb
-	pop	ds
-	assumes ds,Data
-~	;comment ends
-;THIS USED TO BE ENDS
-
 
 	call	hook_int_2Fh		;Hook into multiplexed interrupt
 	call	physical_enable 	;Enable device
@@ -383,7 +379,7 @@ enable_read_profile	PROC	NEAR
 	lea	ax,boot_category
         push    ds
         push    ax
-	lea	ax,res_member
+	lea	ax,chk_member
         push    ds
         push    ax
 	push	ds				;this is the default as well
@@ -397,20 +393,60 @@ enable_read_profile	PROC	NEAR
         push    ax
 	call	GetPrivateProfileString
 
-	sub	ax,ax				;default return value
+	mov	ax,1				;default return value = checksum
 	mov	bx,4				;number different modes
         lea     si,aszCurDrvFName
-	lea	bp,sysini_modestruc
+	lea	bp,sysini_chkstruc
 	call	enable_find_substring
+	call	SetupPMInt
 
-	mov	bx,ax
-	mov	al,mode_number[bx]
-	mov	Vmode,ax
-	shl	bx,1
-	mov	ax,mode_screen_width[bx]
-	mov	VScreen_Width,ax
-	mov	ax,mode_screen_height[bx]
-	mov	VScreen_Height,ax
+	; TODO: Use EDID settings as default
+	lea	ax,boot_category
+	lea	bx,width_member
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1024,ds,cx>
+	cmp	ax,640
+	jnb	@F
+ifdef	INT3
+	int	3
+endif
+	WriteAux <'Width < 640 is not allowed'>
+	jmp	enable_read_profile_fail
+@@:	mov	VScreen_Width,ax
+
+	lea	ax,boot_category
+	lea	bx,height_member
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,768,ds,cx>
+	cmp	ax,480
+	jnb	@F
+ifdef	INT3
+	int	3
+endif
+	WriteAux <'Height < 480 is not allowed'>
+	jmp	enable_read_profile_fail
+@@:	mov	VScreen_Height,ax
+
+	lea	ax,boot_category
+	lea	bx,depth_member
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,24,ds,cx>
+	cmp	al,8
+	jnb	@F
+ifdef	INT3
+	int	3
+endif
+	WriteAux <'Depth < 8 is not allowed'>
+	jmp	enable_read_profile_fail
+@@:	mov	VScreen_Depth,al
+
+	; Linear=0 for now
+	; TODO: bring it in if we detect 32-bit DPMI
+	cCall	FindMode,<0>
+	test	ax,ax
+	jz	@F
+	jmp	enable_read_profile_fail
+	; Vmode should now be set
 
 @@:	lea	ax,boot_category
         push    ds
@@ -491,29 +527,17 @@ enable_read_profile_done:
 	push	ax				; parameter for FreeSelector
 
         mov     si,InitSegOFFSET info_table_base
+        lea     di,physical_device
 	mov	ax,windowsVersion 	;fixup GDI info table
 	mov	es:[si].dpVersion,ax
         mov     ax,dpi_size
 	mov	es:[si].dpLogPixelsX,ax
         mov     es:[si].dpLogPixelsY,ax
 
-	mov	ax,VScreen_Width
-        mov     bx,VScreen_Height
-        mov     cx,ScreenSelector
-        mov     es:[si].dpHorzRes,ax
-	mov	es:[si].dpVertRes,bx		;fixup GDI info table
-
-        lea     si,physical_device
-        mov     es:[si].bmBits.sel,cx           ;fixup device pointer
-        mov     es:[si].bmWidth,ax
-        mov     ax,es:[si].bmWidthBytes
-        mul     bx
-        mov     word ptr es:[si].bmWidthPlanes,ax
-        mov     word ptr es:[si + 2].bmWidthPlanes,dx
-        mov     es:[si].bmHeight,bx
+	call	vesa_gdi_fixup		;fixup GDI info table
 
         xor     bx,bx
-        mov     es,bx                           ;invalidate es before freeing
+        mov     es,bx                   ;invalidate es before freeing
         cCall   FreeSelector
         pop     es
 
@@ -528,8 +552,18 @@ enable_read_profile_done:
         dec     ax
 	mov	cursor_ycoord,ax
 
+	mov	ax,1
+@@:
 	pop	bp
 	ret
+
+enable_read_profile_fail:
+ifdef	INT3
+	int	3
+endif
+	WriteAux <'Unsuitable settings for current driver / hardware'>
+	xor	ax,ax
+	jmp	@B
 
 enable_read_profile	ENDP
 
@@ -767,4 +801,3 @@ cEnd GetDriverResourceID
 sEnd	InitSeg
 
 end
-

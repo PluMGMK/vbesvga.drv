@@ -72,6 +72,7 @@ FILE_VGA	EQU	1
 	include rt.mac
 	include vgareg.inc
 	include vgautil.inc
+	include	int3.inc
 
 ;	Additional Raster Capabilities
 
@@ -129,6 +130,7 @@ cdw	macro	v1,v2
 
 	externFP init_hw_regs		;Initialize ega state code
         externFP SetPalette             ;loads palette
+	externNP set_dacsize		;in VESAFNS.ASM
 ;	public	SSB_EXTRA_SCANS 	;Number of extra scanlines
 ;	public	SSB_EXTRA_PELS		;Number of extra columns
 ;	public	SSB_SAVE_X		;X cord of save area
@@ -264,11 +266,12 @@ Video_Board_Id		DW	0
 Video_Memory_Banks	DB	0
 Video_Board_Flags	DB	0
 
-PUBLIC	VScreen_Width, VScreen_Height, Vmode
+PUBLIC	VScreen_Width, VScreen_Height, VScreen_Depth, Vmode
 
 VScreen_Width		DW	0
 VScreen_Height		DW	0
 Vmode			DW	0
+VScreen_Depth		DB	0
 
 EXTRN	enable_216:WORD
 EXTRN   dac_size:BYTE
@@ -714,11 +717,15 @@ physical_enable proc near
 	mov	bx,1			;attempt to set 8 bit DAC mode
         call    set_dacsize
 
+	test	[info_table_base.dpRaster],RC_PALETTE
+	jz	@F
+
 	mov	si,DataOFFSET adPalette ;load pointer to color table
 	xor	ax,ax			;starting index
 	mov	cx,NUM_PALETTES
         call    setramdac
 
+@@:
         call    init_hw_regs
 
 	pop	si
@@ -727,7 +734,7 @@ physical_enable proc near
 
         mov     enabled_flag,0ffh       ; show enabled
 
-        call    hook_int_10h
+        ; call    hook_int_10h
 
 ;       Check for extra video memory.  If present, then one bitmap at a
 ;	time can be sent there to speed up saving and restoring.
@@ -800,6 +807,9 @@ page
 
 physical_disable proc near
 	WriteAux <'Physical Disable'>
+ifdef	INT3
+	int	3
+endif
 ;----------------------------------------------------------------------------;
 ; disbale the selector here				                     ;
 ;----------------------------------------------------------------------------;
@@ -836,7 +846,7 @@ physical_disable proc near
 ;
 phdi_exit:
 
-	call	restore_int_10h
+	;call	restore_int_10h
 ;----------------------------------------------------------------------------;
 ; at this point as the kernel to do the io trapping again, provided we are in;
 ; protected mode.							     ;
@@ -957,126 +967,6 @@ set_board_flags 	ENDP
 
 
 
-;	set_dacsize
-;
-;	This routine sets the DAC to use either 8 bit DAC mode or 6 bit
-;	DAC mode. If an attempt is mode to set 8 bit DAC mode and the
-;	DAC does not support 8 bits, it will be left in 6 bit mode.
-;	PARMS:
-;       ds      Data
-;       bx      1 = set 8 bit mode, 0 = set 6 bits mode
-
-PUBLIC	far_set_dacsize
-far_set_dacsize 	PROC	FAR
-
-	call	set_dacsize
-	ret
-
-far_set_dacsize 	ENDP
-
-
-PUBLIC  set_dacsize
-set_dacsize	PROC	NEAR
-
-	mov	dx,3C4H 		;permit 8 bit operation
-	mov	al,0C1H 		;if the dac is only a 6 bit dac,
-	out	dx,al			; permitting 8 bit operation has
-	inc	dx			; no effect.
-	in	al,dx
-	and	al,NOT 1
-	or	al,bl
-	out	dx,al
-
-;	Enable an 8 bit DAC if there is 1
-
-	mov	dx,46e8h
-	mov	al,16h
-	out	dx,al			; disable VGA
-	out	dx,al
-
-	mov	dx,3c4h 		; enable Integrator
-	mov	al,0d0h
-	out	dx,al
-
-	mov	al,0bh			; talk to CA1
-	out	dx,al
-
-	push	bx
-	shl	bx,1
-	or	bl,1
-	inc	dx
-	in	al,dx			;bit 0 = (1 then CA1 is output, 0 then
-	and	al,0fch 		; CA1 is an input). Bit 0 should = 1
-	or	al,bl			;bit 1 = (1 then 8 bit DAC, 0 then
-	out	dx,al			; 6 bit DAC)
-
-	mov	al,0eh			; re-enable VGA
-	mov	dx,046e8h
-	out	dx,al
-	out	dx,al
-
-	mov	dac_size,2
-	pop	bx
-	or	bx,bx			;if setting 6 bit dac then done
-	je	@F
-
-	mov	dx,03C7H		;preserve DAC entry 0
-	sub	al,al
-	out	dx,al
-	add	dl,2
-	in	al,dx
-	mov	bh,al
-	in	al,dx
-	mov	bl,al
-	in	al,dx
-	mov	ah,al
-
-	dec	dx			; see if DAC supports 8 bits out
-	sub	al,al
-	out	dx,al
-	inc	dx
-	mov	al,80H			;write 808080H into index 00
-	out	dx,al
-	out	dx,al
-	out	dx,al
-
-	sub	dl,2
-	sub	al,al
-	out	dx,al
-	add	dl,2
-	in	al,dx			;8 bit dac/6 bit dac al = 80/00
-	add	al,80H			;   00/80
-	shr	al,6			;   00/02
-	mov	dac_size,al
-
-	mov	dx,03C8H		;restore DAC entry 0
-	sub	al,al
-	out	dx,al
-	inc	dx
-	mov	ah,al
-	out	dx,al
-	mov	al,bl
-	out	dx,al
-	mov	al,bh
-	out	dx,al
-
-	cmp	dac_size,2
-	jne	@F
-
-	mov	dx,3C4H 		;dac cannot handle 8 bits
-	mov	al,0C1H 		; so reset the DAC output to 6 bit mode
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,NOT 1
-	out	dx,al
-
-@@:     ret
-
-set_dacsize	ENDP
-
-
-
 ;	set_cursor_addr
 ;
 ;	This routine sets the address from which the hardware will fetch
@@ -1119,82 +1009,7 @@ set_cursor_addr 	ENDP
 
 	assumes ds,Data
 	assumes es,nothing
-
-	public	setmode
-setmode proc    near
-
-	call	clear_video_ram
-	mov	ax,6F05H
-	mov	bx,Vmode		; set display mode
-        int     10h
-
-        mov     ax,0ea06h               ; enable V7 VGA extentions
-	mov	dx,03c4h
-        out     dx,ax
-
-	mov	ax,0FF94h		;set pointer pattern address
-        out     dx,ax
-
-	mov	dx,3d4H 		;set logical line length
-	mov	al,13H
-	out	dx,al
-	inc	dx
-	in	al,dx
-	cmp	al,40H
-	mov	al,80H
-	ja	@F
-	mov	al,40H
-@@:	out	dx,al
-
-	cmp	Vmode,68H
-	jne	setmode_not_720_512
-
-	mov	dx,3d4h
-	mov	al,3
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,07FH 		;turn off light pen read at 10,11
-	out	dx,al
-	dec	dx
-
-	mov	al,11H
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,07FH 		;turns off write protect cr0-7
-	out	dx,al
-	dec	dx
-
-	mov	ax,0ff12h
-	out	dx,ax
-
-	mov	al,7
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,0BDH
-	or	al,2
-	out	dx,al
-
-setmode_not_720_512:
-	cmp	Vmode,6AH
-	jne	@F
-
-	mov	dx,3DAH
-	in	al,dx
-	mov	dx,3C0H
-	mov	al,6
-	out	dx,al
-	or	al,al
-	out	dx,al
-	mov	al,20H
-	out	dx,al
-
-@@:	 ret
-
-setmode endp
-
+	externNP setmode	; in VESAFNS.ASM
 	public	farsetmode
 farsetmode     proc    far
 	call	setmode
@@ -1524,7 +1339,7 @@ int_10h_hook   proc far
 
 	WriteAux <'Hooking int 10'>
 IFDEF   DEBUGAUX
-;	 int	 3
+	int	 3
 ENDIF
 
 	pushf

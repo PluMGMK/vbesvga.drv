@@ -1870,6 +1870,7 @@ rtENDIF
 ;
 ;----------------------------------------------------------------------------;
 ;
+	assumes ds,nothing
 	test	accel,HAVE_WIDTH_VECT
 	jz	wce_have_width
 ;
@@ -3122,4 +3123,3 @@ get_device_data endp
 
 sEnd	Code
 	end
-

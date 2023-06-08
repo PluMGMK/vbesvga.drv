@@ -3,12 +3,13 @@
 ; display.def
 ;
 ; Copyright (c) 1991 Microsoft Corporation.  All Rights Reserved.
+; Copyright (c) 2023 PluMGMK.
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 LIBRARY     DISPLAY
 
-DESCRIPTION 'DISPLAY : 100, 96, 96 : Multi-resolution 256 color driver.'
+DESCRIPTION 'DISPLAY : 100, 96, 96 : Multi-resolution multi-depth driver.'
 
 ;STUB        'WINSTUB.EXE'
 EXETYPE     WINDOWS
@@ -82,6 +83,12 @@ IMPORTS
 
     __NEXTSEG			= KERNEL.114
     __A000                      = KERNEL.174
+    __B000                      = KERNEL.181
+    __B800                      = KERNEL.182
+    __C000                      = KERNEL.195
+    __D000                      = KERNEL.179
+    __E000                      = KERNEL.190
+    __F000                      = KERNEL.194
 
     AllocCSToDSAlias    	= KERNEL.170
     AllocDSToCSAlias	      	= KERNEL.171
@@ -90,4 +97,3 @@ IMPORTS
     PrestoChangeoSelector	= KERNEL.177
     __WinFlags			= KERNEL.178
 ;   LongPtrAdd                  = KERNEL.180
-

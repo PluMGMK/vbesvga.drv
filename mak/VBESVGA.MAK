@@ -1,4 +1,4 @@
-# File: V731VGA.MAK - Makefile for VRAM Windows display driver.
+# File: VBESVGA.MAK - Makefile for VRAM Windows display driver.
 # Date: 10/10/89
 #
 # The assembly of each individual module (and the linking phase) is performed
@@ -31,9 +31,9 @@ RC      = $(TOOLS)rc
 INC     = -I$(DDK)\inc -I$(SRC)\ -I$(SRC)\inc   # additional include directories
 
 ASMFLAGS = -B63 -v -ML 	                        # assmebler flags
-ASMOPTS = -DPALETTES -DHIRES -DPROTECTEDMODE    # assembler options
+ASMOPTS = -DPALETTES -DHIRES -DPROTECTEDMODE -DDEBUGAUX   # assembler options
 
-NAME = V731VGA
+NAME = VBESVGA
 
 $(OBJ)\v31.obj:         $(SRC)\v31.asm
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
@@ -242,6 +242,11 @@ $(OBJ)\inquire.obj:     $(SRC)\inquire.asm
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
+$(OBJ)\int10.obj:       $(SRC)\int10.asm
+			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
+			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
+			$(ASM) < vrammak
+
 $(OBJ)\pixel.obj:       $(SRC)\pixel.asm
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
@@ -348,6 +353,11 @@ $(OBJ)\trn_pal.obj:     $(SRC)\trn_pal.asm
 $(OBJ)\vgastate.obj:    $(SRC)\vgastate.asm     \
 			$(SRC)\inc\bank.inc
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
+			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
+			$(ASM) < vrammak
+
+$(OBJ)\vesafns.obj:     $(SRC)\vesafns.asm
+			echo $(ASMFLAGS) $(INC) $(SRC)\vesafns      > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
@@ -504,7 +514,7 @@ $(RES)\drv256.res:      $(RES)\drv256.rc        \
 		$(RES96)\lefti.bmp      \
 		$(RES96)\righti.bmp     \
 ###             $(RES)\ver.h            \
-		$(RES)\v731vga.rcv
+		$(RES)\vbesvga.rcv
 	cd $(RES)
 	$(RC) $(RCFLAGS) -r drv256.rc drv256.res
 	cd $(MAK)
@@ -543,6 +553,7 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\fb.obj           \
 		$(OBJ)\getrle.obj       \
 		$(OBJ)\inquire.obj      \
+		$(OBJ)\int10.obj        \
 		$(OBJ)\pixel.obj        \
 		$(OBJ)\output.obj       \
 		$(OBJ)\polyline.obj     \
@@ -559,19 +570,20 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\strblt.obj       \
 		$(OBJ)\stretch.obj      \
 		$(OBJ)\trn_pal.obj      \
+		$(OBJ)\vesafns.obj      \
 		$(OBJ)\vgastate.obj     \
 		$(OBJ)\vgavram.obj      \
 		$(OBJ)\3xswitch.obj     \
 		$(OBJ)\bs216.obj        \
-		$(MAK)\v7256.def        \
+		$(MAK)\vbesvga.def      \
 		$(RES)\drv256.res
-	copy v7256.def $(OBJ)
+	copy vbesvga.def $(OBJ)
 	copy lnkcmd31 $(OBJ)
 	cd $(OBJ)
 	del display.drv
 	del display.map
 	$(LNK) @lnkcmd31
-	del v7256.def
+	del vbesvga.def
 	del lnkcmd31
 	copy display.map $(MAK)
 	copy display.drv $(MAK)

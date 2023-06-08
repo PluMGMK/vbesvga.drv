@@ -30,6 +30,7 @@ incDrawMode = 1				; include the drawmode definitions
 	externFP exclude_far
 	externFP unexclude_far
 	externFP far_set_bank_select
+	externFP setramdac
 ;
 sBegin	Data
 ;
@@ -72,7 +73,7 @@ sBegin	PaletteSeg
 ;	Parameters:							;
 ;		wNumEntries --	Number of entries in the table. 	;
 ;									;
-;		lpTranlate  --	A long pointer to the translate table	;
+;		lpTranslate --	A long pointer to the translate table	;
 ;				A NULL initializes the table(this case)	;
 ;				ignore the first parameter		;
 ;	Returns:		 					;
@@ -123,14 +124,8 @@ sepatr_05:
 	jmp	SetPaletteTranslate_Ret
 
 set_translate_table:
-IF	0
-	mov	cx,NUM_PALETTES - 20	; no of indices to copy
-	add	si	,20
-	lea	di	,[PaletteTranslationTable + 10]
-ELSE
 	mov	cx,NUM_PALETTES 	; no of indices to copy
 	lea	di	,[PaletteTranslationTable]
-ENDIF
 
 
 @@:
@@ -623,53 +618,6 @@ update_colors_exit:
 
 	xor	ax,ax			; show success
 cEnd
-
-
-;
-;	setramdac
-;	PARMS:
-;	ax	index to 1st palette entry
-;	cx	count of indices to program
-;	ds:si	-> 256 double words  (ds MUST!! be driver data segment)
-;
-
-.286
-assumes  ds,Data
-assumes  es,nothing
-
-PUBLIC	setramdac
-setramdac	PROC	FAR
-
-	mov	dx,3c8h 		;Color palette write mode index reg.
-        out     dx,al
-        inc     dx
-
-        mov     bl,al                   ; bl = current index
-        mov     bh,cl                   ; bh = count
-        add     bh,bl                   ; bh = end
-
-        mov     cl,dac_size             ;0 for 8 bit dacs, 2 for 6 bit dacs
-
-setramdac_loop:
-        lodsb
-	shr	al,cl
-	out	dx,al
-	lodsb
-	shr	al,cl
-	out	dx,al
-        lodsb
-	shr	al,cl
-	out	dx,al
-        inc     si                      ;step past reserved byte
-
-        inc     bl
-        cmp     bl,bh
-        jne     setramdac_loop
-
-setramdac_exit:
-        ret
-
-setramdac	ENDP
 
 ;--------------------------------------------------------------------------
 ; SetPalette - new windows 3.0 function which sets the values in the ramdac

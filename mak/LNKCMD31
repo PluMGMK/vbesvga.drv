@@ -32,6 +32,7 @@ enum.obj +
 fb.obj + 
 getrle.obj + 
 inquire.obj + 
+int10.obj + 
 pixel.obj + 
 output.obj + 
 polyline.obj + 
@@ -48,6 +49,7 @@ sswitch.obj +
 strblt.obj + 
 stretch.obj + 
 trn_pal.obj + 
+vesafns.obj + 
 vgastate.obj + 
 vgavram.obj + 
 3xswitch.obj + 
@@ -55,5 +57,5 @@ bs216.obj
 display.drv 
 display.map/map/al:16 
 libw/NOD 
-v7256.def 
+vbesvga.def 
 

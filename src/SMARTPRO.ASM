@@ -1968,8 +1968,15 @@ preset_pro_text proc	near
 ;
 	mov	ax,non_clipped_drawing_functions[bx]	; load color routines
 	mov	cx,clipped_drawing_functions[bx]
-	mov	si,ax					; si | di will not be
-	mov	di,cx					; used by color.
+	; There were a "mov si,ax" "and mov di,ax" here, and the next label,
+	; "preset_pro_text_lookup_func", skipped over setting SI and DI.
+	; This was fine on the actual V7, because "BitsaPixel" was always 8,
+	; so the values of SI and DI never actually got used in BUILDSTR.ASM.
+	; It's only by using high-colour modes with VBE that this incorrect
+	; code got exposed!
+	; Another note: actually, the check for "BitsaPixel == 8" was itself
+	; incorrect, as it was just checking for a colour map, which should
+	; really be "BitsaPixel != 1"!
 ;
 	test	bl,MASK_DEVBM			; is this color?
 	errnz	<MASK_DEVBM and 0FF00h>
@@ -1978,6 +1985,7 @@ preset_pro_text proc	near
 	mov	ax,mono_non_clipped_drawing_functions[bx]
 	mov	cx,mono_clipped_drawing_functions[bx]
 ;
+preset_pro_text_lookup_func:
 rtIF	BigFontFlags
 ; 32 bit table lookups
 	mov	si,special386_case_non_clip_tables[bx]
@@ -1988,7 +1996,6 @@ rtELSE
 	mov	di,special_case_clip_tables[bx]
 rtENDIF
 ;
-preset_pro_text_lookup_func:
 	mov	non_clipped_table,si
 	mov	clipped_table,di
 	mov	ss_draw,ax
@@ -2698,4 +2705,3 @@ endif; VGA256X
 sEnd	Code
 	end
 ;
-

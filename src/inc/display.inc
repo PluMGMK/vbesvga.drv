@@ -190,6 +190,7 @@ sBegin  Data
 
 	EXTRN VScreen_Width:WORD
 	EXTRN VScreen_Height:WORD
+	EXTRN VScreen_Depth:BYTE
 	EXTRN Vmode:WORD
 sEnd    Data
 ENDIF

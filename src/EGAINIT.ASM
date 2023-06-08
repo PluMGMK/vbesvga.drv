@@ -26,6 +26,7 @@ incDevice = 1				;allow assembly of needed constants
 	include gdidefs.inc
         include display.inc
 	include macros.mac
+	include int3.inc
 	.list
 
 	??_out	egainit
@@ -40,12 +41,11 @@ sBegin	Data
 
 sEnd	Data
 
-;createSeg _INIT,InitSeg,byte,public,CODE
-;sBegin  InitSeg
-;assumes cs,InitSeg
+createSeg _INIT,InitSeg,byte,public,CODE
+sBegin  InitSeg
+assumes cs,InitSeg
 
-sBegin	Code
-assumes cs,Code
+externNP SetupInt10h	; in INT10.ASM
 
 page
 
@@ -63,7 +63,7 @@ page
 ; Registers Destroyed:
 ;	AX,BX,CX,DX,ES,FLAGS
 ; Calls:
-;	int 10h
+;	SetupInt10h
 ; History:
 ;       Mon 26-Mar-1990 -by-  Todd Laney [ToddLa]
 ;       Now fails loading on pre-286 machines
@@ -98,11 +98,19 @@ cBegin
         test    bx,WF_CPU086+WF_CPU186
         jnz     dev_init_exit
 
+	; make sure we can call int 10h from Protected Mode...
+	call	SetupInt10h
+	test	ax,ax
+	jz	dev_init_exit
+
+	; VESA Protected Mode Interface, if availablem, gets setup later, in
+	; ENABLE.ASM, because we need to allow the user to specify how to check
+	; the structure's integrity...
+
 	mov	ax,1				;no way to have error
 dev_init_exit:
 cEnd
 
-;sEnd	 InitSeg
-sEnd	Code
+sEnd	 InitSeg
 
 end

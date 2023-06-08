@@ -1,4 +1,4 @@
-v7vga:  src
+vbesvga:  src
 
 # Build modes. OFFICIAL is set only by the official builder
 #              FINAL is set only for the final ship version.
@@ -13,5 +13,5 @@ RCFINAL=-DFINAL
 
 src:
         cd mak
-        make RCFLAGS="$(RCOFF) $(RCFINAL)" v731vga.mak
+        make RCFLAGS="$(RCOFF) $(RCFINAL)" vbesvga.mak
         cd ..

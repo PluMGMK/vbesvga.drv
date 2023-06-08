@@ -245,29 +245,23 @@ ifdef   EXCLUSION                       ; If exclusion required
         mov     di,dx                   ; bottom
         call    exclude_far             ; Exclude the area
 endif
-;
-	mov	ax,MEMORY_WIDTH 	;Compute starting address of scan
-        mul     y                       ; Better on 286 than explicit shifts
-;
         lds     si,lp_device            ; --> physical device
         assumes ds,nothing
+;
+	mov	ax,[si].bmWidthBytes 	;Compute starting address of scan
+        mul     y                       ; Better on 286 than explicit shifts
+;
         add     ax,wptr [si].bmBits     ; add in magic offset
-ifdef VGA256X
-        mov     bx,x
-
-        SET_WRITE_MAP bl
-        SET_READ_MAP bl
-
-        shiftr  bx,2
-        add     ax,bx
-else
         adc     dl,dh
-        add     ax,x                    ; add in x offset
+	mov	cx,[si].bmBitsPixel
+	sar	cx,3			; divide by eight to get bytes
+	xor	bx,bx
+@@:	add	bx,x
+	loop	@B
+        add     ax,bx                   ; add in x offset
         adc     dl,dh
 
         SET_BANK                        ; perform the video h/w bank select
-
-endif; VGA256X
 ;
         mov     bx,[si].bmBits.sel      ; Set screen segment
         mov     ds,bx
