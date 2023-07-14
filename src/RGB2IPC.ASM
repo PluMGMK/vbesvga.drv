@@ -188,6 +188,13 @@ PhysicalIndexTable label   byte
 ;
 SystemPaletteColors	equ	20
 ;
+	externB		red_shr
+	externB		red_shl
+	externB		green_shr
+	externB		green_shl
+	externB		blue_shr
+	externB		blue_shl
+
 sEnd Data
 ;
 ;-------------------------==============================-----------------------
@@ -200,6 +207,7 @@ sBegin Code
 	assumes es, nothing
 ;
 	extrn	_cstods:word		; our data segment
+        externB ??BigFontFlags
 ;
 ; At this point,
 ;    AL contains the RED intensity that we're going to use.
@@ -218,6 +226,10 @@ cBegin
 	mov	bx, ax			; logical colors are in
 	mov	ds,cs:_cstods
         sub     cx, cx                  ; bl: red, bh: green, dl: blue
+
+	cmp	[red_shr],-1
+	jne	NoPalette
+
 	mov	cl, SystemPaletteColors ; CX=Size of Physical Palette
 	xor	ax, ax
 	dec	ax
@@ -294,7 +306,97 @@ EndItNow:
 	mov	si, DataOFFSET PhysicalIndexTable
 	or	ax, [bx+si]		    ; preserve exact match flag!!
 	mov	dx, 0ff00h
+	jmp	RGB2IPC_Done
+
+NoPalette:
+	; Here BL=red, BH=green, DL=blue
+	; Store the out colour in SI:DI
+	xor	si,si
+	mov	di,si
+
+	; do red:
+	xor	ax,ax
+	mov	al,bl
+	mov	cl,red_shr
+	shr	ax,cl
+	mov	cl,red_shl
+	call	colour_contribution
+
+	; do green:
+	xor	ax,ax
+	mov	al,bl
+	mov	cl,green_shr
+	shr	ax,cl
+	mov	cl,green_shl
+	call	colour_contribution
+
+	; do blue:
+	xor	ax,ax
+	mov	al,bl
+	mov	cl,blue_shr
+	shr	ax,cl
+	mov	cl,blue_shl
+	call	colour_contribution
+
+	; return the colour
+	mov	dx,si
+	mov	ax,di
+
+	; mark as physical
+	; TODO: What if the device's bitmasks give us colour data in DH?
+	mov	dh,-1
+
+RGB2IPC_Done:
 cEnd
+
+; Take a colour component (R/G/B) in AL, and OR it into SI:DI shifted left by CL
+colour_contribution	proc near
+	test	[??BigFontFlags],-1
+	jz	@@hard_way
+
+	.386
+	push	eax
+	movzx	eax,al
+	shl	eax,cl
+	or	di,ax
+	shr	eax,10h
+	or	si,ax
+	pop	eax
+	ret
+
+@@hard_way:
+	.286
+	; We're on a 286, need to restrict ourselves to 16-bit registers...
+	; There are three cases to deal with:
+	; 1. CL <= 8 --> just SHL AX,CL and OR into DI
+	; 2. CL >= 16 --> just SHL AX,(CL-16) and OR into SI
+	; 3. 8 < CL < 16 --> multiple steps involved...
+	cmp	cl,8
+	jna	@@simple_di
+	cmp	cl,10h
+	jnb	@@simple_si
+
+	; OK, life is complicated!
+	push	ax
+	call	@@simple_di	; do the easy bit first
+	pop	ax
+	sub	cl,10h
+	neg	cl		; CL:=(16-CL)
+	shr	ax,cl		; shift it right by that much
+	jmp	@@exit_si
+
+@@simple_di:
+	shl	ax,cl
+	or	di,ax
+	ret
+
+@@simple_si:
+	sub	cl,10h
+	shl	ax,cl
+@@exit_si:
+	or	si,ax
+	ret
+colour_contribution	endp
 
 sEnd	Code
 ;

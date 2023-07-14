@@ -36,6 +36,7 @@ sBegin	Code
 	assumes ss,StrStuff
 
 	externB ??BigFontFlags
+	externW MemoryWidth
 
 	define_frame jak_build_string	    ; Define strblt's frame
 cBegin	<nogen>
@@ -640,7 +641,7 @@ tv7omc_next_scan:
 	pop	di
 	pop	si
 	add	si,jak_text_buffer_width
-	add	di,MEMORY_WIDTH
+	add	di,MemoryWidth
 	dec	jak_temp_height
 	jne	tv7omc_left_edge
 	jmp	tv7mc_done
@@ -674,7 +675,7 @@ tv7tmc_next_scan:
 	pop	di
 	pop	si
 	add	si,jak_text_buffer_width
-	add	di,MEMORY_WIDTH
+	add	di,MemoryWidth
 	dec	jak_temp_height
 	jne	tv7tmc_left_edge
 
@@ -759,7 +760,8 @@ bsd_prep_done_edges:
 
 	mov	es,local_ScreenSelector
 	mov	ax,text_bbox.top	;Compute Y component of the string
-	mov	dx,MEMORY_WIDTH / 8
+	mov	dx,MemoryWidth
+	shr	dx,3
 	mul	dx			;for 216 mono to color expansion,
 	mov	di,ax			; the hw mulitplies the address by 8
 	mov	ax,jak_start_text
@@ -842,7 +844,9 @@ nofb:
 	pop	di
 	pop	si
 	add	si,jak_text_buffer_width
-	add	di,MEMORY_WIDTH / 8
+	mov	bx,MemoryWidth
+	shr	bx,3
+	add	di,bx
 	dec	jak_temp_height
 	jne	t216omc_left_edge
 	jmp	t216mc_done
@@ -876,7 +880,7 @@ t216tmc_next_scan:
 	pop	di
 	pop	si
 	add	si,jak_text_buffer_width
-	add	di,MEMORY_WIDTH
+	add	di,MemoryWidth
 	dec	jak_temp_height
 	jne	t216tmc_left_edge
 

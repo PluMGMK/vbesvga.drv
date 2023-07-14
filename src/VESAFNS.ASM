@@ -117,6 +117,7 @@ PMInfoBlock	ends
 sBegin	Data
 
 externW	ScreenSelector
+externW	ColourFormat
 EXTRN	dac_size:byte
 
 ; From INT10.ASM
@@ -168,6 +169,24 @@ PMIntStack	FARPOINTER <PM_STACK_LEN,?>
 ; Real-Mode buffer for palette entries (if needed)
 RMPaletteSel	dw 0
 RMPaletteSeg	dw 0
+
+; these are all to help with colour conversion - set to FFh if using palettes
+public	red_shr
+red_shr		db 0FFh	; how far right to shift red byte (8-RFieldSize)
+public	red_shl
+red_shl		db 0FFh	; how far left to shift it before ORing in (RFieldPos)
+public	green_shr
+green_shr	db 0FFh	; how far right to shift green byte (8-GFieldSize)
+public	green_shl
+green_shl	db 0FFh	; how far left to shift it before ORing in (GFieldPos)
+public	blue_shr
+blue_shr	db 0FFh	; how far right to shift blue byte (8-BFieldSize)
+public	blue_shl
+blue_shl	db 0FFh	; how far left to shift it before ORing in (BFieldPos)
+
+; Scan line length for ease of access in certain parts of the driver...
+public	MemWidth
+MemWidth	dw ?
 
 sEnd	Data
 
@@ -252,6 +271,8 @@ CALL_PMINT	macro
 sBegin  Code
 assumes cs,Code
 
+externW		_cstods	; in CURSOR.ASM
+
 ; From INT10.ASM
 externFP	DoInt10h
 
@@ -270,6 +291,8 @@ VESAWinBSeg	dw ?
 public	VESABankSwitch
 VESABankSwitch	FARPOINTER <?,?>
 OFF_VESA_SLL	equ $-VESAModeStruct
+public	MemoryWidth
+MemoryWidth	label word	; Alias to avoid overusing "VESA" elsewhere...
 VESAScanLineLen	dw ?	; in bytes
 OFF_VESA_WIDTH	equ $-VESAModeStruct
 VESAWidth	dw ?	; in pixels
@@ -277,6 +300,8 @@ OFF_VESA_HEIGHT	equ $-VESAModeStruct
 VESAHeight	dw ?	; in pixels
 VESACharCellW	db ?	; in pixels
 VESACharCellH	db ?	; in pixels
+public	ColourFormat_CS
+ColourFormat_CS	label word	; Colour Format in "Code" segment
 VESAMemPlanes	db ?
 OFF_VESA_DEPTH	equ $-VESAModeStruct
 VESABPP		db ?	; bits per pixel, must be at least 8
@@ -1137,8 +1162,9 @@ cEnd
 ;	takes pointers to GDIInfo and BITMAP structures, and fills them in
 ;	with info for the currently-selected VESA SVGA video mode.
 ; Entry:
+;	DS	= Data
 ;	ES:SI	= GDIInfo structure
-;	ES:DI	= BITMAP structure
+;	ES:DI	= int_phys_device structure
 ;	
 ; Returns:
 ;	Nothing
@@ -1153,7 +1179,7 @@ cEnd
 ;--------------------------------------------------------------------------;
 public	vesa_gdi_fixup
 vesa_gdi_fixup	proc near
-	assumes	ds,nothing
+	assumes	ds,Data
 	assumes	es,nothing
 
 	push	ds
@@ -1165,15 +1191,21 @@ vesa_gdi_fixup	proc near
 	mov	ax,[VESAWidth]
 	mov	bx,[VESAHeight]
 	mov	cx,[VESAWinASeg]
-	mov	dl,[VESABPP]
-	xor	dh,dh
+	mov	dx,[ColourFormat_CS]
 	mov	es:[si].dpHorzRes,ax
         mov     es:[di].bmWidth,ax
 	mov	es:[si].dpVertRes,bx
         mov     es:[di].bmHeight,bx
         mov     es:[di].bmBits.sel,cx           ;fixup device pointer
-	mov	es:[si].dpBitsPixel,dx
-	mov	es:[di].bmBitsPixel,dl
+	mov	wptr es:[di].bmPlanes,dx	;also covers bmBitsPixel
+
+	; set planes and depth (one word each) in GDIInfo
+	xor	ah,ah
+	mov	al,dh
+	mov	es:[si].dpBitsPixel,ax
+	mov	al,dl
+	mov	es:[si].dpPlanes,ax
+
 	mov	ax,[VESAScanLineLen]
 	mov	cx,ax
         mov     es:[di].bmWidthBytes,ax
@@ -1182,6 +1214,7 @@ vesa_gdi_fixup	proc near
         mov     es:[di].bmWidthPlanes.hi,dx
 	; set the # of scanlines per segment
 	mov	ax,[VESAWinSize]
+	cwd		; set DX to zero for the DIV we do below
 	mov	bx,40h	; 64 kiB is size of segment
 	sub	bx,ax	; is the VESA window any smaller than 64k?
 	jb	@F
@@ -1191,19 +1224,49 @@ vesa_gdi_fixup	proc near
 @@:
 	shl	ax,9	; HALF the window size in bytes (so it fits in AX)
 	shl	ax,1	; now double it
-	rcl	dx,1	; and carry into DX
+	rcl	dx,1	; and carry into DX (set to zero by CWD above)
 	div	cx
 	mov	es:[di].bmScanSegment,ax
+
+	; TODO: set the geometric stuff in the GDIInfo struct
 
 	; we only support palettes for packed-pixel modes
 	cmp	[VESAMemModel],VESA_MEM_PACKED
 	je	@F
 RC_PALETTE	equ 0000000100000000b	; can do color palette management
 	and	es:[si].dpRaster, NOT RC_PALETTE
+
+	; while we're at it, set the full colour conversion parameters
+	push	es
+	mov	es,[_cstods]
+	assumes	es,Data
+	push	si
+	push	di
+	lea	si,VESARFieldSize
+	lea	di,red_shr
+	mov	cx,3	; three colours to setup
+	cld
+@@colourloop:
+	lodsw
+	sub	al,8
+	neg	al	; AL = 8 - FieldSize
+	stosw
+	loop	@@colourloop
+	pop	di
+	pop	si
+	pop	es
 @@:
 
+	; now set the ColourFormat too
 	pop	ds
-	assumes	ds,nothing
+	assumes	ds,Data
+        mov     ax,wptr es:[di].bmPlanes
+	mov	[ColourFormat],ax
+
+	; and the MemWidth
+	mov	ax,es:[di].bmWidthBytes
+	mov	[MemWidth],ax
+
 	ret
 vesa_gdi_fixup	endp
 
@@ -1247,6 +1310,31 @@ set_dacsize	PROC	NEAR
 
 set_dacsize	ENDP
 
+
+;---------------------------Public-Routine------------------------------;
+; setmode
+;
+;   Places the card in graphics mode
+;
+; Entry:
+;	ES:DI --> ipd_format in our pDevice
+;	DS:    =  Data
+; Returns:
+;	AX = VBE_INT10_FN
+; Error Returns:
+;	AL = VBE_INT10_FN
+;	AH = Error Code
+; Registers Preserved:
+;	CX,DX,BP,SI,DI,ES,DS
+; Registers Destroyed:
+;	AX,BX,FLAGS
+; Calls:
+;	PMIntEntry
+;	- OR -
+;	DoInt10h
+; History:
+;	See Git
+;-----------------------------------------------------------------------;
 public	setmode
 setmode	proc near
 	assumes ds,Data

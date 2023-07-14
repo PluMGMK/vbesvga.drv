@@ -285,14 +285,14 @@ source_aligned_copy_loop:
 	inc	word ptr src_bank
 	mov	dx,src_bank
 	clc
-	call	set_banko
+	SET_BANK	; call	set_banko
 
 @@:	cmp	di,ax
 	jae	@F
 	inc	word ptr dst_bank
 	mov	dx,dst_bank
 	stc
-	call	set_banko
+	SET_BANK	; call	set_banko
 @@:	jmp	short	source_aligned_copy_loop
 
 sa_copy_up:
@@ -302,14 +302,14 @@ sa_copy_up:
 	dec	word ptr src_bank
 	mov	dx,src_bank
 	clc
-	call	set_banko
+	SET_BANK	; call	set_banko
 
 @@:	cmp	di,ax
 	jb	@F
 	dec	word ptr dst_bank
 	mov	dx,dst_bank
 	stc
-        call    set_banko
+        SET_BANK	; call    set_banko
 @@:	jmp	short	source_aligned_copy_loop
 
 source_aligned_copy_done:
@@ -381,7 +381,7 @@ bltstos_srccopy_prep	PROC	NEAR
         mov     src_blt_offset,ax
 	mov	src_bank,dx
 	clc
-	call	set_banko
+	SET_BANK	; call	set_banko
 
         mov     ax,DestyOrg
         mov     bx,DestxOrg
@@ -394,7 +394,7 @@ bltstos_srccopy_prep	PROC	NEAR
         mov     dst_blt_offset,ax
 	mov	dst_bank,dx
 	stc
-	call	set_banko
+	SET_BANK	; call	set_banko
 
 	mov	ah,FUNC_COPY or PLANAR_MODE
 	mov	al,WRITE_MODE_1 or SET_RESET_FOREGROUND

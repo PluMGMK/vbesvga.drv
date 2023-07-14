@@ -190,7 +190,7 @@ endif
 ; that the EGA will be running in.
 ;
 	externA __NEXTSEG		; Selector to the screen
-	externA COLOR_FORMAT		; Color format (0103h or 0104h)
+;	externA COLOR_FORMAT		; Color format (0103h or 0104h)
 ;
 ifdef  PALETTES
 	externB PaletteModified		; set when palette is modified
@@ -223,6 +223,8 @@ assumes cs,Code
 	public	??BigFontFlags
 ??BigFontFlags	db	0		; FALSE = real mode or 286 procesor
 					; TRUE	= 386 protected mode
+	externW	ColourFormat_CS
+	externW	MemoryWidth
 
 ;--------------------------Exported-Routine-----------------------------;
 ; Strblt
@@ -681,7 +683,7 @@ get_mode proc	near
 	and	bx,HAVE_WIDTH_VECT shl (8-2) ; Also clears BL for "excel" flags
 ;
         lds     si,lp_device
-	mov	dl,[si].bmBitsPixel	; mono=1,color=8
+	mov	dl,[si].bmBitsPixel	; mono=1,color>=8
 	mov	BitsaPixel,dl
 ;
 	lds	si,xlate_draw_mode	; Most information is in the DrawMode
@@ -2774,7 +2776,7 @@ output_o_rect	endp
 ;--------------------------Private-Routine------------------------------;
 ; get_device_data
 ;
-;   All device specific local variables are intiialized.
+;   All device specific local variables are intialized.
 ;
 ;   This function must be called after both get_clip and quick_clip
 ;   (when the character count is positive) have been called.  This
@@ -2895,7 +2897,7 @@ endif
 ; The exclusion has been taken care of.  Now initialize
 ; the frame variables for the display.
 ;
-	mov	ax,MEMORY_WIDTH 	; Compute adjustment from bottom
+	mov	ax,MemoryWidth 		; Compute adjustment from bottom
 	mov	next_scan,ax		; of character to top of
 	mul	clipped_font_height	; AX holds next row offset
 	mov	bx,ax			; bx holds the text size (for below)
@@ -2932,7 +2934,7 @@ gdd_small_bitmap:
 ;
 	mov	ax,[si].bmWidthBytes	; Compute index to next plane and
 ;;;     mov     next_plane,ax           ; to the next scan
-	mov	bx,COLOR_FORMAT
+	mov	bx,[ColourFormat_CS]
 	xor	bh,bh
 	mul	bx
 	mov	next_scan,ax
@@ -2952,7 +2954,7 @@ gdd_finish_bitmap:
 	mov	cell_adjust,ax
 	mov	ax,wptr [si].bmPlanes
 	errnz	bmBitsPixel-bmPlanes-1
-	cmp	ax,COLOR_FORMAT
+	cmp	ax,[ColourFormat_CS]
 	je	gdd_is_color_bitmap
 ;
 	mov	num_planes,1		; Use constant incase bad color format
@@ -3051,7 +3053,7 @@ gdd_have_segment:
 	mov	ax,wptr [si].bmBits[0]
 	mov	off_lp_surface,ax
 	mov	ax,[si].bmWidthBytes	; Compute index to next plane and
-	mov	bx,COLOR_FORMAT
+	mov	bx,[ColourFormat_CS]
 	cmp	bx,wptr [si].bmPlanes
 	je	gdd_have_our_color
 	mov	bl,1			; Force it to be mono

@@ -40,7 +40,6 @@ incDrawMode	= 1			; Include control for gdidefs.inc
 ; Link time constants describing the size and color format
 ; that the VGA will be running in.
 ;
-	externA COLOR_FORMAT		; Color format (0103h or 0104h)
 ;
 ifdef	EXCLUSION
 	externFP exclude_far		; Exclude area from screen
@@ -68,6 +67,7 @@ ERROR_NOT_FOUND equ	-1		; Stop condition not reached
 sBegin	Data
 ;
 	externB enabled_flag		; Non-zero if output allowed
+	externW	ColourFormat
 ;
 sEnd	Data
 ;
@@ -135,6 +135,7 @@ cProc	ScanLR,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
 	parmW	dir_style		; control and search style
 ;
 	localW	width_bits		; actual width of scan in bits
+	localW	colour_format		; copy of this on stack
 	localB	is_device		; set non-zero if the device
 ;
 cBegin
@@ -143,6 +144,8 @@ WriteAux	<'SCANLR'>
 ;
 	mov	al,enabled_flag 	; Load these before trashing DS
 	mov	bx,VScreen_Width
+	mov	cx,ColourFormat
+	mov	colour_format,cx
 	lds	si,lp_device		; --> physical device
 	assumes ds,nothing
 ;
@@ -266,7 +269,8 @@ scan_40:
 scan_50:
 	mov	di,[si].bmWidthBytes	; Get index to next plane
 	mov	cl,MONO_OP		; Assume mono loop
-	cmp	wptr bmPlanes[si],COLOR_FORMAT
+	mov	bx,colour_format
+	cmp	wptr bmPlanes[si],bx
 	jne	scan_70 		; Not our color format, treat as mono
 	errnz	bmBitsPixel-bmPlanes-1
 	mov	cl,COLOR_OP		; Show color loop

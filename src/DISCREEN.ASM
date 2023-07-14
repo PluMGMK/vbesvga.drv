@@ -46,7 +46,6 @@ WF_PMODE        =    0001h
 WF_CPU286       =    0002h
 WF_CPU386       =    0004h
 WF_CPU486       =    0008h
-	externA	COLOR_FORMAT		; own color format
 
 ;----------------------------------------------------------------------------;
 
@@ -62,6 +61,8 @@ endif
 sBegin Data
         externB         enabled_flag
         externD         GetColor_addr           ; DeviceColorMatch vector
+
+	externW		ColourFormat
 
         externB         PaletteTranslationTable
         externB         PaletteModified
@@ -242,6 +243,8 @@ MAP_IS_HUGE     equ     0000100000b     ; source maps spans segments
 
         localD  DeviceColorMatch        ; GDI color match routine
 
+	localW	colour_format		; copy of this on stack
+
         localW  draw_proc               ; routine to call to blt a byte/scan
 	localW	SourceBytesPerScanBlt	; no of bytes in map for 1 scan blt
 	localB	bank_select		; track the current bank of display
@@ -265,6 +268,10 @@ device_is_enabled:
         mov     fbFlags,al
 
         mov     al,PaletteModified
+
+	; get the ColourFormat from DS before we point the segreg elsewhere...
+	mov	ax,[ColourFormat]
+	mov	colour_format,ax
 
         lds     si,lpbi                 ; DS:SI --> BITMAPINFO
         assumes ds,nothing
@@ -345,7 +352,7 @@ discreen_not_transparent:
         jcxz    let_gdi_do_it           ; can't support memory bitmaps here
 
         mov     ax,word ptr es:[di].bmPlanes
-	cmp	ax,COLOR_FORMAT		; our screen format?
+	cmp	ax,colour_format		; our screen format?
         jnz     parameter_error         ; don't support this format
 
 ; save screen-relevant parameters

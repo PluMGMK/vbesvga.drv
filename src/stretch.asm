@@ -37,7 +37,7 @@ incDrawMode     = 1             ;Include GDI DrawMode definitions
 	include NJUMPS.MAC
 	.list
 
-	externA  COLOR_FORMAT           ;Format of device bitmaps (0801)
+;	externA  COLOR_FORMAT           ;Format of device bitmaps (0801)
 	externA  __AHINCR               ;offset to next selector
 	externA  __AHSHIFT              ;offset to next selector
 	externA  __WinFlags             ;WinFlags from KERNEL
@@ -60,7 +60,6 @@ endif
 sBegin  Data
 
 	externB enabled_flag            ;Non-zero if output allowed
-	externW ScratchSel              ; the free selector
 
 sEnd    Data
 
@@ -71,6 +70,7 @@ sBegin  Code
 assumes cs,Code
 
     externW     _cstods                 ; in CURSOR.ASM
+    externW	ColourFormat_CS
 
 WinFlags label word
 	dw      __WinFlags
@@ -1669,8 +1669,8 @@ map_memory:
 
 map_address     endp
 
-;----------------------------Public-Routine----------------------------;
-; copy_device
+;----------------------------Private-Routine---------------------------;
+; copy_dev
 ;
 ; Copy device information to frame.
 ;
@@ -1687,9 +1687,9 @@ map_address     endp
 ; Error Returns:
 ;	Carry set if error (bad color format)
 ; Registers Preserved:
-;	BX,CX,DS,ES,BP
+;	BX,CX,DX,DS,ES,BP
 ; Registers Destroyed:
-;	AX,DX,SI,DI,flags
+;	AX,SI,DI,flags
 ; Calls:
 ;	None
 ; History:
@@ -1720,8 +1720,7 @@ copy_dev_bitmap:
 ;       cmp     ax,0101H                ;Monochrome?
 ;       je      copy_dev_success        ;  Yes  success.
 
-	externA COLOR_FORMAT
-	cmp	ax,COLOR_FORMAT		;Our color?
+	cmp	ax,[ColourFormat_CS]	;Our color?
         jne     copy_dev_bad_clr_format ;  No, complain about color format
 
 copy_dev_20:

@@ -17,6 +17,7 @@ include cmacros.inc
 include gdidefs.inc
 include vgareg.inc
 include vgautil.inc
+include macros.mac
 
 .286
 sBegin	Code
@@ -209,64 +210,11 @@ set_page	PROC	NEAR
 	pop	ax
 	shr	dl,2				;prepare to set bank bits
 	popf					;carry flag is important
-	call	set_banko
+	SET_BANK	;call	set_banko
         sti
         ret
 
 set_page    ENDP				;
-
-;
-;	set_banko
-;
-;	This routine will set the bank select bits according to the value
-;	in DX.
-;
-;	PARMS:
-;	CARRY	CLEAR then assume this is a src address
-;		SET   then assume this is a dst address
-;		NOTE: need to know whether to set read or write bank bits
-;	DL	holds 256K screen bank we need to address
-;
-;	RETURNS:
-;	all vga bits set such that we can access the desired 256K area
-;	NOTE: This routine can be used in both sequential chain 4 mode and
-;	planar modes.
-;
-
-PUBLIC	far_set_banko
-far_set_banko	PROC	FAR
-
-	call	set_banko
-	ret
-
-far_set_banko	ENDP
-
-PUBLIC	set_banko
-set_banko	PROC	NEAR
-
-	push	ax			;save regs
-	push	cx
-	mov	cx,0FC03H		;bank select mask -- assume dst
-	mov	ah,dl
-	jc	@F
-	shl	ah,2
-	mov	cx,0F30CH
-@@:	and	ah,cl
-
-	mov	dx,VGAREG_SQ_ADDR
-	mov	al,VGAREG_SQ_BANK_SELECT
-	out	dx,al			;set the bank select index
-	inc	dx
-	in	al,dx			;get current bank reg value
-	and	al,ch			;mask out the old bank select bits so
-	or	al,ah			; that we can put in a new one
-	out	dx,al			;write it out
-
-	pop	cx			;restore the regs
-	pop	ax
-        ret
-
-set_banko   ENDP			;
 
 
 ;
@@ -323,57 +271,12 @@ set_both_pages	PROC	NEAR
 	pop	dx
 	pop	ax
 	shr	dl,2				;prepare to set bank bits
-	call	set_both_banko
+	SET_BANK	;call	set_both_banko
 	sti
 	pop	dx
         ret
 
 set_both_pages	ENDP				    ;
-
-;
-;	set_both_banko
-;
-;	This routine will set the bank select bits according to the value
-;	in DX. It sets both the src and dst bank to the same value.
-;
-;	PARMS:
-;	DL	holds 256K screen bank we need to address
-;
-;	RETURNS:
-;	all vga bits set such that we can access the desired 256K area
-;	NOTE: This routine can be used in both sequential chain 4 mode and
-;	planar modes.
-;
-
-PUBLIC	far_set_both_banko
-far_set_both_banko	PROC	FAR
-
-	call	set_both_banko
-	ret
-
-far_set_both_banko	ENDP
-
-PUBLIC	set_both_banko
-set_both_banko	PROC	NEAR
-
-	push	ax			;save regs
-	and	dl,03H
-	mov	ah,dl
-	shl	ah,2
-	or	ah,dl
-
-	mov	dx,VGAREG_SQ_ADDR
-	mov	al,VGAREG_SQ_BANK_SELECT
-	out	dx,al			;set the bank select index
-	inc	dx
-	in	al,dx			;get current bank reg value
-	and	al,0F0H 		;mask out the old bank select bits so
-	or	al,ah			; that we can put in a new one
-	out	dx,al			;write it out
-	pop	ax
-	ret
-
-set_both_banko	ENDP			    ;
 
 sEnd    Code
 

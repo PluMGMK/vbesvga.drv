@@ -50,6 +50,7 @@ sBegin	Data
 	externD adPalette
         externB abPaletteAccl
 	externB enabled_flag
+	externW MemWidth
 ;
 
 PUBLIC	dac_size
@@ -537,6 +538,7 @@ cProc	UpdateColors,<FAR,PUBLIC,WIN,PASCAL>,<ds,es,si,di>
 	parmD	lpTranslate
 	localB	UCBankSelect		; current bank select
 	localW	nRows			; no of rows
+	localW	mWidth			; save MemWidth on the stack
 	assumes ds,Data
 	assumes es,nothing
 ;
@@ -566,7 +568,8 @@ endif
 	mov	es,ax
 	assumes es,nothing
 	mov	ax,wStartY		; the starting row
-	mov	bx,MEMORY_WIDTH
+	mov	bx,MemWidth
+	mov	mWidth,bx		; save on stack for later
 	mul	bx
 	mov	di,wStartX		; the starting X coordinate
 	mov	cx,di			; save it in cx
@@ -600,7 +603,7 @@ byte_loop:
 ; all done with this row, advance the pointer and possibly, the segment
 ;
 	pop	di			; get back the start address
-	add	di,MEMORY_WIDTH 	; go to the next scan
+	add	di,mWidth 		; go to the next scan
 	jnc	row_completed		; no segment wrap, continue on...
 	inc	UCBankSelect		; advance the bank select bit
 	mov	dl,UCBankSelect		; load & set...

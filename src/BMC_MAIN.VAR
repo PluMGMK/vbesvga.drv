@@ -57,3 +57,11 @@ CAN_CROSS_SEG           equ     00010000b
 	localW	rle_getlength
         localW  internal_align
         localV  xlati_1_to_4, 32
+
+	localB	local_red_shr
+	localB	local_red_shl
+	localB	local_green_shr
+	localB	local_green_shl
+	localB	local_blue_shr
+	localB	local_blue_shl
+	localB	total_depth_bytes

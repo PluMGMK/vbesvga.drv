@@ -270,9 +270,7 @@ endif
 	lea	si,physical_device	;DS:SI --> physical device to copy
 
 	mov	cx,PHYS_DEVICE_SIZE		;Set move count
-        mov     ax,di
         rep     movsb
-        mov     di,ax                           ;ES:DI --> pdevice
 	pop	ds
         assumes ds,Data
 ;MMENDS

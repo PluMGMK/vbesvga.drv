@@ -58,6 +58,7 @@ sBegin	Code
 	assumes cs,Code
 	assumes ds,Data
 
+EXTRN   MemoryWidth:word
 
 ;	swcursor_set
 ;
@@ -294,7 +295,7 @@ swcursor_save_screen_loop:
 	rep	movsb
 	pop	cx
 	pop	si
-	add	si,MEMORY_WIDTH
+	add	si,MemoryWidth
 	jnc	@F
 	inc	dx
 	call	far_set_both_pages
@@ -335,7 +336,7 @@ swcursor_restore_screen_loop:
 	rcl	cx,1
 	rep	movsb
 	pop	di
-	add	di,MEMORY_WIDTH
+	add	di,MemoryWidth
 	jnc	@F
 	inc	dx
 	call	far_set_both_pages
@@ -389,7 +390,7 @@ swcursor_draw_loop:
 	add	si,40H					; cursor data
 
         pop     di
-	add	di,MEMORY_WIDTH
+	add	di,MemoryWidth
 	jnc	@F
 	inc	dx
 	call	far_set_both_pages
@@ -459,7 +460,7 @@ swcursor_clip_bottom:
 	add	di,ax
 	sub	di,dx
 
-@@:	mov	ax,MEMORY_WIDTH
+@@:	mov	ax,MemoryWidth
 	mul	dx
 	add	ax,cx
 	mov	save_screen_address,ax

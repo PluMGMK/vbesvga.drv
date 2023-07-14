@@ -83,7 +83,7 @@ end comment ~
 ; INPUTS:                                                                     ;
 ;                                                                             ;
 ;            DS:DI          -----  current byte in BITMAP memory              ;
-;               BL          -----  rotating bit mask for current pixel        ;
+;               BL          -----  bytes per pixel
 ;               SI          -----  offset to next scan line (up or down)      ;
 ;               CX          -----  number of bits to draw                     ;
 ;       wBitmapROP          -----  XOR & AND MASK for current pen and ROP     ;
@@ -93,7 +93,7 @@ end comment ~
 ;                                                                             ;
 ; RETURNS:                                                                    ;
 ;            DS:DI          -----  updated current byte in BITMAP             ;
-;               BL          -----  updated rotating bit mask                  ;
+;               BX          -----  destroyed
 ;               DX          -----  updated numver of scan lines left          ;
 ;                                    this value is maintained in ScanLeft     ;
 ;            AX,CX          -----  destroyed                                  ;
@@ -103,6 +103,31 @@ end comment ~
 ; the next segment and the filler bytes value, and also scanleft should be    ;
 ; from the top of the bitmap memory                                           ;
 ;-----------------------------------------------------------------------------;
+
+; Load colour into AX:DX
+loadcol	macro
+	mov	ax,TmpColor.lo
+	mov	dx,TmpColor.hi
+	endm
+
+; Write BL bytes to DI and ensure BX = bytes written
+writepx	macro
+	mov	bh,bl
+	mov	[di],al
+	dec	bh
+	jz	@F
+	mov	[di+1],ah
+	dec	bh
+	jz	@F
+	mov	[di+2],dl
+	dec	bh
+	jz	@F
+	mov	[di+3],dh
+	dec	bh
+	jz	@F
+	int	3	; Houston, we have a problem...
+@@:
+	endm
 
 loopm	macro	lloop
 
@@ -115,47 +140,52 @@ loopm	macro	lloop
 Bm8_Negative_Y  proc    near
 
 		test	DeviceFlags,TYPE_IS_DEV
-		jz	Bm8_nyskip
+		jz	@F
 		mov	ax,BM8
 		cmp	ax,offset BM8_ROPC
-		jne	Bm8_nyskip
+		jne	@F
 		cmp	FillBytes,0
-		jne	Bm8_nyskip
+		je	Bm8_nynoskip
+@@:
+		jmp	Bm8_nyskip
 
-		mov	al,TmpColor
+Bm8_nynoskip:
+		loadcol		; mov	al,TmpColor
 		dec	cx 	;last pixel addressing?ds:di
 		JZ	NEGYLASTP
 dobankyPos_loop:
-		mov	[di],al
+		writepx		; mov	[di],al
 		add	di,si
 		jc	dobankyPos
 
 	loopm	dobankyPos_loop
 ;;	loop	dobankyPos_loop
 NEGYLASTP:
-		mov	[di],al
+		writepx		; mov	[di],al
 		ret
 dobankyPos:
 		inc	bank_select
 		mov	dl,bank_select
-		call	SetCurrentBankDL
-		mov	al,TmpColor
+		SET_BANK	; call	SetCurrentBankDL
+		loadcol		; mov	al,TmpColor
 	loopm	dobankyPos_loop
 ;;	loop	dobankyPos_loop
-		mov	[di],al
+		writepx		; mov	[di],al
 		ret
 
 Bm8_nyskip:
-                mov     al,TmpColor
+                loadcol		; mov     al,TmpColor
                 dec     cx                  ; take out last pixel from loop
                 jz      bm8_nylast
 bm8_nyloop:
+		int	3
 		call	BM8
 		add	di,si
 		jc	bm8_ny_incbank
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
 bm8_nylast:
+		int	3
 		call	BM8
 		ret
 bm8_ny_incbank:
@@ -163,11 +193,12 @@ bm8_ny_incbank:
 		jz	bm8_ny_segment
 		inc	bank_select
 		mov	dl,bank_select
-		call	SetCurrentBankDL
-		mov	al,TmpColor
+		SET_BANK	; call	SetCurrentBankDL
+		loadcol		; mov	al,TmpColor
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
+		int	3
 		call	BM8
 		ret
 bm8_ny_segment:
@@ -177,6 +208,7 @@ bm8_ny_segment:
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
+		int	3
 		call	BM8
 		ret
 Bm8_Negative_Y  endp
@@ -186,46 +218,51 @@ Bm8_Negative_Y  endp
 Bm8_Positive_Y  proc    near
 
 	test	DeviceFlags,TYPE_IS_DEV
-	jz	Bm8_pyskip
+	jz	@F
 	mov	ax,BM8
 	cmp	ax,offset BM8_ROPC
-	jne	Bm8_pyskip
+	jne	@F
 	cmp	FillBytes,0
-	jne	Bm8_pyskip
+	je	Bm8_pynoskip
+@@:
+	jmp	Bm8_pyskip
 
-	mov	al,TmpColor
+Bm8_pynoskip:
+	loadcol		; mov	al,TmpColor
 	dec	cx 	;last pixel addressing?ds:di
 	jz	pos_y_last
 dobankyNeg_loop:
-	mov	[di],al
+	writepx		; mov	[di],al
 	add	di,si
 	jnc	dobankyNeg
   loopm	dobankyNeg_loop
 ;;loop	dobankyNeg_loop
 pos_y_last:
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret
 dobankyNeg:
 	dec	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
-	mov	al,TmpColor
+	SET_BANK	; call	SetCurrentBankDL
+	loadcol		; mov	al,TmpColor
   loopm	dobankyNeg_loop
 ;;loop	dobankyNeg_loop
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret
 
 Bm8_pyskip:
-        mov     al,TmpColor
+        loadcol		; mov     al,TmpColor
         dec     cx                  ; take out last pixel from loop
         jz      bm8_pylast
 bm8_pyloop:
+	int	3
 	call	BM8
 	add	di,si
 	jnc	bm8_py_decbank
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
 bm8_pylast:
+	int	3
 	call	BM8
 	ret
 
@@ -234,11 +271,12 @@ bm8_py_decbank:
 	jz	bm8_py_segment
 	dec	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
-	mov	al,TmpColor
+	SET_BANK	; call	SetCurrentBankDL
+	loadcol		; mov	al,TmpColor
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
+	int	3
 	call	BM8
 	ret
 
@@ -249,6 +287,7 @@ bm8_py_segment:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
+	int	3
 	call	BM8
 	ret
 
@@ -263,20 +302,20 @@ Bm8_Positive_X	proc	near
 	cmp	cx,8
 	jge	@F
 
-	mov	al,TmpColor
+	loadcol		; mov	al,TmpColor
 	dec	cx
 	jz	bm8_px_last
 bm8_px_loop:
-	mov	[di],al
-	inc	di
+	writepx		; mov	[di],al
+	lea	di,[bx+di] ;inc	di
   loopm	bm8_px_loop
 ;;loop	bm8_px_loop
 bm8_px_last:
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret
 
 bm8_px_skip:
-        mov     al,TmpColor
+        loadcol		; mov     al,TmpColor
         dec     cx
         jz      bm8_x_do_last
 bm8_x_output_loop:
@@ -292,7 +331,7 @@ bm8_x_do_last:
 	push	es
 	mov	ax,ds
 	mov	es,ax
-	mov	al,TmpColor
+	loadcol		; mov	al,TmpColor
 	mov	ah,al
 	shr	cx,1
 	jc	plh_rop_c_odd
@@ -331,38 +370,41 @@ Bm8_Positive_X	endp
 Bm8_Diagonal_4Q proc	near
 
 	test	DeviceFlags,TYPE_IS_DEV
-	jz	Bm8_d4qskip
+	jz	@F
 	mov	ax,BM8
 	cmp	ax,offset BM8_ROPC
-	jne	Bm8_d4qskip
+	jne	@F
 	cmp	FillBytes,0
-	jne	Bm8_d4qskip
+	je	Bm8_d4qnoskip
+@@:
+	jmp	Bm8_d4qskip
 
-	mov     al,TmpColor
+Bm8_d4qnoskip:
+	loadcol		; mov     al,TmpColor
         dec     cx              ; leave out the last pixel
         jz      Bm8_d4q_last_pixel
 Bm8_d4q_iloop:
-	mov	[di],al
-	inc	di
+	writepx		; mov	[di],al
+	lea	di,[bx+di] ;inc	di
 	add	di,si
 	jc	Bm8_d4q_incbank
   loopm	Bm8_d4q_iloop
 ;;loop	Bm8_d4q_iloop
 Bm8_d4q_last_pixel:
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret		;exit	      
 Bm8_d4q_incbank:
 	inc	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
-	mov	al,TmpColor
+	SET_BANK	; call	SetCurrentBankDL
+	loadcol		; mov	al,TmpColor
   loopm	Bm8_d4q_iloop
 ;;loop	Bm8_d4q_iloop
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret   		;exit
 
 Bm8_d4qskip:
-        mov     al,TmpColor
+        loadcol		; mov     al,TmpColor
         dec     cx              ; leave out the last pixel
         jz      Bm8_diag_last_pixel
 Bm8_Diag_loop:
@@ -373,6 +415,7 @@ Bm8_Diag_loop:
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
 Bm8_diag_last_pixel:
+	int	3
 	call	BM8
 	ret
 
@@ -381,11 +424,12 @@ Bm8_Diag_incbank:
 	jz	bm8_diag_segment
 	inc	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
-	mov	al,TmpColor
+	SET_BANK	; call	SetCurrentBankDL
+	loadcol		; mov	al,TmpColor
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
+	int	3
 	call	BM8
 	ret
 
@@ -396,6 +440,7 @@ bm8_diag_segment:
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
+	int	3
 	call	BM8
 	ret
          
@@ -406,38 +451,41 @@ Bm8_Diagonal_4Q endp
 Bm8_Diagonal_1Q proc	near
 
 	test	DeviceFlags,TYPE_IS_DEV
-	jz	Bm8_d1qskip
+	jz	@F
 	mov	ax,BM8
 	cmp	ax,offset BM8_ROPC
-	jne	Bm8_d1qskip
+	jne	@F
 	cmp	FillBytes,0
-	jne	Bm8_d1qskip
+	je	Bm8_d1qnoskip
+@@:
+	jmp	Bm8_d1qskip
 
-	mov	al,TmpColor
+Bm8_d1qnoskip:
+	loadcol		; mov	al,TmpColor
 	dec	cx 	;last pixel addressing?ds:di
 	jz	d1q_lastpixel
 Bm8_d1q_dloop:
-	mov	[di],al
-	inc	di
+	writepx		; mov	[di],al
+	lea	di,[bx+di] ;inc	di
 	add	di,si
 	jnc	Bm8_d1q_decbank
   loopm	Bm8_d1q_dloop
 ;;loop	Bm8_d1q_dloop
 d1q_lastpixel:
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret
 Bm8_d1q_decbank:
 	dec	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
-	mov	al,TmpColor
+	SET_BANK	; call	SetCurrentBankDL
+	loadcol		; mov	al,TmpColor
   loopm	Bm8_d1q_dloop
 ;;loop	Bm8_d1q_dloop
-	mov	[di],al
+	writepx		; mov	[di],al
 	ret
 
 Bm8_d1qskip:
-        mov     al,TmpColor
+        loadcol		; mov     al,TmpColor
         dec     cx              ; leave out the last pixel
         jz      diag_last_pixel
 Diag_loop:
@@ -448,6 +496,7 @@ Diag_loop:
   loopm	Diag_loop
 ;;loop	Diag_loop
 diag_last_pixel:
+	int	3
 	call	BM8
 	ret
 
@@ -456,11 +505,12 @@ Diag_decbank:
 	jz	diag_segment
 	dec	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
-	mov	al,TmpColor
+	SET_BANK	; call	SetCurrentBankDL
+	loadcol		; mov	al,TmpColor
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
+	int	3
 	call	BM8
 	ret
 
@@ -471,6 +521,7 @@ diag_segment:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
+	int	3
 	call	BM8
 	ret
 
@@ -500,7 +551,7 @@ PUBLIC	Bm8_Move_Negative_Y
 
 	inc	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
+	SET_BANK	; call	SetCurrentBankDL
 	add	di,FillBytes
 	ret
 @@:
@@ -531,7 +582,7 @@ PUBLIC	Bm8_Move_Positive_Y
 
 	dec	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
+	SET_BANK	; call	SetCurrentBankDL
 	sub	di,FillBytes
 	ret
 @@:
@@ -544,57 +595,6 @@ PUBLIC	Bm8_Move_Positive_Y
 	Bm8_Move_Positive_Y     endp
 
 Bm8_Move_Diagonal_1Q    endp
-
-;---------------------------------------------------------------------------;
-	PUBLIC	SetCurrentBankDL
-SetCurrentBankDL proc near
-
-	PUSH 	DS
-	MOV 	AX,DGROUP
-	MOV 	DS,AX
-	assume ds:DGROUP
-	MOV 	bank_select_byte,dl
-	POP 	DS
-	assume ds:nothing
-
-	;push	ax
-	push	bx
-	push	dx
-
-	;destroys ax,bx,dx
-	mov	bl,dl
-	and	bl,1
-	mov	ah,dl
-	and	ah,2
-	shl	ah,4
-	and	dl,0ch
-	mov	bh,dl
-	shr	dl,2
-	or	bh,dl
-	mov	dx,3cch
-	in	al,dx
-	and	al,not 20h
-	or	al,ah
-	mov	dx,3c2h
-	out	dx,al
-	mov	dx,3c4h		;sequencer
-	mov	al,0f9h		;extended page select
-	mov	ah,bl
-	out	dx,ax
-	mov	al,0f6h		;256k bank select
-	out	dx,al
-	inc	dx		;data
-	in	al,dx
-	and	al,0f0h		;clear bank bits
-	or	al,bh		;set bank bits
-	out	dx,al
-
-	pop	dx
-	pop	bx
-	;pop	ax
-	ret
-
-SetCurrentBankDL endp
 
 
 ;---------------------------------------------------------------------------;
@@ -698,4 +698,3 @@ BM8_ROPF	endp
 ;1 0  0 0 0 0 1 1 1 1 0 0 0 0 1 1 1 1
 ;1 1  0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1
 
-

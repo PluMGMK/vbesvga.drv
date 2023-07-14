@@ -26,11 +26,7 @@ EXTRN	get_edge_masks_nibbles:NEAR
 EXTRN	vga_set_features:NEAR
 EXTRN   set_page:NEAR
 EXTRN	far_set_page:FAR
-EXTRN   set_banko:NEAR
-EXTRN	far_set_banko:FAR
 EXTRN	set_both_pages:NEAR
 EXTRN	far_set_both_pages:FAR
-EXTRN	set_both_banko:NEAR
-EXTRN	far_set_both_banko:FAR
 ENDIF
 

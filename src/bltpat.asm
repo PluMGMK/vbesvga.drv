@@ -197,7 +197,7 @@ blt_pat_dst_pattern_row_loop	PROC	NEAR
 	mov	word ptr pattern_row_counter,1
 	mov	dx,dst_bank			;preserve the initial state
 	push	dx				; in case of two pass rop
-	call	set_both_banko
+	SET_BANK	; call	set_both_banko
 
 bpdprl_0:
 	call	blt_pat_dst_nibble_loop
@@ -206,7 +206,7 @@ bpdprl_0:
         jnc     @F
 	inc	word ptr dst_bank
 	mov	dx,dst_bank
-	call	set_both_banko
+	SET_BANK	; call	set_both_banko
 
 @@:	inc	word ptr pattern_row_counter
         mov     ax,pattern_row_counter
@@ -244,7 +244,7 @@ blt_pat_dst_nibble_loop PROC	NEAR
 
 	pop	dx
 	mov	dst_bank,dx
-	call	set_both_banko
+	SET_BANK	; call	set_both_banko
         pop     di
 	mov	si,di
 
@@ -276,7 +276,7 @@ blt_pat_dst_same_pattern_row_loop	PROC
 	jnc	@F
         inc     word ptr dst_bank
         mov     dx,dst_bank
-	call	set_both_banko
+	SET_BANK	; call	set_both_banko
 @@:	sub	word ptr same_pattern_row_counter,8
 	jnc	blt_pat_dst_same_pattern_row_loop
 	ret
@@ -409,7 +409,7 @@ blt_dst_pattern_row_loop    PROC    NEAR
 	mov	dx,dst_bank			;preserve the initial state
 	push	dx				; in case of two pass rop
 	stc
-	call	set_banko
+	SET_BANK	; call	set_banko
 
 bdprl_0:
 	call	blt_dst_nibble_loop
@@ -418,7 +418,7 @@ bdprl_0:
 	inc	word ptr dst_bank
 	mov	dx,dst_bank
 	stc
-	call	set_banko
+	SET_BANK	; call	set_banko
 
 @@:	inc	word ptr pattern_row_counter
         mov     ax,pattern_row_counter
@@ -457,7 +457,7 @@ blt_dst_nibble_loop PROC    NEAR
 	pop	dx
 	mov	dst_bank,dx
 	stc
-	call	set_banko
+	SET_BANK	; call	set_banko
         pop     di
 
 	lea	ax,blt_dst_odd_nibbles
@@ -486,7 +486,7 @@ blt_dst_same_pattern_row_loop	PROC
 	inc	word ptr dst_bank
 	mov	dx,dst_bank
 	stc
-        call    set_banko
+        SET_BANK	; call    set_banko
 @@:	sub	word ptr same_pattern_row_counter,8
 	jnc	blt_dst_same_pattern_row_loop
 	ret
@@ -612,7 +612,7 @@ blt_pat_dst_loop	PROC	NEAR
 	lds	si,dword ptr dst_blt_offset
 	les	di,dword ptr dst_blt_offset	;reset vga dst state. For the
 	mov	dx,dst_bank		; times we use this routine, srcaddr =
-	call	set_both_banko		; dstaddr so bank selects are equal
+	SET_BANK	; call	set_both_banko		; dstaddr so bank selects are equal
 	mov	bl,first_edge_mask
 	mov	bh,last_edge_mask
 	mov	ax,yExt
@@ -626,7 +626,7 @@ blt_pat_dst_loop_0:
 	jnc	@F
 	inc	word ptr dst_bank
 	mov	dx,dst_bank
-	call	set_both_banko
+	SET_BANK	; call	set_both_banko
 
 @@:	dec	word ptr pattern_row_counter
 	jne	blt_pat_dst_loop_0
@@ -684,7 +684,7 @@ blt_dst_loop    PROC    NEAR
 	les	di,dword ptr dst_blt_offset	  ;reset vga dst state
         mov     dx,dst_bank
         stc
-        call    set_banko
+        SET_BANK	; call    set_banko
 	mov	bl,first_edge_mask
         mov     bh,last_edge_mask
 	mov	ax,yExt
@@ -697,7 +697,7 @@ blt_dst_loop_0:
 	inc	word ptr dst_bank
         mov     dx,dst_bank
         stc
-        call    set_banko
+        SET_BANK	; call    set_banko
 @@:	dec	word ptr pattern_row_counter
         jne     blt_dst_loop_0
         ret
@@ -808,4 +808,3 @@ set_fglatches	ENDP
 sEnd    CODE
 
 END
-

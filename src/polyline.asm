@@ -268,6 +268,7 @@ PS_SOLID        equ     0               ; solid lines
 PS_NULL         equ     5               ; null lines
 
 externB         enabled_flag            ; non zero if output to screen allowed
+externB		red_shr
 
 sEnd            Data
 
@@ -427,11 +428,12 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         parmD   lp_draw_mode            ;--> to a Drawing mode
         parmD   lp_clip_rect            ;--> to a clipping rectange if <> 0
 
-        localB  BackColor               ; background color
-	localB	ForeColor
+        localD  BackColor               ; background color
+	localD	ForeColor
 	localW	DrawModeIndex		; ROP code
-        localB  TmpColor                ; pen color
+        localD  TmpColor                ; pen color
         localB  DeviceFlags             ; identifies type of device
+	localB	BytesPerPixel		; how big is each pixel for an RGB map?
 
 ; following params are necessary for BITMAPS
 
@@ -459,7 +461,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localW  TempCurByteSty          ; one more saved for style pass
         localB  TempCurBit              ; a copy of rotating bit mask
         localW  ScansLeftFromBot        ; # of scan lines from bottom
-        localB  ROPcolor                ; temp value of pen color
+        localB  ROPcolor                ; temp value of pen color (for mono)
         localW  wBitmapROP              ; XOR,AND mask for bitmaps
         localW  style_pass_init         ; ega init tobe called before
                                         ; style pass
@@ -522,6 +524,9 @@ stack_space_ok:
 ;----------------------------------------------------------------------------;
 
 ifdef PALETTES
+	cmp	[red_shr],-1
+	jne	no_translation_needed	; not using a palette
+
         cmp     PaletteModified,0ffh    ; was the palette modified ?
         jnz     no_translation_needed   ; no
         push    ds                      ; save own ds
@@ -575,8 +580,10 @@ jump_error_exit_skip:
 
 get_bitmap_info:
 
-        cmp     [si].bmBitsPixel,8
-        jne     get_bitmap_info_10
+        mov	al,[si].bmBitsPixel
+	shr	al,3
+	mov	BytesPerPixel,al
+        jz	get_bitmap_info_10	; if bmBitsPixel < 8 then ZF is set
 	or	DeviceFlags,TYPE_IS_BYTEMAP
 
 get_bitmap_info_10:
@@ -662,13 +669,17 @@ load_fg_color:
 	assume	ds:nothing
         lds     si,lp_phys_pen              ; DS:SI points to the pen structure
         mov     ah,[si].oem_pen_pcol.pcol_Clr
+        mov     dx,wptr [si].oem_pen_pcol+1
 	test	DeviceFlags,TYPE_IS_BYTEMAP  ; mono maps color bit is SPECIAL
-	jne	short ld_fg_color2
+	jnz	short ld_fg_color2
         mov     ah,[si].oem_pen_pcol.SPECIAL
 	shr	ah,1			    ; expand 1 to 8 bits
 	sbb	ah,ah
+	xor	dx,dx
 ld_fg_color2:
-	mov	ForeColor,ah		     ; save the pen color
+	mov	bptr ForeColor,ah	    ; save the pen color
+	mov	wptr ForeColor+1,dx
+	mov	bptr ForeColor+3,0	    ; TODO: if mask includes upper byte?
 
 load_bg_color:
 	assume	es:nothing
@@ -676,13 +687,17 @@ load_bg_color:
 	mov	dx,es:[di].bkMode	    ; get the background mode
         mov     BackMode,dl                 ; save it
 	mov	dl,byte ptr es:[di].bkColor.pcol_Clr
+	mov	bx,word ptr es:[di].bkColor+1
 	test	DeviceFlags,TYPE_IS_BYTEMAP
-	jne	short ld_bg_color2
+	jnz	short ld_bg_color2
 	mov	dl,byte ptr es:[di].bkColor.SPECIAL
         shr     dl,1                        ; expand 1 to 8 bits
         sbb     dl,dl
+	xor	bx,bx
 ld_bg_color2:
-        mov     BackColor,dl                ; save the background color
+        mov     bptr BackColor,dl	    ; save the background color
+        mov     wptr BackColor+1,bx
+	mov	bptr BackColor+3,0	    ; TODO: if mask includes upper byte?
 
 	mov	bx,es:[di].Rop2 	    ; get the ROP code
         dec     bx                          ; make it zero based
@@ -1051,6 +1066,7 @@ Draw_Line       endp
 
 Draw_Engine     proc    near
 
+	;int	3
         or      si,si                   ; is the line horizontal ?
         jnz     non_horizontal          ; no
 
@@ -1348,6 +1364,15 @@ tests_done:
         mov     di,bx                   ; load Xi into di
         xor     dx,dx                   ; will hold SEGMENT value for MAPS
 
+	; DI := BX * BytesPerPixel
+	mov	cl,BytesPerPixel
+@@:
+	dec	cl
+	jz	@F
+	lea	di,[bx+di]
+	jmp	@B
+
+@@:
 ; we will set the no of scans left from bot to a large value for small maps
 ; we will set it to 1/2 of wScans for small bitmaps
 
@@ -1403,7 +1428,8 @@ calculate_for_bytemap:
         add     ax,di
         mov     TempCurByte,ax
         mov     TempCurByteSty,ax
-        mov     TempCurBit,-1
+	mov	bl,BytesPerPixel
+        mov     TempCurBit,bl
         jmp     short calculate_addr_for_draw
 
 calculate_for_screen:
@@ -1421,20 +1447,7 @@ calculate_for_screen:
 	mov	bank_select,dl		; initialize current bank
         mov     TempBank,dl
 
-        ;SET_BANK 
-	push	ax
-	PUSH 	DS
-	MOV 	ax,DGROUP
-	MOV 	DS,ax
-	assume ds:DGROUP
-	cmp	bank_select_byte,dl
-	je	@F
-	MOV 	bank_select_byte,dl
-	call	SetCurrentBankDL
-@@:
-	POP 	DS
-	pop	ax
-	assume ds:nothing
+        SET_BANK 
 
 	mov	dx,TempCurSeg		; for EGA segment value saved
         mov     ds,dx                   ; load ds
@@ -1444,7 +1457,8 @@ calculate_for_screen:
         add     ax,TempCurOff           ; + screen begin offset
         mov     TempCurByte,ax
         mov     TempCurByteSty,ax
-        mov     TempCurBit,-1
+	mov	bl,BytesPerPixel
+        mov     TempCurBit,bl
 
 calculate_addr_for_draw:
         xor     ax,ax
@@ -1469,14 +1483,16 @@ calculate_addr_for_draw:
 
         test    DeviceFlags,TYPE_IS_DEV ; is it screen ?
         jnz     save_vars
-	mov	al,ForeColor		; color of the pen
-        mov     ROPcolor,al             ; to be used for ROP mask calculations
+	mov	al,bptr ForeColor	; color of the pen
+        mov     ROPcolor,al		; to be used for ROP mask calculations
 
 save_vars:
 
 ; save the variables wchich will be used for style draw pass
-	mov	al,ForeColor
-	mov	TmpColor,al		; save forground color
+	mov	ax,ForeColor.lo
+	mov	dx,ForeColor.hi
+	mov	TmpColor.lo,ax		; save forground color
+	mov	TmpColor.hi,dx		; save forground color
 
 	mov	ax,cScans
         mov     cTempScans,ax           ; save it
@@ -1553,7 +1569,7 @@ dl_jmpexit:
 dl_Diagonal:
 	mov	ax,S1
 	cmp	ax,offset Bm8_Diagonal_1Q
-	mov	dh,TmpColor
+	mov	dh,byte ptr TmpColor
 	je	dl_Diag_1Q_posx
 
 dl_draw_loop:
@@ -1601,13 +1617,13 @@ dl_Diag_1Q_posx:
 	;S1_Move==Bm8_Move_Positive_X
 dl_Q1posx_loop:
 
-        ;call    S1                      ; draw the slice
+        call    S1                      ; draw the slice
 
 	;mov	dh,TmpColor
 	dec	cx 	;last pixel addressing?ds:di
 	jz	dl_Q1_lastpixel
 dl_Q1_loop:
-	mov	[di],dh
+	;mov	[di],dh
 	inc	di
 	add	di,si
 	jnc	dl_Q1_decbank
@@ -1616,9 +1632,7 @@ dl_Q1_lcont:
 	jnz	dl_Q1_loop
 
 dl_Q1_lastpixel:
-	mov	[di],dh
-
-        ;call    S1_Move                 ; step to the next slice
+	;mov	[di],dh
 	inc	di
 
         dec     cScans                  ; one more scan done
@@ -1631,7 +1645,7 @@ dl_Q1_lastpixel:
 dl_Q1_decbank:
 	dec	bank_select
 	mov	dl,bank_select
-	call	SetCurrentBankDL
+	SET_BANK	;call	SetCurrentBankDL
   dec	cx	
   jnz	dl_Q1_loop
 	jmp	dl_Q1_lastpixel
@@ -1643,6 +1657,7 @@ dl_exit:
 
 draw_loop:
 WriteAux <'DrwS1'>
+	int	3
         call    S1                      ; draw the slice
         call    S1_Move                 ; step to the next slice
         call    StyleAdvOrBypass        ; advance style for styled lines
@@ -1690,9 +1705,11 @@ all_passes_done:
 style_draw_pass:
 	xor	StylePass,1		; set indicator
 	je	return_from_engine
-	mov	al,BackColor		; background color
-        mov     TmpColor,al
-        mov     ROPcolor,al             ; to be used for BITMAP masks
+	mov	ax,BackColor.lo		; background color
+	mov	dx,BackColor.hi		; background color
+        mov     TmpColor.lo,ax
+        mov     TmpColor.hi,dx
+        mov     ROPcolor,al		; to be used for BITMAP masks
         mov     di,TempCurByteSty       ; initial byte offset
         mov     dl,TempBank
         mov     bank_select,dl
@@ -1787,4 +1804,3 @@ include polystyl.asm
 sEnd    LineSeg
 
         END
-

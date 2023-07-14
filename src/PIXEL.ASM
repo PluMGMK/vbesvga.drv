@@ -38,7 +38,6 @@ incDrawMode     = 1                     ; Include control for gdidefs.inc
         include macros.mac
         .list
 ;
-        externA COLOR_FORMAT            ; Color format (will now be 0104h)
 	externD adPalette
 	externFP sum_rgb_alt_far	; Color mapping routine
 ;
@@ -60,6 +59,7 @@ MONO_OP         equ     MONO_BIT
 sBegin  Data
 
         externB enabled_flag            ; Non-zero if output allowed
+	externW	ColourFormat
 
 sEnd    Data
 
@@ -175,6 +175,7 @@ cProc   Pixel,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
         parmD   lp_draw_mode            ; Drawing mode to use, or null if Get.
         localB  is_device               ; set non-zero if the device.
         localB  PCurVidSel              ; current video bank select
+	localW	colour_format		; copy of this on stack
 ;
 cBegin
 ;
@@ -206,6 +207,10 @@ endif
 ;
 ;----------------------------------------------------------------------------;
 ;
+	; get the ColourFormat from DS before we point the segreg elsewhere...
+	mov	ax,[ColourFormat]
+	mov	colour_format,ax
+
         mov     al,enabled_flag         ; Load this before trashing DS
         lds     si,lp_device            ; --> physical device
 ;
@@ -319,9 +324,10 @@ pixel_30:
 ;
 pixel_40:
         mov     di,[si].bmWidthBytes    ; Get index to next plane
+	mov	bx,colour_format
+        cmp     wptr [si].bmPlanes,bx	; color bit map?
         mov     bx,di                   ; (and Y multiplier)
         mov     cl,MONO_OP              ; cl = 1 (only plane 0 is on)
-        cmp     wptr [si].bmPlanes,COLOR_FORMAT ; color bit map?
         jne     pixel_60                ; Not our color format, treat as mono
 ;
         mov     cl,p_color.pcol_Clr     ; load the 8 bit color

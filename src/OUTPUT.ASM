@@ -100,10 +100,9 @@ cBegin	<nogen>
         je      dispatch_begin_scanline
         cmp     ax,OS_ENDNSCAN          ;Is this a end scanline ?
         je      dispatch_end_scanline
-;	 cmp	 ax,OS_POLYGON		 ;Is this a polygon?
-;	 je	 dispatch_polygon
 
 output_return_error:                    ;  No, return an error
+	int	3
 	mov	ax,-1
 	ret	28
 
@@ -119,9 +118,6 @@ dispatch_scanlines:
 dispatch_lines:
 	jmp	do_polylines
 
-;dispatch_polygon:
-;	 jmp	 do_polygon
-
 cEnd    <nogen>
 
 sEnd	Code
@@ -129,7 +125,6 @@ sEnd	Code
 ifdef	PUBDEFS
 	public	dispatch_scanlines
 	public	dispatch_lines
-;       public  dispatch_polygon
 	public	output_return_error
 endif
 

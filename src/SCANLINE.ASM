@@ -207,6 +207,7 @@ cProc   do_scanlines,<FAR,PUBLIC,WIN,PASCAL,NODATA>,<si,di,es,ds>
 	localW	exclude_flag
 cBegin
 	WriteAux  <'Scanline'>
+	int	3
 	cld				; We are forever doing this
 
         mov     ax      ,DataBASE
@@ -988,4 +989,3 @@ bmp_ptr endp
 _SCANLINE       ends
 
        end
-

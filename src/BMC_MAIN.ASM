@@ -3,7 +3,7 @@ page	,132
 ;		       DeviceIndependentBitmaps				     ;
 ;		       ------------------------				     ;
 ; This routine does the	conversions from a device independent bitmap format  ;
-; to a format adopted for EGA adapters and back.			     ;
+; to a format adopted for the SVGA adapter, and back.			     ;
 ;	  Depending on one of the input	parameters it call either,	     ;
 ;	   . SetDeviceBitmapBits -  to set the bits in the internal format   ;
 ;	   . GetDeviceBitmapBits -  to get the bits from the internal format ;
@@ -50,11 +50,16 @@ page	,132
 	include	cmacros.inc
 	include	macros.mac
 	include	gdidefs.inc
+	include	display.inc	; for ipd_*
 	include getrle.inc
         .list
 
 
 	externA		__NEXTSEG	; offset to next segment
+
+	externB		red_shr
+	externB		green_shr
+	externB		blue_shr
 
 createSeg _DIMAPS,DIMapSeg,word,public,code
 
@@ -66,7 +71,7 @@ sBegin	DIMapSeg
 	externNP	GetDeviceBitmapBits	; in BMC_ITE.ASM
 	externNP	RleBlt			; in RLD.ASM
 
-	assumes	ds, nothing
+	assumes	ds, Data		; this is a CProc after all!
 	assumes	es, nothing
 
 cProc	DeviceBitmapBits,<FAR,PUBLIC,WIN,PASCAL>,<ds,si,di,es>
@@ -75,8 +80,24 @@ cBegin
 
 WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	cld
+
+; get the colour conversion parameters in case we need them...
+	mov	ax, wptr [red_shr]
+	mov	dx, wptr [green_shr]
+	mov	cx, wptr [blue_shr]
+	mov	local_red_shr,al
+	mov	local_red_shl,ah
+	mov	local_green_shr,dl
+	mov	local_green_shl,dh
+	mov	local_blue_shr,cl
+	mov	local_blue_shl,ch
+
 	lds	si, lp_dest_dev 	; DS:SI points to internal BM struc
 	assumes	ds, nothing
+
+	mov	al,[si].bmBitsPixel
+	shr	al,3			; bits --> bytes
+	mov	total_depth_bytes,al
 
 ;----------------------------------------------------------------------------;
 ; we shall do a	few validations	out here. The number of	pels per row and the ;
@@ -87,11 +108,8 @@ WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 ; color.
 
 	mov	al,SD_COLOR		; assume color map
-	cmp	[si].bmPlanes, 1	; is it	one plane ?
-	jnz	al_has_flag		; no, so it is color
-
-	cmp	[si].bmBitsPixel, 1	; 1 bit	per pel
-	jnz	al_has_flag		; no so	it is color
+	cmp	wptr [si].bmPlanes, 101h; is it	one plane AND 1 bit per pel?
+	jne	al_has_flag		; no, so it is color
 
 	xor	al, al			; own flag is mono
 al_has_flag:

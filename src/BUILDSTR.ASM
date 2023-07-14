@@ -2368,6 +2368,10 @@ else
 ; 
 	mov	ax,text_bbox.top	;Compute Y component of the string
 	mul	next_scan		; dl holds bank select bits
+	test	dh,dh	; check a suss assumption...
+	jz	@F
+	int	3
+@@:
 	add	di,ax
 	adc	dl,dh			; add in segment carry
 	add	di,scan_start		; Add delta into scan

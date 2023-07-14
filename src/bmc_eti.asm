@@ -781,10 +781,10 @@ eti_24	proc	near
 	mov	ds,ax
 	assumes ds,Data
 	lds	ax,ds:[GetColor_addr]	; fetch the GDI vector
+	assumes	ds,nothing
 	mov	wptr DeviceColorMatch[0],ax
 	mov	wptr DeviceColorMatch[2],ds
 	pop	ds
-	assumes	ds,nothing
 
 	mov	mono_shift_align_count,0
         mov     num_pels_per_src_byte,1	; For use in huge source case
@@ -816,12 +816,25 @@ eti_24	proc	near
 	jz	eti_24_mono	; Yes
 
 eti_24_color:
+; 24-bit-per-pixel source, XX bytes per pixel (colour) destination
+
+	cmp	local_red_shr, -1	; no colour-conversion data, use palette
+	je	eti_24_palette
+
+	mov	ax, DIMapSegOFFSET copy_e24iX
+	mov	full_byte_proc, ax
+	mov	ax, DIMapSegOFFSET copy_e24iX_partial
+	mov	partial_byte_proc, ax
+	jmp	@F
+
+eti_24_palette:
 ; 24-bit-per-pixel source, one byte per pixel (color) destination
 
 	mov	ax, DIMapSegOFFSET copy_e24i8
 	mov	full_byte_proc, ax
 	mov	ax, DIMapSegOFFSET copy_e24i8_partial
 	mov	partial_byte_proc, ax
+@@:
 	xor	ax,ax
 	mov	int_remaining_pixel_count, ax
 	mov	int_move_count, bx	; Number of dest bytes per scan
@@ -1857,6 +1870,210 @@ copy_e24i8_partial	endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;
+; copy_e24iX								     ;
+;									     ;
+;   copy external 24 bit RGB to	internal XX bytes per pixel                  ;
+;									     ;
+;   The	source is copied to all	four planes of the destination,	with	     ;
+;   color conversion via the actual RGB	triplet.			     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings.       ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of destination	bytes to xlate			     ;
+; Returns:								     ;
+;	DS:SI --> next source byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub	copy_e24iX
+copy_e24iX	proc near
+	push	es
+	;int	3
+
+ce24iX_next_pixel:
+;
+; take the RGB & compress it into device format
+;
+        lodsw
+	mov	dl, [si]
+	inc	si
+;
+	xor	dh,dh
+	xchg	dh,al	; put the red value in DH out of the way for now...
+;
+        push    cx
+        push    bx
+	push	si
+	push	di
+;
+	mov	si,di	; SI = beginning of current colour
+	xor	ch,ch
+	mov	cl,total_depth_bytes
+	rep	stosb	; DI = end of current colour, now set to zero
+	xchg	dh,al	; get the red value back
+	xor	bh,bh
+
+	; do red:
+	mov	bl,al		; BH already zero from above
+	mov	di,bx
+	mov	cl,local_red_shr
+	mov	bl,local_red_shl
+	shr	di,cl
+	mov	cl,bl		; BH already zero from above
+	shr	bx,3		; BX = byte offset in colour
+	and	cl,7		; CL = bit offset within SI+BX
+	shl	di,cl
+	or	es:[bx+si],di
+
+	; do green:
+	mov	bl,ah		; BH already zero from above
+	mov	di,bx
+	mov	cl,local_green_shr
+	mov	bl,local_green_shl
+	shr	di,cl
+	mov	cl,bl		; BH already zero from above
+	shr	bx,3		; BX = byte offset in colour
+	and	cl,7		; CL = bit offset within SI+BX
+	shl	di,cl
+	or	es:[bx+si],di
+
+	; do blue:
+	mov	bl,dl		; BH already zero from above
+	mov	di,bx
+	mov	cl,local_blue_shr
+	mov	bl,local_blue_shl
+	shr	di,cl
+	mov	cl,bl		; BH already zero from above
+	shr	bx,3		; BX = byte offset in colour
+	and	cl,7		; CL = bit offset within SI+BX
+	shl	di,cl
+	or	es:[bx+si],di
+;
+	pop	di
+        pop     si
+	pop	bx
+	pop	cx
+  
+	loop	ce24iX_next_pixel	; complete all the target pixels
+	pop	es
+        ret
+
+copy_e24iX	endp
+
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_e24iX_partial								     ;
+;									     ;
+;   copy external 24 bit RGB to	internal one byte per pixel                  ;
+;									     ;
+;   The	source is copied to all	four planes of the destination,	with	     ;
+;   color conversion via the actual RGB	triplet.			     ;
+;									     ;
+;   This code handles crossing the segment boundary.                         ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of destination	bytes to xlate			     ;
+; Returns:								     ;
+;	DS:SI --> next source byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub	copy_e24iX_partial
+copy_e24iX_partial	proc near
+	push	es
+	;int	3
+
+ce24iX_next_pixel_p:
+;
+; take the RGB & convert it into an index
+;
+;       lodsw			; Byte 0 in al, byte 1 in ah
+;	mov	dl, [si]	; Byte 2 in dl
+;	inc	si
+;
+	call load_with_seg_check	; Byte 0 in al
+	mov	ah,al			; Byte 0 in ah
+	call load_with_seg_check	; Byte 0 in ah, byte 1 in al
+	xchg	al,ah			; Byte 1 in ah, byte 0 in al
+	push	ax
+	call load_with_seg_check	; Byte 2 in al
+	mov	dl,al			; Byte 2 in dl
+	pop	ax
+;
+	xor	dh,dh
+	xchg	dh,al	; put the red value in DH out of the way for now...
+;
+        push    cx
+        push    bx
+	push	si
+;
+	mov	si,di	; SI = beginning of current colour
+	xor	ch,ch
+	mov	cl,total_depth_bytes
+	rep	stosb	; DI = end of current colour, now set to zero
+	xchg	dh,al	; get the red value back
+	xor	bh,bh
+
+	; do red:
+	mov	bl,al		; BH already zero from above
+	mov	di,bx
+	mov	cl,local_red_shr
+	mov	bl,local_red_shl
+	shr	di,cl
+	mov	cl,bl		; BH already zero from above
+	shr	bx,3		; BX = byte offset in colour
+	and	cl,7		; CL = bit offset within SI+BX
+	shl	di,cl
+	or	es:[bx+si],di
+
+	; do green:
+	mov	bl,ah		; BH already zero from above
+	mov	di,bx
+	mov	cl,local_green_shr
+	mov	bl,local_green_shl
+	shr	di,cl
+	mov	cl,bl		; BH already zero from above
+	shr	bx,3		; BX = byte offset in colour
+	and	cl,7		; CL = bit offset within SI+BX
+	shl	di,cl
+	or	es:[bx+si],di
+
+	; do blue:
+	mov	bl,dl		; BH already zero from above
+	mov	di,bx
+	mov	cl,local_blue_shr
+	mov	bl,local_blue_shl
+	shr	di,cl
+	mov	cl,bl		; BH already zero from above
+	shr	bx,3		; BX = byte offset in colour
+	and	cl,7		; CL = bit offset within SI+BX
+	shl	di,cl
+	or	es:[bx+si],di
+	
+;
+        pop     si
+	pop	bx
+	pop	cx
+  
+  
+	loop	ce24iX_next_pixel_p	; complete all the target pixels
+	pop	es
+        ret
+
+copy_e24iX_partial	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
 ;  load_with_seg_check							     ;
 ;									     ;
 ;   The	contents of *DS:SI is loaded into AL.  If SI becomes 0,	then	     ;
@@ -1929,4 +2146,3 @@ align_and_store	endp
 sEnd    DIMapSeg
 end
 
-

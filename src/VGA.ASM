@@ -84,7 +84,6 @@ FILE_VGA	EQU	1
 	externFP AllocCSToDSAlias	; change a CS selector to DS
 	externFP AllocDSToCSAlias	; change a DS selector to CS
 	externFP FreeSelector		; free the selector
-	externFP far_set_bank_select
 	externFP GetProfileInt		; Kernel!GetProfileInt
 	externFP setramdac
 
@@ -137,7 +136,7 @@ cdw	macro	v1,v2
 ;	public	SSB_SAVE_Y		;Y cord of save area
 	public	PHYS_DEVICE_SIZE	;Number of bytes in physical device
 	public	BW_THRESHOLD		;Black/white threshold
-	public	COLOR_FORMAT		;Color format
+;	public	COLOR_FORMAT		;Color format
 ;	public	SCREEN_W_BYTES		;Screen width in bytes
 ;	public	SCREEN_WIDTH		;Screen width in pixels
 ;	public	SCREEN_HEIGHT		;Screen height in scans
@@ -411,6 +410,10 @@ abPaletteAccl   equ     this byte       ; Accelerator flags for palette
 
 NumOfLines	db	0	; number of lines in text mode
 
+; Runtime adjustable "colour format" (msbyte = bits/pel; lsbyte = # planes)
+public	ColourFormat
+ColourFormat	dw	COLOR_FORMAT
+
 sEnd	Data
 page
 
@@ -453,9 +456,9 @@ P		equ	 COLOR_FORMAT AND 000FFh	;# color planes
 B		equ	(COLOR_FORMAT AND 0FF00h) SHR 8	;# bits per pixel
 H		equ	480		;this may be fixed up at enable time
 W		equ	640		;this may be fixed up at emable time
-WB		equ	MEMORY_WIDTH*1			;display width, bytes
-IS		equ	00000h				;index to next segment
-SSG		equ	((32*1024)/MEMORY_WIDTH)*2	;scanlines per segment
+WB		equ	1024		;display width, bytes (fixed up @enable)
+IS		equ	00000h		;index to next segment
+SSG		equ	64		;scanlines per segment(fixed up @enable)
 
 physical_device BITMAP <SCRSEL,W,H,WB,P,B,0A0000000H,0,0,IS,SSG,0,0,0>
 
@@ -546,7 +549,7 @@ info_table_base label byte
 	dw	CC_NONE 		;Curves capabilities
 	errnz	dpCurves-dpDEVICEsize-2
 
-	dw	LC_POLYLINE+LC_STYLED	;Line capabilities
+	dw	LC_POLYLINE;+LC_STYLED	;Line capabilities
 	errnz	dpLines-dpCurves-2
 
                                         ;Polygonal capabilities
@@ -567,7 +570,9 @@ RC_BIGFONT      equ 0000010000000000b   ; can do fonts > 64k
 
                                         ;BitBlt capabilities
 ;	 dw	 RC_TRANSPARENT+RC_BITBLT+RC_BITMAP64+RC_GDI20_OUTPUT+RC_DI_BITMAP+RC_DIBTODEV+RC_PALETTE+RC_STRETCHBLT+RC_STRETCHDIB
-	dw	RC_BITBLT+RC_BITMAP64+RC_GDI20_OUTPUT+RC_DI_BITMAP+RC_DIBTODEV+RC_PALETTE+RC_STRETCHBLT+RC_STRETCHDIB
+;	dw	RC_BITBLT+RC_BITMAP64+RC_GDI20_OUTPUT+RC_DI_BITMAP+RC_DIBTODEV+RC_PALETTE+RC_STRETCHBLT+RC_STRETCHDIB
+	dw	RC_BITBLT+RC_BITMAP64+RC_GDI20_OUTPUT+RC_DI_BITMAP+RC_DIBTODEV+RC_STRETCHBLT+RC_STRETCHDIB
+;	dw	RC_GDI20_OUTPUT	; let's try to build these up one-by-one...
         errnz   dpRaster-dpClip-2
 
 	dw	X_MAJOR_DIST		;Distance moving X only
@@ -645,7 +650,7 @@ page
 ;   The EGA state restoration code is initialized.
 ;
 ; Entry:
-;	ES:DI --> ipd_format in our pDevice
+;	ES:DI --> ipd_red_shr in our pDevice
 ;	DS:    =  Data
 ; Returns:
 ;	AX = non-zero to show success
@@ -690,7 +695,7 @@ physical_enable proc near
 	mov	ScratchSel,ax		; save it
 ;
         pop     es
-        mov     byte ptr es:[di],3      ; force a mode 3
+        mov	byte ptr es:[di],3      ; force a mode 3
 
 	push	es
 	push	bp
@@ -807,9 +812,6 @@ page
 
 physical_disable proc near
 	WriteAux <'Physical Disable'>
-ifdef	INT3
-	int	3
-endif
 ;----------------------------------------------------------------------------;
 ; disbale the selector here				                     ;
 ;----------------------------------------------------------------------------;
@@ -888,7 +890,7 @@ set_board_flags 	PROC	NEAR
 ;	I will assume either 512K or 1Meg of memory
 
 	mov	dl,3				;set bank 3
-	call	far_set_both_banko
+	SET_BANK	; call	far_set_both_banko
 
 	mov	ax,ScreenSelector
 	mov	es,ax
@@ -1016,63 +1018,6 @@ farsetmode     proc    far
 	ret
 
 farsetmode      endp
-
-
-clear_video_ram PROC	NEAR
-
-        pusha
-	push	ds
-	push	es
-	mov	ax,10H			;set a planar mode
-	int	10H
-
-	mov	ax,ScreenSelector      ;set addr to start of bank
-        mov     es,ax
-        sub     di,di
-
-	mov	dx,03C4H
-	mov	ax,0EA06H		;enable extensions
-	out	dx,ax
-
-        mov     dx,03CEH                ;set write mode to write the latches
-        mov     al,05H
-        out     dx,al
-        inc     dx
-        in      al,dx
-        and     al,0FCH
-        or      al,1H
-        out     dx,al
-
-	mov	dx,3C4H 		;clear latches to 0
-	mov	ax,00A0H
-	out	dx,ax
-	inc	al
-	out	dx,ax
-	inc	al
-        out     dx,ax
-	inc	al
-        out     dx,ax
-
-	mov	al,0F6H 		;initialize the bank
-	out	dx,al
-	inc	dx
-	in	al,dx
-	mov	ah,3			;start with the third bank
-
-@@:	and	al,0F0H
-	or	al,ah
-	out	dx,al			;set the bank
-	mov	cx,8000H		;write the latches (0s) into memory
-	rep	stosw
-	dec	ah			;do the next bank
-	jns	@B
-
-	pop	es
-	pop	ds
-	popa
-	ret
-
-clear_video_ram ENDP
 
 
 

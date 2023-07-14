@@ -39,10 +39,6 @@
 	??_out	colorinf
 
 
-	ifdef	GEN_COLOR
-	externA COLOR_FORMAT		;Color format (0103h or 0104h)
-	endif
-
 	externD adPalette		;initial color table
 	externB Palette			; VGA palette stuff
 
