@@ -1012,6 +1012,7 @@ endif
 
 SET_BANK macro
 
+	xor	dh,dh
 % ifidn <@CurSeg>, <_TEXT>
         %out    near call to set_bank
         call    set_bank_select
@@ -1019,4 +1020,16 @@ else
         %out    far call to set_bank
         call    far_set_bank_select
 endif
+        endm
+
+; Inverse to SET_BANK
+        externB bank_select_byte        ; in VGASTATE.ASM and BANK.INC
+
+GET_BANK macro
+	push	ds
+	mov	dx,DGROUP
+	mov	ds,dx
+	mov	dl,ds:[bank_select_byte]
+	xor	dh,dh
+	pop	ds
         endm

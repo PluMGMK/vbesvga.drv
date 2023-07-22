@@ -177,8 +177,8 @@
 	.list
 ;
 
-JAK_TEXT	EQU	1
-DBG_OUTPUT_STRS	EQU 1
+JAK_TEXT	EQU	0
+DBG_OUTPUT_STRS	EQU 0
 
 IF	JAK_TEXT
 	externNP jak_non_justified_text
@@ -2354,13 +2354,6 @@ process_stack_data proc near
 	assumes es,nothing		;  (need EGAMem if this is the device)
 	mov	ds,wptr lfd.lp_font_bits[2]
         assumes ds,nothing
-
-ifdef VGA256X
-        mov     ax,text_bbox.top        ;Compute Y component of the string
-	mul	next_scan		; dl holds bank select bits
-        add     di,ax
-        add     di,scan_start           ; Add delta into scan
-else
 ;
 ; calculate the true x,y coordinates of the bitmap/screen. dl is always updated
 ; to keep track of the segment overflow bits. These bits will then be used to
@@ -2368,10 +2361,6 @@ else
 ; 
 	mov	ax,text_bbox.top	;Compute Y component of the string
 	mul	next_scan		; dl holds bank select bits
-	test	dh,dh	; check a suss assumption...
-	jz	@F
-	int	3
-@@:
 	add	di,ax
 	adc	dl,dh			; add in segment carry
 	add	di,scan_start		; Add delta into scan
@@ -2381,7 +2370,6 @@ else
 	jz	@F			; no, skip the bank select
         SET_BANK                        ; do the video h/w bank select
 @@:
-endif; VGA256X
 ;
 rtIF	BigFontFlags
 	.386
@@ -2415,7 +2403,9 @@ rtENDIF
  	mov	al,left_clip_mask
  	or	al,al
 	jz	psd_not_clipped 	;No partial first byte
-	inc	inner_byte_count	;One extra time through the loop
+	int	3
+	mov	bx,ss_pixbytes
+	add	inner_byte_count,bx	;One extra time through the loop
 	mov	bx,clipped_table
 	inc	dl			;set OR-mask to 00h
 ;
@@ -2486,10 +2476,12 @@ psd_have_exact_fit:
 	mov	ax,clipped_font_height
 	call	bx			;Invoke drawing routine
 	mov	al,8			;First doesn't cross byte boundary
+	int	3
+	mov	bx,ss_pixbytes
+	sub	inner_byte_count,bx
 	mov	bx,non_clipped_table	;No clipping required
 	mov	ss_clip_mask,0FFh
-	dec	inner_byte_count
-	jg	psd_collect_chars
+	jg	psd_collect_chars	;Flags set by 'sub' above
 	jmp	psd_see_about_last
 ;
 psd_have_more_than_enough:
@@ -2518,10 +2510,12 @@ psd_have_more_than_enough:
  	mov	ax,clipped_font_height
 	call	bx			;Invoke drawing routine
 	mov	al,16			;First crosses byte boundary
+	int	3
+	mov	bx,ss_pixbytes
+	sub	inner_byte_count,bx
 	mov	bx,non_clipped_table	;No clipping required
 	mov	ss_clip_mask,0FFh
-	dec	inner_byte_count
-	jle	short psd_see_about_last
+	jle	short psd_see_about_last;Flags set by 'sub' above
 	jmp	psd_collect_chars
 ;
 psd_unlikely_cases:
@@ -2541,8 +2535,9 @@ psd_unlikely_cases:
 	add	ch,[bp].fd_width[-6 * size frame_data]
 	cmp	ch,al
 	ja	psd_have_more_than_enough
-	je	psd_have_exact_fit
-;
+	jne	@F
+	jmp	psd_have_exact_fit
+@@:
 	inc	si
 	add	ch,[bp].fd_width[-7 * size frame_data]
 	cmp	ch,al
@@ -2604,22 +2599,10 @@ psd_color:
 	errnz	IS_DEVICE-00001000b
         errnz   IS_OPAQUE-00000001b
 
-if 0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
-; calculate the number of pixels (bytes) to be modified
-;
-        shiftl  inner_byte_count,3
-	mov	ah,left_clip_mask
-	mov	al,right_clip_mask
-	call	convert_mask_to_count
-        add     inner_byte_count,ax
-else;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
         mov     ax,current_rhs
         sub     ax,current_lhs
+	mul	ss_pixbytes
         mov     inner_byte_count,ax
-
-endif;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 	mov	al,ColorPhase		; our left clip phase will be passed
 	mov	ss_clip_mask,al		; to the output routine in ss_clip_mask
@@ -2645,13 +2628,16 @@ psdco_print_char:
 ;
 ; possibly clip the length of the next character
 ;
+	xchg	cx,ax
+	mul	ss_pixbytes
+	xchg	cx,ax
 	cmp	cx,inner_byte_count
 	jle	@F			; not clipped, continue on...
 	mov	cx,inner_byte_count
 ;
 @@:
 	mov	bp,clipped_font_height	; BP holds the font length
-        mov     ax,ss_phases            ; lenght of map less char width
+        mov     ax,ss_phases            ; length of map less char width
         sub     ax,cx
         mov     ss_next_scan,ax         ; holds offset to next scan line
 ;;;;;;;;mov     bx,di
@@ -2662,16 +2648,14 @@ psdco_print_char:
 ;
 ;    DS:      =  Font bits segment
 ;    ES:DI  -->  Destination
-;    DX       =  Foreground/Background colors
+;    SS:DX  -->  Stack frame (including colours)
 ;    CL       =  Font width
 ;    BP       =  Font length
 ;
 	jcxz	@F
 ;	 int	 3			 ;JAK
-	xchg	dx,ss_colors		; load colors & save DX
         mov     ch,bh                   ; CL = width CH = phase
         call    ss_draw                 ; Invoke drawing routine
-        xchg    dx,ss_colors
 ;
 @@:
         mov     bp,dx                   ; restore the frame pointer
@@ -2681,6 +2665,9 @@ psdco_print_char:
 ;
         xor     ch,ch
 	mov	ss_clip_mask,ch		; flush the shift count
+	xchg	cx,ax
+	mul	ss_pixbytes
+	xchg	cx,ax
 	sub	inner_byte_count,cx
 	jg	psdco_print_char
 ;
@@ -2728,22 +2715,10 @@ ppsd_color:
 	errnz	IS_DEVICE-00001000b
         errnz   IS_OPAQUE-00000001b
 
-if 0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;
-; calculate the number of pixels (bytes) to be modified
-;
-	shiftl	inner_byte_count,3
-	mov	ah,left_clip_mask
-	mov	al,right_clip_mask
-	call	convert_mask_to_count
-	add	inner_byte_count,ax
-else;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
         mov     ax,current_rhs
         sub     ax,current_lhs
+	mul	ss_pixbytes
         mov     inner_byte_count,ax
-
-endif;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;
 	mov	al,ColorPhase		; our left clip phase will be passed
 	mov	ss_clip_mask,al		; to the output routine in ss_clip_mask
@@ -2767,18 +2742,21 @@ ppsdco_print_char:
 	mov	bp,dx			; Restore frame pointer
         mov     buffer,ax               ; Save new buffer pointer
 
-        mov     bh,ch                   ; Save CH (ie Phase)
+        mov     bx,cx                   ; Save CH (ie Phase)
         xor     ch,ch
 ;
 ; possibly clip the length of the next character
 ;
+	.386
+	imul	cx,ss_pixbytes
+	.286
         cmp     cx,inner_byte_count
 	jle	@F			; not clipped, continue on...
         mov     cx,inner_byte_count
 ;
 @@:
 	mov	bp,clipped_font_height	; BP holds the font length
-        mov     ax,ss_phases            ; lenght of map less char width
+        mov     ax,ss_phases            ; length of map less char width
         sub     ax,cx
         mov     ss_next_scan,ax         ; holds offset to next scan line
 ;;;;;;;;mov     bx,di
@@ -2790,17 +2768,16 @@ ppsdco_print_char:
 ;
 ;    DS:      =  Font bits segment
 ;    ES:DI  -->  Destination
-;    DX       =  Foreground/Background colors
+;    SS:DX  -->  Stack frame (including colours)
 ;    CL       =  Font width
 ;    CH       =  Phase
 ;    BP       =  Font length
+;    BX       =  Font width in bytes
 ;
         jcxz    @F
 ;	 int	 3			 ;JAK
-	xchg	dx,ss_colors		; load colors & save DX
-        mov     ch,bh                   ; Restore the Phase
+        xchg    cx,bx                   ; Restore the Phase
         call    ss_draw                 ; Invoke drawing routine
-        xchg    dx,ss_colors
 ;
 @@:
         mov     bp,dx                   ; restore the frame pointer
@@ -2810,7 +2787,7 @@ ppsdco_print_char:
 ;
         xor     ch,ch
         mov     ss_clip_mask,ch         ; flush the shift count
-	sub	inner_byte_count,cx
+	sub	inner_byte_count,bx
 	jg	ppsdco_print_char
 ;
 ; all done with the list of characters!

@@ -30,7 +30,7 @@ include blt11.inc
 include blt18.inc
 include blt81.inc
 include blt88.inc
-include blt216.inc
+;include blt216.inc
 include bltstos.inc
 include bltpat.inc
 
@@ -630,17 +630,17 @@ dispatch_src_to_screen:
 
 	test	word ptr local_board_flags,BOARD_FLAG_ENABLE_216  ;on a 216
 	je	@F				; and the rop
-	mov	bl,byte ptr Rop[2]		; only involves the src and
-	mov	bh,bl				; dst, then the 216 hardware
-	and	bx,0FF0H			; can handle it
-	shr	bl,4
-	cmp	bl,bh
-	jne	dispatch_true_rop3
-        cmp     word ptr background_mode,OPAQUE
-	jne	dispatch_mode_xpar
-
-	call	blt216_src_dst
-	jmp	short bitblt_hardcode_done
+;	mov	bl,byte ptr Rop[2]		; only involves the src and
+;	mov	bh,bl				; dst, then the 216 hardware
+;	and	bx,0FF0H			; can handle it
+;	shr	bl,4
+;	cmp	bl,bh
+;	jne	dispatch_true_rop3
+;        cmp     word ptr background_mode,OPAQUE
+;	jne	dispatch_mode_xpar
+;
+;	call	blt216_src_dst
+;	jmp	short bitblt_hardcode_done
 
 @@:	cmp	byte ptr Rop[2],11001100B	; scr to scr but no 216
 	jne	dispatch_true_rop3		; but we will still use

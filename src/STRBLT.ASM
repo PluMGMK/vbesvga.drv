@@ -516,7 +516,7 @@ if 0
    	push	ss_phases
    	push	word ptr ss_clip_mask
    	errnz	ss_num_chars-ss_clip_mask-1
- 	push	ss_colors
+ 	push	ss_pixbytes
 	push	ss_p_frame
 endif
 ;
@@ -555,7 +555,7 @@ if 0
 ; takes longer to execute than the rep mosvw above.
 ;
 	pop	ss_p_frame
- 	pop	ss_colors
+ 	pop	ss_pixbytes
    	errnz	ss_num_chars-ss_clip_mask-1
    	pop	word ptr ss_clip_mask
    	pop	ss_phases
@@ -689,22 +689,36 @@ get_mode proc	near
 	lds	si,xlate_draw_mode	; Most information is in the DrawMode
 	assumes ds,nothing
 ;
-	mov	al,[si].TextColor.pcol_Clr ;.SPECIAL ; Get text color info
-	mov	ah,[si].bkColor.pcol_Clr   ;.SPECIAL ; Get background color info
+	mov	ax,[si].TextColor.lo	; Get text color info
+	mov	colors.FOREGROUND.lo,ax
+	mov	ax,[si].TextColor.hi
+	mov	colors.FOREGROUND.hi,ax
+	mov	ax,[si].bkColor.lo	; Get background color info
+	mov	colors.BACKGROUND.lo,ax
+	mov	ax,[si].bkColor.hi
+	mov	colors.BACKGROUND.hi,ax
 	cmp	dl,1			   ; is this a mono case?
 	jnz	@F			   ; no, use the color
-	mov	al,[si].TextColor.SPECIAL  ; Get text mono bit
+
+	; For the mono case, just set/clear the LSB for each colour...
+	xor	ax,ax
+	mov	colors.FOREGROUND.hi,ax
+	mov	colors.BACKGROUND.hi,ax
+
+	mov	al,[si].TextColor.SPECIAL
 	and	al,1
 	errnz	MONO_BIT-00000001B
-	mov	ah,[si].bkColor.SPECIAL
-	and	ah,1
+	mov	colors.FOREGROUND.lo,ax
+	mov	al,[si].bkColor.SPECIAL
+	and	al,1
 	errnz	MONO_BIT-00000001B
+	mov	colors.BACKGROUND.lo,ax
 ;
 @@:
 					;JAK color problem perhaps?
-	mov	colors,ax
-	errnz	FOREGROUND
-	errnz	BACKGROUND-1
+	;mov	colors,ax
+	;errnz	FOREGROUND
+	;errnz	BACKGROUND-1
 ;
 	mov	ax,[si].TBreakExtra	; Get any justification
 	mov	tot_brk_extra,ax	; Needed for QuickClip code
@@ -2016,6 +2030,22 @@ ifdef VGA256X
 endif; VGA256X
 
         inc     bx
+
+	xor	cx,cx
+	mov	cl,BitsaPixel
+	shr	cx,3
+	cmp	cx,1
+	je	@F
+
+	; multiple bytes per pixel, need to do some more work...
+	mov	ax,di
+	mul	cx
+	mov	di,ax
+	mov	ax,bx
+	mul	cx
+	mov	bx,ax
+
+@@:
         mov     si,bx
         xor     ax,ax                   ; null clipping masks
 

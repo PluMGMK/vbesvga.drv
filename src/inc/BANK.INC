@@ -63,9 +63,6 @@ far_set_bank_select endp
 ;       Entry:  DL = bank select
 ;       Exit:   none
 ;
-;       Assume: VRAM VGA in extended 256 color mode
-;               Extensions are enabled
-;
 set_bank_select proc    near
         push    ds
 	push	ax

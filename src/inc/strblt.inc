@@ -87,7 +87,7 @@ ETO_OPAQUE_CLIP equ	00000100b	;Clip to opaque rectangle
 ; in the frame variable "colors"
 ;
 FOREGROUND	equ	0
-BACKGROUND	equ	1
+BACKGROUND	equ	4
 ;
 ;
 ; frame_data is the definition of the data which is pushed
@@ -133,7 +133,8 @@ ss_draw_clipped dw	?		;Function to do clipped output
 ss_phases	dw	?		;Phases for 4 character case
 ss_clip_mask	db	?		;Clipping mask
 ss_num_chars	db	?		;Number characters for n char case
-ss_colors	dw	?		;Foreground/background colors
+;ss_colors	dw	?		;Foreground/background colors
+ss_pixbytes	dw	?		;Bytes per pixel
 ss_p_frame	dw	?		;Link to stack frame
 StrStuff	ends
 ;
@@ -176,7 +177,7 @@ cProc	name,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
 	localB	excel			;Accelerator flags
 	localB	num_planes		;Number of planes in a bitmap
 	localB	wc_flags		;Flags for worst case text
-	localW	colors			;Text/background colors
+	localQ	colors			;Text/background colors
 ;
 	localW	char_xtra		;# extra pixels to add each char
 	localW	brk_extra		;# extra pixels to add each break char

@@ -17,7 +17,7 @@ include display.inc
 include vgareg.inc
 include bblt.inc
 include bltutil.inc
-include blt216.inc
+;include blt216.inc
 include bitblt.var
 include vgautil.inc
 
@@ -135,13 +135,13 @@ blt_pat_dst	PROC	NEAR
 
 
 blt_pat_216_check:
-       test    word ptr local_board_flags,BOARD_FLAG_ENABLE_216
-       je      blt_pat_dst_roploop
+;       test    word ptr local_board_flags,BOARD_FLAG_ENABLE_216
+;       je      blt_pat_dst_roploop
 ;	cmp	bl,60H
 ;	jne	blt_pat_dst_roploop
 ;	int	 3
-       call	blt216_pat_dst
-       jmp     short blt_pat_dst_done
+;       call	blt216_pat_dst
+;       jmp     short blt_pat_dst_done
 
 
 blt_pat_dst_roploop:

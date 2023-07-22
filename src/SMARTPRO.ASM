@@ -166,27 +166,10 @@ cchar4  equ     dword ptr wwidth4 - 4
 ;
 upd_bm	macro	ll
 if DRAW_ADJUST				;;If last logic operation defined
-	dec	di			;;  did a stosb, adjust for it
+	sub	di,ss_pixbytes		;;  did a stosb, adjust for it
 endif
 	add	di,ss_next_scan
-	ll
-	endm
-;
-;
-;--------------------------------Macro----------------------------------;
-; upd_dev
-;
-;	upd_dev is the macro used for generating the destination update
-;	code for the physical device
-;
-;	Usage:
-;		upd_dev ll
-;	Where
-;		ll	is the macro to invoke for the looping logic
-;-----------------------------------------------------------------------;
-;
-upd_dev	macro	ll
-	add	di,MEMORY_WIDTH-DRAW_ADJUST
+	UpdBank
 	ll
 	endm
 ;
@@ -1254,24 +1237,53 @@ DRAW_ADJUST	= 0			;;STOSB isn't used
 ;--------------------------------Macro----------------------------------;
 ; GetColor
 ;
-;	Loads the proper color into AL.
+;	Loads the pointer to the proper color into SS:SI.
 ;
 ;	Assumes:
 ;		BL holds bit mask. 1=use forground, 0=background
-;		DX holds colors. DL=Bg, DH=Fg
+;		SS:DX is the frame pointer
 ;
 ;-----------------------------------------------------------------------;
 ;
 GetColor        macro       reg
+	xchg	bp,dx
+	lea	si,colors
+	xchg	bp,dx
 ifnb <reg>
         rol     reg,1                   ;; send next Fg/Bg bit into carry
 else
         rol     bl,1                    ;; send next Fg/Bg bit into carry
 endif
-	sbb	ax,ax			;; ffff or 0000
-	not	ah
-	and	ax,dx
-	or	al,ah			;; either dl or dh
+	jc	@F			; default foreground
+	;int	3
+	add	si,BACKGROUND
+@@:
+	endm
+;
+;
+;--------------------------------Macro----------------------------------;
+; UpdBank
+;
+;	Advances the bank selection after an addition, if necessary
+;
+;	Assumes:
+;		Addition has just been performed (e.g. "add di,ss_next_scan")
+;		CF set accordingly
+;
+;-----------------------------------------------------------------------;
+;
+UpdBank        macro       ji
+ifnb <ji>
+	ji	@F
+else
+	jnc	@F
+endif
+	push	dx
+	GET_BANK
+	inc	dx
+	SET_BANK
+	pop	dx
+@@:
 	endm
 ;
 ;
@@ -1815,20 +1827,52 @@ bm_trans_color_fix:
 	push	dx			; put return address on stack
 ;
 bm_trans_color:
-	pushem	ax,bx,cx,dx,di
+	pushem	ax,bx,cx,dx,di,si
+	GET_BANK
+	push	dx			; save initial bank
+
 	xchg	bp,ss_p_frame		; fetch ss_p_frame
 	mov	bl,al			; get bits to be changed
 	mov	cx,8			; check all 8 pixels
-	mov	dx,ss_colors		; dl=Fg, dh=Bg
+	lea	si,colors.FOREGROUND	; accessed via ss_p_frame
+	xchg	dx,ss_pixbytes		; save the bank in SS
+	cld
 ;
 bmtrco_loop:
-	mov	dh,es:[di]		; dh=old Bg
-	GetColor			; calc the new color
-	stosb				; save the new color
+        rol     bl,1                    ;; send next Fg/Bg bit into carry
+	mov	ax,cx			; save pixel count
+	mov	cx,dx			; number of bytes to copy
+	jnc	@@skip			; for Bg, do nothing (transparent)
+@@:
+	movs	byte ptr es:[di],ss:[si]; SI is in "colors" on stack
+	test	di,di
+	loopnz	@B
+	; update the bank if necessary
+	xchg	dx,ss_pixbytes		; get the bank from SS
+	inc	dx
+	SET_BANK
+	xchg	dx,ss_pixbytes		; save the bank in SS
+	jcxz	@F
+	jmp	@B
+@@:
+	sub	si,dx			; reset for next pixel
+@@skip:
+	add	di,cx			; if we didn't copy, update DI anyway
+	jnc	@F
+	; update the bank if necessary
+	xchg	dx,ss_pixbytes		; get the bank from SS
+	inc	dx
+	SET_BANK
+	xchg	dx,ss_pixbytes		; save the bank in SS
+@@:
+	mov	cx,ax			; restore pixel count
 	loop	bmtrco_loop
 ;
 	xchg	bp,ss_p_frame		; restore bp and ss_p_frame
-	popem	ax,bx,cx,dx,di		; restore other registers
+	xchg	dx,ss_pixbytes		; restore ss_pixbytes
+	pop	dx			; restore the initial bank
+	SET_BANK
+	popem	ax,bx,cx,dx,di,si	; restore other registers
 ;
 DRAW_ADJUST = 0
 	upd_bm <ret>			; Will generate the ret
@@ -1880,19 +1924,31 @@ bm_opaque_color_fix:
 	push	dx			;put return address on stack
 ;
 bm_opaque_color:
-	pushem	ax,bx,cx,dx,di
+	pushem	ax,bx,cx,dx,di,si
 	xchg	bp,ss_p_frame		; fetch ss_p_frame
 	mov	bl,al			; get bits to be changed
 	mov	cx,8			; check all 8 pixels
-	mov	dx,ss_colors		; dl=Fg, dh=Bg
+	mov	dx,ss_pixbytes
+	cld
 ;
 bmopco_loop:
-	GetColor			; calc the new color
-	stosb				; save the new color
+	lea	si,colors.FOREGROUND	; accessed via ss_p_frame
+	mov	ax,cx			; save pixel count
+	mov	cx,dx			; number of bytes to copy
+        rol     bl,1                    ;; send next Fg/Bg bit into carry
+	jc	bmopco_subloop		; for Fg, SI is correct
+	;int	3
+	add	si,BACKGROUND		; otherwise, pick Bg colour instead
+bmopco_subloop:
+	movs	byte ptr es:[di],ss:[si]; SI is in "colors" on stack
+	test	di,di
+	UpdBank	jnz
+	loop	bmopco_subloop
+	mov	cx,ax			; restore pixel count
 	loop	bmopco_loop
 ;
 	xchg	bp,ss_p_frame		; restore bp and ss_p_frame
-	popem	ax,bx,cx,dx,di		; restore other registers
+	popem	ax,bx,cx,dx,di,si	; restore other registers
 ;
 DRAW_ADJUST = 0
 	upd_bm <ret>			;Will generate the ret
@@ -1941,20 +1997,22 @@ preset_pro_text proc	near
 	mov	ss_p_frame,bp
 	mov	cx,next_scan
 	mov	ss_next_scan,cx
-	mov	cx,colors
-	mov	ss_colors,cx
+	mov	cl,BitsaPixel
+	xor	ch,ch
+	shr	cx,3
+	mov	ss_pixbytes,cx
 ;
 ; Accumulate foreground/background colors, opaque/transparent mode,
 ; and device/bitmap to determine which drawing functions will be used.
 ;
 	and	bx,IS_OPAQUE		;BL = 0000000 O/T
 	errnz	IS_OPAQUE-00000001
+	mov	cx,colors.FOREGROUND.lo
 	shr	cl,1
 	rcl	bl,1			;BL = 000000 O/T FG
-	errnz	FOREGROUND
-	shr	ch,1			;BL = 00000 O/T FG BK
+	mov	cx,colors.BACKGROUND.lo
+	shr	cl,1
 	rcl	bl,1
-	errnz	BACKGROUND-FOREGROUND-1
 	and	ah,IS_DEVICE
 	or	bl,ah			;BL = 0000 DEV/BM O/T FG BK
 	errnz	IS_DEVICE-00001000b
@@ -2191,15 +2249,15 @@ endif
 ; C O L O R _ O P A Q U E _ O U T P U T
 ;
 ; Assumed Entry Conditions:
-;	   dl holds the foreground color
-;	   dh holds the background color
+;	ss:dx ==> physical foreground colour (and dx+4 ==> background)
 ;	es:di ==> destination
 ;	ds:si ==> font data
-;	   cl holds the character width
+;	   bx holds the character width in bytes
+;	   cl holds the character width in pixels
 ;	   bp holds the character length
 ;
 ; Exit Conditions:
-;	CH = 0, CL holds the width
+;	BX holds the width in bytes
 ;	BP = 0
 ;       AX,BX,DX,SI,DI modified
 ;
@@ -2213,34 +2271,56 @@ color_opaque_output_286 endp
         public  pcolor_opaque_output_286
 pcolor_opaque_output_286 proc near
         xor     ch,ch           ; clear phase
-        pushem  cx,di
+	mov	ax,dx
+	GET_BANK		; save initial bank by getting in DX and pushing
+        pushem  dx,bx,di
+	mov	dx,ax		; restore the frame pointer
 
         mov     bx,cx
         and     bx,0111b
 	shl	bx,1
         mov     bx,cs:pcpou_phase_286[bx]
 
-        mov     cl,ss_clip_mask
+        mov     ah,ss_clip_mask
 
 pcpou_char_loop_286:
         lodsb
+	mov	cl,ah
         shl     al,cl
-        mov     ch,al
+        ;mov     ch,al
 
+	push	si
         jmp     bx
 
 irp phase, <0,7,6,5,4,3,2,1>
 pcpou_phase_286_&phase:
-        GetColor ch
-	stosb
+        GetColor al
+	mov	cx,ss_pixbytes
+loop_pcpou_phase_286_&phase:
+	movs	byte ptr es:[di],ss:[si]; SI is in "colors" on stack
+	test	di,di
+	UpdBank	jnz
+	loop	loop_pcpou_phase_286_&phase
 endm
         add     di,ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
-        jnz     pcpou_char_loop_286
+	pop	si
+	jz	@F
+        jmp     pcpou_char_loop_286
 
-        popem   cx,di
-        add     di,cx
+@@:
+	; restore:
+	; - initial bank in AX
+	; - byte width in BX
+	; - initial offset in DI
+        popem   ax,bx,di
+        add     di,bx
+	adc	ax,0
+	xchg	ax,dx
+	SET_BANK
+	xchg	ax,dx
         ret
 
 pcpou_phase_286 label   word
@@ -2263,14 +2343,17 @@ color_opaque_output_386 endp
         public  pcolor_opaque_output_386
 pcolor_opaque_output_386 proc near
         xor     ch,ch           ; clear phase
-        pushem  cx,di
+	mov	ax,dx
+	GET_BANK		; save initial bank by getting in DX and pushing
+        pushem  dx,bx,di
+	mov	dx,ax		; restore the frame pointer
 
         mov     bx,cx
         and     bx,0111b
 	shl	bx,1
         mov     bx,cs:pcpou_phase_386[bx]
 
-        mov     cl,ss_clip_mask
+        mov     ah,ss_clip_mask
 
 pcpou_char_loop_386:
 	.386
@@ -2279,23 +2362,38 @@ pcpou_char_loop_386:
 	db	67h
 	nop
 	.8086
+	mov	cl,ah
         shl     al,cl
-        mov     ch,al
+        ;mov     ch,al
 
+	push	si
         jmp     bx
 
 irp phase, <0,7,6,5,4,3,2,1>
 pcpou_phase_386_&phase:
-        GetColor ch
-	stosb
+        GetColor al
+	mov	cx,ss_pixbytes
+loop_pcpou_phase_386_&phase:
+	movs	byte ptr es:[di],ss:[si]; SI is in "colors" on stack
+	test	di,di
+	UpdBank	jnz
+	loop	loop_pcpou_phase_386_&phase
 endm
         add     di,ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
-        jnz     pcpou_char_loop_386
+	pop	si
+	jz	@F
+        jmp     pcpou_char_loop_386
 
-        popem   cx,di
-        add     di,cx
+@@:
+        popem   ax,bx,di		; restore CX,DI; and initial bank in AX
+        add     di,bx
+	adc	ax,0
+	xchg	ax,dx
+	SET_BANK
+	xchg	ax,dx
         ret
 
 pcpou_phase_386 label   word
@@ -2315,15 +2413,15 @@ pcolor_opaque_output_386     endp
 ; T R A N S P _ L O O P _ C O N T R O L
 ;
 ; Assumed Entry Conditions:
-;	   dl holds the foreground color
-;	   dh holds the background color
+;	ss:dx ==> physical foreground colour (and dx+4 ==> background)
 ;	es:di ==> destination
 ;	ds:si ==> font data
-;	   cl holds the character width
+;	   bx holds the character width in bytes
+;	   cl holds the character width in pixels
 ;	   bp holds the character length
 ;
 ; Exit Conditions:
-;	CH = 0, CL holds the width
+;	BX holds the width in bytes
 ;	BP = 0
 ;	AX,BX,DX,SI,DI modified
 ;-----------------------------------------------------------------------;
@@ -2336,7 +2434,10 @@ color_transp_output_286 endp
         public  pcolor_transp_output_286
 pcolor_transp_output_286 proc near
         xor     ch,ch           ; clear phase
-        pushem  cx,di
+	mov	ax,dx
+	GET_BANK		; save initial bank by getting in DX and pushing
+        pushem  dx,bx,di
+	mov	dx,ax		; restore the frame pointer
 
         mov     bx,cx
         and     bx,0111b
@@ -2361,14 +2462,26 @@ pctou_phase_286_&phase:
         mov     es:[di],al
 @@:
         inc     di
+	UpdBank	jnz
 endm
         add     di,ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
-        jnz     pctou_char_loop_286
+        jz      @F
+	jmp	pctou_char_loop_286
 
-        popem   cx,di
-        add     di,cx
+@@:
+	; restore:
+	; - initial bank in AX
+	; - byte width in BX
+	; - initial offset in DI
+        popem   ax,bx,di
+        add     di,bx
+	adc	ax,0
+	xchg	ax,dx
+	SET_BANK
+	xchg	ax,dx
         ret
 
 pctou_phase_286 label   word
@@ -2391,7 +2504,13 @@ color_transp_output_386 endp
         public  pcolor_transp_output_386
 pcolor_transp_output_386 proc near
         xor     ch,ch           ; clear phase
-        pushem  cx,di
+	mov	ax,dx
+	GET_BANK		; save initial bank by getting in DX and pushing
+        pushem  dx,bx,di
+	mov	dx,ax		; restore the frame pointer
+
+	; allow access to "colors" on the stack
+	xchg	bp,dx
 
         mov     bx,cx
         and     bx,0111b
@@ -2407,28 +2526,47 @@ pctou_char_loop_386:
 	db	67h
 	nop
 	.8086
-        shl     al,cl
-        mov     ch,al
-        mov     al,dl
-        not     ch
 
+        shl     al,cl
+        mov     ah,al
+        not     ah
+
+	push	si
         jmp     bx
 
 irp phase, <0,7,6,5,4,3,2,1>
 pctou_phase_386_&phase:
-        shl     ch,1
-        jc      @f
-        mov     es:[di],al
-@@:
-        inc     di
+	mov	cx,ss_pixbytes
+	; get the foreground colour
+	lea	si,colors.FOREGROUND
+
+        shl     ah,1
+        jc      skip_pctou_386_&phase
+loop_pctou_phase_386_&phase:
+	movs	byte ptr es:[di],ss:[si]	; SI is in "colors" on stack
+	test	di,di
+	UpdBank	jnz
+	loop	loop_pctou_phase_386_&phase
+skip_pctou_386_&phase:
+	add	di,cx			; if we didn't copy, update DI anyway
+	UpdBank
 endm
         add     di,ss_next_scan         ; skip to next scan line
+	UpdBank
 
-        dec     bp
-        jnz     pctou_char_loop_386
+        dec     dx
+	pop	si
+        jz	@F
+	jmp	pctou_char_loop_386
 
-        popem   cx,di
-        add     di,cx
+@@:
+	xchg	bp,dx
+        popem   ax,bx,di		; restore CX,DI; and initial bank in AX
+        add     di,bx
+	adc	ax,0
+	xchg	ax,dx
+	SET_BANK
+	xchg	ax,dx
         ret
 
 pctou_phase_386 label   word
@@ -2456,16 +2594,16 @@ ifdef VGA256X
 ; C O L O R _ O P A Q U E _ O U T P U T
 ;
 ; Assumed Entry Conditions:
-;	   dl holds the foreground color
-;	   dh holds the background color
+;	ss:dx ==> physical foreground colour (and dx+4 ==> background)
 ;	es:di ==> destination
 ;	ds:si ==> font data
-;	   cl holds the character width
+;	   bx holds the character width in bytes
+;	   cl holds the character width in pixels
 ;          ch holds the phase
 ;	   bp holds the character length
 ;
 ; Exit Conditions:
-;	CH = 0, CL holds the width
+;	BX holds the width in bytes
 ;	BP = 0
 ;	AX,BX,DX,SI,DI modified
 ;
@@ -2479,9 +2617,11 @@ dev_color_opaque_output_286 endp
         public  dev_pcolor_opaque_output_286
 dev_pcolor_opaque_output_286 proc near
 
-        ;int     3
-
-        push    cx
+        push    bx
+	mov	ax,dx
+	GET_BANK
+	push	dx	; save bank on stack
+	mov	dx,ax	; restore frame pointer
 
         mov     bl,cl
         mov     cl,ss_clip_mask
@@ -2499,6 +2639,7 @@ dev_opaque_loop_286:
         mov     es:[di],al
 
         add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
         jnz     dev_opaque_loop_286
@@ -2508,13 +2649,18 @@ dev_opaque_loop_286:
         inc     cl
         inc     ch
         test    ch,0011b
-        jnz     @f
+        jnz     dol2_skipinc
         inc     di
-@@:
+	UpdBank	jnz
+dol2_skipinc:
         dec     bl
         jnz     dev_opaque_width_loop_286
 
-        pop     cx
+	mov	ax,dx	; save frame pointer
+	pop	dx	; restore bank from stack
+	SET_BANK
+	mov	dx,ax	; restore frame pointer
+        pop     bx
         ret
 
 dev_pcolor_opaque_output_286     endp
@@ -2529,7 +2675,11 @@ dev_pcolor_opaque_output_386 proc near
 
         ;int     3
 
-        push    cx
+        push    bx
+	mov	ax,dx
+	GET_BANK
+	push	dx	; save bank on stack
+	mov	dx,ax	; restore frame pointer
 
         mov     bl,cl
         mov     cl,ss_clip_mask
@@ -2552,6 +2702,7 @@ dev_opaque_loop_386:
         mov     es:[di],al
 
         add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
         jnz     dev_opaque_loop_386
@@ -2561,13 +2712,18 @@ dev_opaque_loop_386:
         inc     cl
         inc     ch
         test    ch,0011b
-        jnz     @f
+        jnz     dol3_skipinc
         inc     di
-@@:
+	UpdBank	jnz
+dol3_skipinc:
         dec     bl
         jnz     dev_opaque_width_loop_386
 
-        pop     cx
+	mov	ax,dx	; save frame pointer
+	pop	dx	; restore bank from stack
+	SET_BANK
+	mov	dx,ax	; restore frame pointer
+        pop     bx
         ret
 
 dev_pcolor_opaque_output_386     endp
@@ -2578,15 +2734,15 @@ dev_pcolor_opaque_output_386     endp
 ; T R A N S P _ L O O P _ C O N T R O L
 ;
 ; Assumed Entry Conditions:
-;	   dl holds the foreground color
-;	   dh holds the background color
+;	ss:dx ==> physical foreground colour (and dx+4 ==> background)
 ;	es:di ==> destination
 ;	ds:si ==> font data
-;	   cl holds the character width
+;	   bx holds the character width in bytes
+;	   cl holds the character width in pixels
 ;	   bp holds the character length
 ;
 ; Exit Conditions:
-;	CH = 0, CL holds the width
+;	BX holds the width in bytes
 ;	BP = 0
 ;	AX,BX,DX,SI,DI modified
 ;
@@ -2602,7 +2758,10 @@ dev_pcolor_transp_output_286 proc near
 
         ;int     3
 
-        pushem  cx
+	mov	ax,dx
+	GET_BANK
+        pushem  bx,dx	; save width in bytes & bank on stack
+	mov	dx,ax	; restore frame pointer
 
         mov     bl,cl
         mov     cl,ss_clip_mask
@@ -2620,6 +2779,7 @@ dev_transp_loop_286:
         mov     es:[di],dl
 @@:
         add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
         jnz     dev_transp_loop_286
@@ -2629,14 +2789,18 @@ dev_transp_loop_286:
         inc     cl
         inc     ch
         test    ch,0011b
-        jnz     @f
+        jnz     dtl2_skipinc
         inc     di
-@@:
+	UpdBank	jnz
+dtl2_skipinc:
         dec     bl
         jnz     dev_transp_width_loop
 
 dev_transp_exit_286:
-        popem   cx
+	mov	ax,dx	; save frame pointer
+	popem   bx,dx	; restore width in bytes & bank from stack
+	SET_BANK
+	mov	dx,ax	; restore frame pointer
 
         ret
 
@@ -2650,9 +2814,10 @@ dev_color_transp_output_386 endp
         public  dev_pcolor_transp_output_386
 dev_pcolor_transp_output_386 proc near
 
-        ;int     3
-
-        pushem  cx
+	mov	ax,dx
+	GET_BANK
+        pushem  bx,dx	; save width in bytes & bank on stack
+	mov	dx,ax	; restore frame pointer
 
         mov     bl,cl
         mov     cl,ss_clip_mask
@@ -2675,6 +2840,7 @@ dev_transp_loop_386:
         mov     es:[di],dl
 @@:
         add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
+	UpdBank
 
         dec     bp
         jnz     dev_transp_loop_386
@@ -2684,14 +2850,18 @@ dev_transp_loop_386:
         inc     cl
         inc     ch
         test    ch,0011b
-        jnz     @f
+        jnz     dtl3_skipinc
         inc     di
-@@:
+	UpdBank	jnz
+dtl3_skipinc:
         dec     bl
         jnz     dev_transp_width_loop
 
 dev_transp_exit_386:
-        popem   cx
+	mov	ax,dx	; save frame pointer
+	popem   bx,dx	; restore width in bytes & bank from stack
+	SET_BANK
+	mov	dx,ax	; restore frame pointer
 
         ret
 

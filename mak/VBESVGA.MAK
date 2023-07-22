@@ -49,14 +49,6 @@ $(OBJ)\bblt.obj:        $(SRC)\bblt.asm         \
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
-$(OBJ)\blt216.obj:      $(SRC)\blt216.asm       \
-			$(SRC)\inc\genconst.inc \
-			$(SRC)\inc\bblt.inc     \
-			$(SRC)\bitblt.var
-			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
-			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
-			$(ASM) < vrammak
-
 $(OBJ)\blt11.obj:       $(SRC)\blt11.asm                \
 			$(SRC)\inc\genconst.inc \
 			$(SRC)\inc\bblt.inc     \
@@ -299,8 +291,7 @@ $(OBJ)\robject.obj:     $(SRC)\robject.asm
 $(OBJ)\scanline.obj:    $(SRC)\scanline.asm     \
 			$(SRC)\inc\scanmono.inc \
 			$(SRC)\inc\scancolo.inc \
-			$(SRC)\inc\pattern.inc  \
-			$(SRC)\inc\sl216.inc
+			$(SRC)\inc\pattern.inc
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
@@ -367,11 +358,6 @@ $(OBJ)\vgavram.obj:     $(SRC)\vga.asm
 			$(ASM) < vrammak
 
 $(OBJ)\3xswitch.obj:    $(SRC)\3xswitch.asm
-			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
-			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
-			$(ASM) < vrammak
-
-$(OBJ)\bs216.obj:       $(SRC)\bs216.asm
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
@@ -521,7 +507,6 @@ $(RES)\drv256.res:      $(RES)\drv256.rc        \
 
 $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\bblt.obj         \
-		$(OBJ)\blt216.obj       \
 		$(OBJ)\blt11.obj        \
 		$(OBJ)\blt18.obj        \
 		$(OBJ)\blt81.obj        \
@@ -574,7 +559,6 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\vgastate.obj     \
 		$(OBJ)\vgavram.obj      \
 		$(OBJ)\3xswitch.obj     \
-		$(OBJ)\bs216.obj        \
 		$(MAK)\vbesvga.def      \
 		$(RES)\drv256.res
 	copy vbesvga.def $(OBJ)
