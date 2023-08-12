@@ -62,11 +62,6 @@ page
 ;
 ;   Colorinfo may also be requested to convert a physical color into
 ;   a logical RGB color.  This is indicated by a NULL lpPColour.
-;   Since this driver maintains logical and physical colors as one
-;   in the same (i.e. logical white is xxFFFFFFH and physical white
-;   is xxFFFFFFH), we can just pass the physical color back as the
-;   logical color!  GDI will only call us to convert our own physical
-;   color that was returned by this driver, so this is safe.
 ;
 ; Entry:
 ;	None
@@ -152,10 +147,18 @@ CIReturnPhysicalColour:
 	or	ah,2			;set Z bit. ZM = 11 (white) or 10 (black)
 
 CIWritePhysicalColorIndex:
-	stosw				; save index in Pcolor
-	mov	bx,ax
-	mov	ax,0ff00h
+	stosw				; save data in Pcolor
+	xchg	ax,dx
         stosw
+	xchg	ax,dx
+
+; if it's not an index, just return (TODO: Set AL/AH/DL back to R/G/B)
+	test	dh,COL_IS_INDEX
+	jz	CIExit
+	; If COL_IS_INDEX is 1, we also need to check COL_ROT_MASK (since it
+	; could just be indicating that the colour needs to rotate one byte...)
+	test	dh,COL_ROT_MASK
+	jz	CIExit
 
 ; the color value we want to return is in Palette (the VGA simulated
 ; colors).  so convert the index to the 20 entry table of TRIPLES and
@@ -175,6 +178,7 @@ lower_end:
 	jmp	short CIExit
 
 CIReturnRGBColour:
+	; TODO: Adapt this for non-palette devices
 	cmp	bl	,10
 	jb	CIReturnSystemClr
 	cmp	bl	,245

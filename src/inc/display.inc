@@ -46,11 +46,12 @@ phys_color	struc
 pcol_Clr	db	?		;8 bit color
 pcol_fb 	db	?		;accelerator flags as defined below
 		db	?		;reserved
-		db	?		;reserved
+pcol_idc	db	?		;type indicator
 phys_color	ends
 
 
 ;	Definitions for the pcol_fb byte of the physical color
+;	(only valid when pcol_idc:COL_IS_INDEX == 1 - see below)
 ;
 ;	Some of these definitions have limitations as to when they
 ;	are valid.  They are as follows:
@@ -69,7 +70,26 @@ MONO_BIT	equ	00000001b	;  Monochrome bit
 ONES_OR_ZEROS	equ	00000010b	;  Color is really all 1's or all 0's
 GREY_SCALE	equ	00000100b	;  Indicates a real grey scale brush
 SOLID_BRUSH	equ	00001000b	;  Indicates a solid color brush
-WORD_BRUSH	equ	00010000b	;  Indicates a WORD repeating brush
+;WORD_BRUSH	equ	00010000b	;  Indicates a WORD repeating brush
+
+
+;	Definitions for the pcol_idc byte of the physical colour
+;
+;	Note that if the colour is an eight-bit palette index, then pcol_idc is
+;	always 0FFh; in this case, only COL_IS_PHYS and COL_IS_INDEX are valid,
+;	and the other bits should be ignored.
+;
+;	On the other hand, if COL_IS_INDEX is 1 but COL_ROT_MASK bits are all
+;	zero, that means the colour is not a palette index, but must be rotated
+;	exactly one byte to the left before writing to memory
+
+
+COL_IS_PHYS	equ	10000000b	;  Set the MSB to indicate physical
+COL_IS_INDEX	equ	01000000b	;  If NOT set, then not using a palette
+COL_ROT_MASK	equ	00111000b	;  How many bits to rotate left (< 8)
+COL_ROT_SHIFT	equ	3		;  LSB index of COL_ROT_MASK
+; MONO_BIT, ONES_OR_ZEROS and GREY_SCALE as above (TODO: rearrange?)
+COL_ACCEL_MASK	equ	MONO_BIT OR ONES_OR_ZEROS OR GREY_SCALE
 
 	errnz	<(size phys_color) - 4> ;Must be a double word
 
@@ -98,10 +118,13 @@ SIZE_PATTERN	equ	8		;Size of an 8 by 8 pattern in bytes
 
 
 oem_brush_def	struc
-oem_brush_clr	db	SIZE_PATTERN * SIZE_PATTERN dup (?)    ;color brush
+    ;color brush, four bytes per pixel
+    ;we decide how many bytes to write to a bitmap based on its bmBitsPixel
+;oem_brush_clr	db	SIZE_PATTERN * SIZE_PATTERN * (size phys_color) dup (?)
+oem_brush_clr	db	SIZE_PATTERN * SIZE_PATTERN dup (?)
 oem_brush_mono	db	SIZE_PATTERN dup (?)	;Mono portion
 oem_brush_style dw	0			;Style of the brush
-oem_brush_accel db	0			;Accellerator for solids
+oem_brush_accel db	0			;Accelerator for solids
 oem_brush_mask	db	SIZE_PATTERN dup (?)	;transparency mask
 						;(it is the hatch pattern)
 oem_brush_def   ends                            ;  (same as "Special" above)

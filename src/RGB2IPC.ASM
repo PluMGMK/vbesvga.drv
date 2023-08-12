@@ -103,8 +103,11 @@
 ;
 ;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
         include cmacros.inc
+	include gdidefs.inc
+	include display.inc
 	include	macros.mac
 ;
+	externA		BW_THRESHOLD
 ; accelerator bytes
 PHY_COLOR_BYTE_00	equ	0010b	    ; black
 PHY_COLOR_BYTE_01	equ	0000b	    ; dark red
@@ -313,44 +316,90 @@ NoPalette:
 	; Store the out colour in SI:DI
 	xor	si,si
 	mov	di,si
+	; And keep the accelerator bits in CH: start by marking as physical,
+	; and also assume all ones or zeros, until we find out otherwise!
+	mov	ch,COL_IS_PHYS OR ONES_OR_ZEROS
 
 	; do red:
-	xor	ax,ax
 	mov	al,bl
+	mov	ah,al
 	mov	cl,red_shr
-	shr	ax,cl
+	shr	al,cl	; AL := actual colour data
+	sar	ah,cl	; AH := sign-extended colour to check all 1s or 0s
 	mov	cl,red_shl
 	call	colour_contribution
 
 	; do green:
-	xor	ax,ax
-	mov	al,bl
+	mov	al,bh
+	mov	ah,al
 	mov	cl,green_shr
-	shr	ax,cl
+	shr	al,cl	; AL := actual colour data
+	sar	ah,cl	; AH := sign-extended colour to check all 1s or 0s
 	mov	cl,green_shl
 	call	colour_contribution
 
 	; do blue:
-	xor	ax,ax
-	mov	al,bl
+	mov	al,dl
+	mov	ah,al
 	mov	cl,blue_shr
-	shr	ax,cl
+	shr	al,cl	; AL := actual colour data
+	sar	ah,cl	; AH := sign-extended colour to check all 1s or 0s
 	mov	cl,blue_shl
 	call	colour_contribution
 
+	; also do a straight sum on the colours to determine the mono bit
+	mov	al,bl
+	xor	ah,ah
+	add	al,bh
+	adc	ah,0
+	add	al,dl
+	adc	ah,0
+	cmp	ax,BW_THRESHOLD
+	jb	@F
+
+	; OK, it's white!
+	or	ch,MONO_BIT
+
+@@:
 	; return the colour
 	mov	dx,si
 	mov	ax,di
 
-	; mark as physical
-	; TODO: What if the device's bitmasks give us colour data in DH?
-	mov	dh,-1
+	; What if the device's bitmasks give us colour data in DH?
+	xor	cl,cl
+@@:
+	test	dh,dh
+	jz	@F
+	; note that this isn't exactly a rotation: zero always gets "rotated"
+	; into the MSB of DX (since we're shifting) and then we always discard
+	; what gets "rotated" out of the LSB of AX. There is no other way to
+	; handle this, as we cannot store more than 24 bits of RGB colour data!
+	shr	dx,1
+	rcr	ax,1
+	inc	cl
+	jmp	@B	; go back and check if we've cleared DH yet
+
+@@:
+	; set the rotation requirement
+	shl	cl,COL_ROT_SHIFT
+	or	ch,cl
+	; finally stick the accelerator flags in DH where they belong!
+	mov	dh,ch
 
 RGB2IPC_Done:
 cEnd
 
 ; Take a colour component (R/G/B) in AL, and OR it into SI:DI shifted left by CL
+; Also clear ONES_OR_ZEROS flag in CH if AH is not all ones or zeros
 colour_contribution	proc near
+	test	ah,ah	; is AH all zeros?
+	jz	@F
+	not	ah	; is it all ones?
+	jz	@F
+	; nope, clear the flag!
+	and	ch,NOT ONES_OR_ZEROS
+
+@@:
 	test	[??BigFontFlags],-1
 	jz	@@hard_way
 

@@ -716,9 +716,6 @@ get_mode proc	near
 ;
 @@:
 					;JAK color problem perhaps?
-	;mov	colors,ax
-	;errnz	FOREGROUND
-	;errnz	BACKGROUND-1
 ;
 	mov	ax,[si].TBreakExtra	; Get any justification
 	mov	tot_brk_extra,ax	; Needed for QuickClip code
