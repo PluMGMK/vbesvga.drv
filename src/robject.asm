@@ -491,17 +491,13 @@ sum_RGB_colors  proc    near
 
 sum_RGB_colors_alt proc near
 
-        cmp     dh,0ffh                 ;is it already an index???
-	je	sum_RGB_colors_exit
+        test    dh,dh                   ;is it already physical???
+	jnz	sum_RGB_colors_exit
 
 	cCall	rgb_to_ipc		;otherwise convert it to an index
 ;
 ;---------------------------------------------------------------------------
-;The new internal physical color format is
-; ah = flag byte where one_and_zeros and mono_bit are the least significant
-;      two bits
-; al = index into color table.  Uses 16 color entries in table with old
-;      intensity bit sign extended.
+;The new internal physical color format is documented in DISPLAY.INC
 ;---------------------------------------------------------------------------
 ;
 sum_RGB_colors_exit:

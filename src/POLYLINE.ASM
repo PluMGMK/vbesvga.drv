@@ -668,6 +668,7 @@ load_fg_color:
 
 	assume	ds:nothing
         lds     si,lp_phys_pen              ; DS:SI points to the pen structure
+	; TODO: Pull in unpack_physclr, either here or in ROBJECT
         mov     ah,[si].oem_pen_pcol.pcol_Clr
         mov     dx,wptr [si].oem_pen_pcol+1
 	test	DeviceFlags,TYPE_IS_BYTEMAP  ; mono maps color bit is SPECIAL
@@ -679,13 +680,14 @@ load_fg_color:
 ld_fg_color2:
 	mov	bptr ForeColor,ah	    ; save the pen color
 	mov	wptr ForeColor+1,dx
-	mov	bptr ForeColor+3,0	    ; TODO: if mask includes upper byte?
+	mov	bptr ForeColor+3,0
 
 load_bg_color:
 	assume	es:nothing
 	les	di,lp_draw_mode 	    ; point to the draw mode block
 	mov	dx,es:[di].bkMode	    ; get the background mode
         mov     BackMode,dl                 ; save it
+	; TODO: Pull in unpack_physclr, either here or in ROBJECT
 	mov	dl,byte ptr es:[di].bkColor.pcol_Clr
 	mov	bx,word ptr es:[di].bkColor+1
 	test	DeviceFlags,TYPE_IS_BYTEMAP
@@ -697,7 +699,7 @@ load_bg_color:
 ld_bg_color2:
         mov     bptr BackColor,dl	    ; save the background color
         mov     wptr BackColor+1,bx
-	mov	bptr BackColor+3,0	    ; TODO: if mask includes upper byte?
+	mov	bptr BackColor+3,0
 
 	mov	bx,es:[di].Rop2 	    ; get the ROP code
         dec     bx                          ; make it zero based

@@ -233,6 +233,9 @@ cBegin
 	cmp	[red_shr],-1
 	jne	NoPalette
 
+	; PluM: Why is this restricted to system colours?
+	; Is it because other colours could change at a moment's notice?
+	; I'm too afraid to change it tbh...
 	mov	cl, SystemPaletteColors ; CX=Size of Physical Palette
 	xor	ax, ax
 	dec	ax
@@ -326,6 +329,7 @@ NoPalette:
 	mov	cl,red_shr
 	shr	al,cl	; AL := actual colour data
 	sar	ah,cl	; AH := sign-extended colour to check all 1s or 0s
+	mov	dh,ah	; keep track of this
 	mov	cl,red_shl
 	call	colour_contribution
 
@@ -335,7 +339,10 @@ NoPalette:
 	mov	cl,green_shr
 	shr	al,cl	; AL := actual colour data
 	sar	ah,cl	; AH := sign-extended colour to check all 1s or 0s
-	mov	cl,green_shl
+	cmp	ah,dh	; is the sign-extended green equal to the red?
+	je	@F
+	and	ch,NOT ONES_OR_ZEROS	; if not, it can't be "all" one or zero!
+@@:	mov	cl,green_shl
 	call	colour_contribution
 
 	; do blue:
@@ -344,7 +351,10 @@ NoPalette:
 	mov	cl,blue_shr
 	shr	al,cl	; AL := actual colour data
 	sar	ah,cl	; AH := sign-extended colour to check all 1s or 0s
-	mov	cl,blue_shl
+	cmp	ah,dh	; is the sign-extended blue equal to the red?
+	je	@F
+	and	ch,NOT ONES_OR_ZEROS	; if not, it can't be "all" one or zero!
+@@:	mov	cl,blue_shl
 	call	colour_contribution
 
 	; also do a straight sum on the colours to determine the mono bit
@@ -394,7 +404,7 @@ cEnd
 colour_contribution	proc near
 	test	ah,ah	; is AH all zeros?
 	jz	@F
-	not	ah	; is it all ones?
+	inc	ah	; is it all ones?
 	jz	@F
 	; nope, clear the flag!
 	and	ch,NOT ONES_OR_ZEROS
@@ -446,6 +456,230 @@ colour_contribution	proc near
 	or	si,ax
 	ret
 colour_contribution	endp
+
+;
+; Takes physical colour in DX:AX, and upon return,
+;    AL contains the RED intensity.
+;    AH contains the GREEN intensity.
+;    DL contains the BLUE intensity.
+;    DH contains the accelerator flags.
+;
+cProc	ipc_to_rgb, <NEAR, PUBLIC>, <ds, si, di, cx, bx>
+;
+cBegin
+	assumes	ds,nothing
+	WriteAux <'ipc-to_rgb'>
+
+	call	unpack_physclr
+	rcl	bl,1		; save CF (palette index indicator)
+	test	bh,ONES_OR_ZEROS
+	jnz	@@ret_accel	; DL:AH:AL are already set, just set DH = accel
+
+	mov	ds,cs:_cstods
+	assumes	ds,Data
+
+	; first check for system palette colour
+	shr	bl,1		; get CF back
+	jnc	@F		; NC --> not a palette index
+
+; the color value we want to return is in Palette (the VGA simulated
+; colors).  so convert the index to the 20 entry table of TRIPLES and
+; get the color.
+
+	xor	ah,ah
+	mov	si,ax
+	cmp	si,10
+	jl	lower_end
+	cmp	si,245
+	jle	non_sys_colour
+	sub	si,236			; shift upper-256 indices to upper-20
+
+lower_end:
+	shl	si,1
+	add	bx,ax			; index into a TRIPLEs table
+	mov	ax,word ptr Palette[si+0]
+	mov	dx,word ptr Palette[si+2]
+	jmp	short @@ret_accel
+
+non_sys_colour:
+	; return the physical colour unaltered (match old ColorInfo behaviour)
+	mov	ah,bh			; get the accelerators back into AH
+	xor	dx,dx
+	mov	bh,-1			; set up FFh "index" sig to put in DH
+	jmp	short @@ret_accel
+
+@@:
+	; set up to invert the operation of colour_contribution above
+	mov	si,dx
+	mov	di,ax
+
+	; extract blue:
+	mov	cl,blue_shl
+	call	ext_colour_contribution
+	mov	cl,blue_shr
+	test	cl,cl
+	jz	@F
+	call	rest_colour_8bit
+@@:	mov	dl,al
+
+	; extract green:
+	mov	cl,green_shl
+	call	ext_colour_contribution
+	mov	cl,green_shr
+	test	cl,cl
+	jz	@F
+	call	rest_colour_8bit
+@@:	mov	bl,al	; can't use AH since it gets destroyed below
+
+	; extract red:
+	mov	cl,red_shl
+	call	ext_colour_contribution
+	mov	cl,red_shr
+	test	cl,cl
+	jz	@F
+	call	rest_colour_8bit
+@@:	; nothing, AL is already red! :)
+	mov	ah,bl	; but we have to restore green from BL!
+
+@@ret_accel:
+	mov	dh,bh
+	assumes	ds,nothing
+cEnd
+
+; Take a physical colour in DX:AX (including both data and accelerators) and
+; return the *actual actual* physical representation in DX:AX, and accelerators
+; in BH;	CF is set on failure, i.e. if it's a real palette index
+public	unpack_physclr
+unpack_physclr	proc near
+	; if it's an index, we don't touch it.
+	test	dh,COL_IS_INDEX
+	jz	@F
+	; make sure it really is an index, not one we need to rotate one byte!
+	test	dh,COL_ROT_MASK
+	jz	@F
+	; in this case, accelerators are in AH, not DH
+	mov	bh,ah
+	stc
+	ret
+
+@@:
+	; get the accelerators
+	mov	bh,dh
+	and	bh,COL_ACCEL_MASK
+
+	; all ones/zeros?
+	test	bh,ONES_OR_ZEROS
+	jz	@F
+	shr	dh,1		; get MONO_BIT into carry
+	sbb	ax,ax		; AX = -1 if CF, 0 otherwise
+	cwd			; DX = -1 if AX negative, 0 otherwise
+	clc
+	ret
+
+@@:
+	; check if rotation is needed
+	test	dh,COL_IS_INDEX	; rotate exactly one byte?
+	jnz	unpack_rotbyte
+	test	dh,COL_ROT_MASK	; rotate by x number of bits?
+	jnz	unpack_rotbits
+
+	; no rotation needed! :)
+	xor	dh,dh
+	clc
+	ret
+
+unpack_rotbyte:
+	; just shuffle the bytes in the registers
+	mov	dh,dl
+	mov	dl,ah
+	mov	ah,al
+	xor	al,al
+	clc
+	ret
+
+unpack_rotbits:
+	push	cx
+	; get number of bits to rotate
+	xor	cx,cx
+	xchg	cl,dh
+	and	cl,COL_ROT_MASK
+	shr	cl,COL_ROT_SHIFT
+
+@@:	; perform the rotation
+	shl	ax,1
+	rcl	dx,1
+	loop	@B
+
+	pop	cx
+	clc
+	ret
+unpack_physclr	endp
+
+; Inverse operation of colour_contribution above: extract a colour component
+; from bits CL-(CL+7) of SI:DI and put it in AL (clearing AH).
+ext_colour_contribution	proc near
+	test	[??BigFontFlags],-1
+	jz	@@ext_hard_way
+
+	.386
+	push	ebx
+	mov	bx,si
+	shl	ebx,10h
+	mov	bx,di
+	shr	ebx,cl
+	movzx	ax,bl
+	pop	ebx
+	ret
+
+@@ext_hard_way:
+	.286
+	; We're on a 286, need to restrict ourselves to 16-bit registers...
+	; There are three cases to deal with:
+	; 1. CL <= 8 --> just copy DI into AX and SHR AX,CL
+	; 2. CL >= 16 --> just copy SI into AX and SHR AX,(CL-16)
+	; 3. 8 < CL < 16 --> multiple steps involved...
+	cmp	cl,8
+	jna	@@ext_simple_di
+	cmp	cl,10h
+	jnb	@@ext_simple_si
+
+	; OK, life is complicated!
+	call	@@ext_simple_di	; do the easy bit first
+	sub	cl,10h
+	neg	cl		; CL:=(16-CL)
+	push	bx
+	mov	bx,si
+	shl	bx,cl		; shift it left by that much
+	or	al,bl
+	pop	bx
+	ret
+
+@@ext_simple_di:
+	mov	ax,di
+	shr	ax,cl
+	xor	ah,ah
+	ret
+
+@@ext_simple_si:
+	sub	cl,10h
+	mov	ax,si
+	shr	ax,cl
+	xor	ah,ah
+	ret
+ext_colour_contribution	endp
+
+; Restore a colour component in AL to its full eight bits, by left-shifting CL
+; bits; assumes accelerator bits (particularly MONO_BIT) are in BH.
+rest_colour_8bit	proc near
+	; need to shift left; use MONO_BIT to decide value of LSBs
+	mov	dh,bh
+	and	dh,MONO_BIT
+	add	al,dh	;round up if necessary
+	shl	al,cl
+	sub	al,dh	;bring it back down to fill the LSBs with ones or zeros
+	ret
+rest_colour_8bit	endp
+
 
 sEnd	Code
 ;

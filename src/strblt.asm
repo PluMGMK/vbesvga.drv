@@ -225,6 +225,7 @@ assumes cs,Code
 					; TRUE	= 386 protected mode
 	externW	ColourFormat_CS
 	externW	MemoryWidth
+	externNP unpack_physclr	; in RGB2IPC.ASM
 
 ;--------------------------Exported-Routine-----------------------------;
 ; Strblt
@@ -683,38 +684,46 @@ get_mode proc	near
 	and	bx,HAVE_WIDTH_VECT shl (8-2) ; Also clears BL for "excel" flags
 ;
         lds     si,lp_device
-	mov	dl,[si].bmBitsPixel	; mono=1,color>=8
-	mov	BitsaPixel,dl
+	mov	cl,[si].bmBitsPixel	; mono=1,color>=8
+	mov	BitsaPixel,cl
 ;
 	lds	si,xlate_draw_mode	; Most information is in the DrawMode
 	assumes ds,nothing
 ;
-	mov	ax,[si].TextColor.lo	; Get text color info
-	mov	colors.FOREGROUND.lo,ax
-	mov	ax,[si].TextColor.hi
-	mov	colors.FOREGROUND.hi,ax
-	mov	ax,[si].bkColor.lo	; Get background color info
-	mov	colors.BACKGROUND.lo,ax
-	mov	ax,[si].bkColor.hi
-	mov	colors.BACKGROUND.hi,ax
-	cmp	dl,1			   ; is this a mono case?
+	xchg	ch,bh			; stash BH for the moment
+	; Get text color info
+	mov	ax,[si].TextColor.lo
+	mov	dx,[si].TextColor.hi
+	call	unpack_physclr
+	cmp	cl,1			   ; is this a mono case?
 	jnz	@F			   ; no, use the color
-
-	; For the mono case, just set/clear the LSB for each colour...
-	xor	ax,ax
-	mov	colors.FOREGROUND.hi,ax
-	mov	colors.BACKGROUND.hi,ax
-
-	mov	al,[si].TextColor.SPECIAL
-	and	al,1
+	; For the mono case, just set/clear the LSB...
+	and	bh,1
 	errnz	MONO_BIT-00000001B
-	mov	colors.FOREGROUND.lo,ax
-	mov	al,[si].bkColor.SPECIAL
-	and	al,1
-	errnz	MONO_BIT-00000001B
-	mov	colors.BACKGROUND.lo,ax
-;
+	mov	al,bh
+	cbw
+	cwd
 @@:
+	mov	colors.FOREGROUND.lo,ax
+	mov	colors.FOREGROUND.hi,dx
+
+	; Get background color info
+	mov	ax,[si].bkColor.lo
+	mov	dx,[si].bkColor.hi
+	call	unpack_physclr
+	cmp	cl,1			   ; is this a mono case?
+	jnz	@F			   ; no, use the color
+	; For the mono case, just set/clear the LSB...
+	and	bh,1
+	errnz	MONO_BIT-00000001B
+	mov	al,bh
+	cbw
+	cwd
+@@:
+	mov	colors.BACKGROUND.lo,ax
+	mov	colors.BACKGROUND.hi,dx
+	xchg	bh,ch			; get BH back
+
 					;JAK color problem perhaps?
 ;
 	mov	ax,[si].TBreakExtra	; Get any justification
