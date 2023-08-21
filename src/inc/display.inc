@@ -141,7 +141,8 @@ oem_brush_def   ends                            ;  (same as "Special" above)
 
 oem_pen_def	struc
 oem_pen_pcol	db	(size phys_color) dup (0);Physical color
-oem_pen_style	dw	0			 ;Pen style
+oem_pen_style	db	0			 ;Pen style (one byte suffices)
+oem_pen_accel	db	0			 ;Colour accelerators
 oem_pen_def	ends
 
 
@@ -151,7 +152,7 @@ oem_pen_def	ends
 ;	onto the end to store the configuration of the screen and the
 ;	equipment flags
 ;
-;	A flag which will also be used to inicatte that output is
+;	A flag which will also be used to indicate that output is
 ;	enabled to the device.	This is required because it is possible
 ;	under Win386 to be asked to do output while the OEM layer is
 ;	disabled.

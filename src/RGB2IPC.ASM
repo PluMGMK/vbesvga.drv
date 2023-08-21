@@ -615,6 +615,13 @@ unpack_rotbits:
 	ret
 unpack_physclr	endp
 
+; TODO: Is there a less-call-intensive way of making this code available?
+public	unpack_physclr_far
+unpack_physclr_far	proc far
+	call	unpack_physclr
+	ret
+unpack_physclr_far	endp
+
 ; Inverse operation of colour_contribution above: extract a colour component
 ; from bits CL-(CL+7) of SI:DI and put it in AL (clearing AH).
 ext_colour_contribution	proc near

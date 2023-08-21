@@ -64,8 +64,10 @@ assumes cs,Code
         externNP dither                 ;Brush dithering code
 	externNP ColorDither
         externNP rgb_to_ipc             ;Logical to physical color conv
+        externNP unpack_physclr         ;physical color conv, step two
         externA  BW_THRESHOLD           ;Where black becomes white
 	externW _cstods
+	externW	ColourFormat_CS		;in VESAFNS.ASM
 ;
 ; The following are the definitions for the hatch patterns. They are defined
 ; by each individual driver based on its resolution.
@@ -274,19 +276,22 @@ realize_pen_10:
         xchg    ax,cx                   ; Set pen type into CX
         lea     si,[si].lopnColor       ; --> RGB color
         call    sum_RGB_colors          ; Sum up the color
+	call	unpack_physclr		; Extract the accelerators
+        errnz   oem_pen_accel-oem_pen_style-1
+	mov	ch,bh			; Store accels with the style
 ;
 realize_pen_20:
+        errnz   oem_pen_pcol            ; Must be first field
         stosw                           ; Save color of pen
         mov     ax,dx
         stosw
         mov     ax,cx                   ; Save style
+        errnz   oem_pen_style-4         ; Style must be 4 bytes into phys pen
         stosw
         ret
 ;
-        errnz   oem_pen_pcol            ; Must be first field
-        errnz   pcol_Clr                ; Colors must be in this order
-        errnz   pcol_fb-pcol_Clr-1
-        errnz   oem_pen_style-4         ; Style must be 4 bytes into phys pen
+;        errnz   pcol_Clr                ; Colors must be in this order
+;        errnz   pcol_fb-pcol_Clr-1
 
 realize_pen     endp
 ;

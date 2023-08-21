@@ -143,7 +143,7 @@ cdw	macro	v1,v2
 	public	ScratchSel
 
 	public	NUM_PALETTES		;Number of palette registers
-	public	PaletteSupported	;whether palette manager supported
+;	public	PaletteSupported	;whether palette manager supported
 
 	public	physical_enable 	;Enable routine
 	public	physical_disable	;Disable
@@ -286,7 +286,7 @@ globalW ssb_mask,<not RC_SAVEBITMAP>    ;Mask for save screen bitmap bit
 globalB enabled_flag,0			;Display is enabled if non-zero
 
 NUM_PALETTES	 equ	256		; number of palettes
-PaletteSupported equ	1		; palette manager not supported
+;PaletteSupported equ	1		; palette manager not supported
 globalB	device_local_brush ,0,<SIZE oem_brush_def>; for translate palette
 globalB PaletteTranslationTable,0, NUM_PALETTES	  ; the tranlate table
 globalB PaletteIndexTable,0, NUM_PALETTES	  ; the reverse index table

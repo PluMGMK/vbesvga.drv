@@ -307,7 +307,10 @@ Bm8_Positive_X	proc	near
 	jz	bm8_px_last
 bm8_px_loop:
 	writepx		; mov	[di],al
-	lea	di,[bx+di] ;inc	di
+	add	di,bx ;inc	di
+	jnc	@F
+	call	inc_bank_select
+@@:
   loopm	bm8_px_loop
 ;;loop	bm8_px_loop
 bm8_px_last:
@@ -385,7 +388,10 @@ Bm8_d4qnoskip:
         jz      Bm8_d4q_last_pixel
 Bm8_d4q_iloop:
 	writepx		; mov	[di],al
-	lea	di,[bx+di] ;inc	di
+	add	di,bx ;inc	di
+	jnc	@F
+	call	inc_bank_select
+@@:
 	add	di,si
 	jc	Bm8_d4q_incbank
   loopm	Bm8_d4q_iloop
@@ -466,7 +472,10 @@ Bm8_d1qnoskip:
 	jz	d1q_lastpixel
 Bm8_d1q_dloop:
 	writepx		; mov	[di],al
-	lea	di,[bx+di] ;inc	di
+	add	di,bx ;inc	di
+	jnc	@F
+	call	inc_bank_select
+@@:
 	add	di,si
 	jnc	Bm8_d1q_decbank
   loopm	Bm8_d1q_dloop
@@ -689,6 +698,284 @@ BM8_ROPF	proc	near
 		mov	BYTE PTR [di] ,0FFH
 		ret
 BM8_ROPF	endp
+
+
+;---------------------------------------------------------------------------;
+BM16_ROP0	proc	near
+		mov	WORD PTR [di],0
+                ret
+BM16_ROP0	endp
+;---------------------------------------------------------------------------;
+BM16_ROP1	proc	near
+		or	WORD PTR [di],ax
+		not	WORD PTR [di]
+                ret
+BM16_ROP1	endp
+;---------------------------------------------------------------------------;
+BM16_ROP2	proc	near
+		not	ax
+		and	WORD PTR [di],ax
+		not	ax
+		ret
+BM16_ROP2	endp
+;---------------------------------------------------------------------------;
+BM16_ROP3	proc	near
+		not	ax
+		mov	WORD PTR [di],ax
+		not	ax
+		ret
+BM16_ROP3	endp
+;---------------------------------------------------------------------------;
+BM16_ROP4	proc	near
+		not	WORD PTR [di]
+		and	WORD PTR [di],ax
+		ret
+BM16_ROP4	endp
+;---------------------------------------------------------------------------;
+BM16_ROP5	proc	near
+		not	WORD PTR [di]
+		ret
+BM16_ROP5	endp
+;---------------------------------------------------------------------------;
+BM16_ROP6	proc	near
+		xor	WORD PTR [di],ax
+		ret
+BM16_ROP6	endp
+;---------------------------------------------------------------------------;
+BM16_ROP7	proc	near
+		and	WORD PTR [di],ax
+		not	WORD PTR [di]
+                ret
+BM16_ROP7	endp
+;---------------------------------------------------------------------------;
+BM16_ROP8	proc	near
+		and	WORD PTR [di],ax
+                ret
+BM16_ROP8	endp
+;---------------------------------------------------------------------------;
+BM16_ROP9	proc	near
+		xor	WORD PTR [di],ax
+		not	WORD PTR [di]
+                ret
+BM16_ROP9	endp
+;---------------------------------------------------------------------------;
+BM16_ROPA	proc	near
+                ret
+BM16_ROPA	endp
+;---------------------------------------------------------------------------;
+BM16_ROPB	proc	near
+		not	ax
+		or	WORD PTR [di],ax
+		not	ax
+		ret
+BM16_ROPB	endp
+;---------------------------------------------------------------------------;
+BM16_ROPC	proc	near
+		mov	 WORD PTR [di],ax
+		ret
+BM16_ROPC	endp
+;---------------------------------------------------------------------------;
+BM16_ROPD	proc	near
+		not	WORD PTR [di]
+		or	WORD PTR [di] ,ax
+		ret
+BM16_ROPD	endp
+;---------------------------------------------------------------------------;
+BM16_ROPE	proc	near
+		or	WORD PTR [di] ,ax
+		ret
+BM16_ROPE	endp
+;---------------------------------------------------------------------------;
+BM16_ROPF	proc	near
+		mov	WORD PTR [di] ,0FFFFH
+		ret
+BM16_ROPF	endp
+
+
+;---------------------------------------------------------------------------;
+BM24_ROP0	proc	near
+		mov	BYTE PTR [di+2],0
+                jmp	BM16_ROP0
+BM24_ROP0	endp
+;---------------------------------------------------------------------------;
+BM24_ROP1	proc	near
+		or	BYTE PTR [di+2],dl
+		not	BYTE PTR [di+2]
+                jmp	BM16_ROP1
+BM24_ROP1	endp
+;---------------------------------------------------------------------------;
+BM24_ROP2	proc	near
+		mov	dh	,dl
+		not	dh
+		and	BYTE PTR [di+2],dh
+		jmp	BM16_ROP2
+BM24_ROP2	endp
+;---------------------------------------------------------------------------;
+BM24_ROP3	proc	near
+		mov	dh	,dl
+		not	dh
+		mov	BYTE PTR [di+2],dh
+		jmp	BM16_ROP3
+BM24_ROP3	endp
+;---------------------------------------------------------------------------;
+BM24_ROP4	proc	near
+		mov	dh	,BYTE PTR [di+2]
+		not	dh
+		and	dh	,dl
+		mov	BYTE PTR [di+2],dh
+		jmp	BM16_ROP4
+BM24_ROP4	endp
+;---------------------------------------------------------------------------;
+BM24_ROP5	proc	near
+		not	BYTE PTR [di+2]
+		jmp	BM16_ROP5
+BM24_ROP5	endp
+;---------------------------------------------------------------------------;
+BM24_ROP6	proc	near
+		xor	BYTE PTR [di+2],dl
+		jmp	BM16_ROP6
+BM24_ROP6	endp
+;---------------------------------------------------------------------------;
+BM24_ROP7	proc	near
+		and	BYTE PTR [di+2],dl
+		not	BYTE PTR [di+2]
+                jmp	BM16_ROP7
+BM24_ROP7	endp
+;---------------------------------------------------------------------------;
+BM24_ROP8	proc	near
+		and	BYTE PTR [di+2],dl
+                jmp	BM16_ROP8
+BM24_ROP8	endp
+;---------------------------------------------------------------------------;
+BM24_ROP9	proc	near
+		xor	BYTE PTR [di+2],dl
+		not	BYTE PTR [di+2]
+                jmp	BM16_ROP9
+BM24_ROP9	endp
+;---------------------------------------------------------------------------;
+BM24_ROPA	proc	near
+                ret
+BM24_ROPA	endp
+;---------------------------------------------------------------------------;
+BM24_ROPB	proc	near
+		mov	dh	,dl
+		not	dh
+		or	BYTE PTR [di+2],dh
+		jmp	BM16_ROPB
+BM24_ROPB	endp
+;---------------------------------------------------------------------------;
+BM24_ROPC	proc	near
+		mov	 BYTE PTR [di+2],dl
+		jmp	BM16_ROPC
+BM24_ROPC	endp
+;---------------------------------------------------------------------------;
+BM24_ROPD	proc	near
+		not	BYTE PTR [di+2]
+		or	BYTE PTR [di+2] ,dl
+		jmp	BM16_ROPD
+BM24_ROPD	endp
+;---------------------------------------------------------------------------;
+BM24_ROPE	proc	near
+		or	BYTE PTR [di+2] ,dl
+		jmp	BM16_ROPE
+BM24_ROPE	endp
+;---------------------------------------------------------------------------;
+BM24_ROPF	proc	near
+		mov	BYTE PTR [di+2] ,0FFH
+		jmp	BM16_ROPF
+BM24_ROPF	endp
+
+
+;---------------------------------------------------------------------------;
+BM32_ROP0	proc	near
+		mov	WORD PTR [di+2],0
+                jmp	BM16_ROP0
+BM32_ROP0	endp
+;---------------------------------------------------------------------------;
+BM32_ROP1	proc	near
+		or	WORD PTR [di+2],dx
+		not	WORD PTR [di+2]
+                jmp	BM16_ROP1
+BM32_ROP1	endp
+;---------------------------------------------------------------------------;
+BM32_ROP2	proc	near
+		not	dx
+		and	WORD PTR [di+2],dx
+		not	dx
+		jmp	BM16_ROP2
+BM32_ROP2	endp
+;---------------------------------------------------------------------------;
+BM32_ROP3	proc	near
+		not	dx
+		mov	WORD PTR [di+2],dx
+		not	dx
+		jmp	BM16_ROP3
+BM32_ROP3	endp
+;---------------------------------------------------------------------------;
+BM32_ROP4	proc	near
+		not	WORD PTR [di+2]
+		and	WORD PTR [di+2],dx
+		jmp	BM16_ROP4
+BM32_ROP4	endp
+;---------------------------------------------------------------------------;
+BM32_ROP5	proc	near
+		not	WORD PTR [di+2]
+		jmp	BM16_ROP5
+BM32_ROP5	endp
+;---------------------------------------------------------------------------;
+BM32_ROP6	proc	near
+		xor	WORD PTR [di+2],dx
+		jmp	BM16_ROP6
+BM32_ROP6	endp
+;---------------------------------------------------------------------------;
+BM32_ROP7	proc	near
+		and	WORD PTR [di+2],dx
+		not	WORD PTR [di+2]
+                jmp	BM16_ROP7
+BM32_ROP7	endp
+;---------------------------------------------------------------------------;
+BM32_ROP8	proc	near
+		and	WORD PTR [di+2],dx
+                jmp	BM16_ROP8
+BM32_ROP8	endp
+;---------------------------------------------------------------------------;
+BM32_ROP9	proc	near
+		xor	WORD PTR [di+2],dx
+		not	WORD PTR [di+2]
+                jmp	BM16_ROP9
+BM32_ROP9	endp
+;---------------------------------------------------------------------------;
+BM32_ROPA	proc	near
+                ret
+BM32_ROPA	endp
+;---------------------------------------------------------------------------;
+BM32_ROPB	proc	near
+		not	dx
+		or	WORD PTR [di+2],dx
+		not	dx
+		jmp	BM16_ROPB
+BM32_ROPB	endp
+;---------------------------------------------------------------------------;
+BM32_ROPC	proc	near
+		mov	 WORD PTR [di+2],dx
+		jmp	BM16_ROPC
+BM32_ROPC	endp
+;---------------------------------------------------------------------------;
+BM32_ROPD	proc	near
+		not	WORD PTR [di+2]
+		or	WORD PTR [di+2] ,dx
+		jmp	BM16_ROPD
+BM32_ROPD	endp
+;---------------------------------------------------------------------------;
+BM32_ROPE	proc	near
+		or	WORD PTR [di+2] ,dx
+		jmp	BM16_ROPE
+BM32_ROPE	endp
+;---------------------------------------------------------------------------;
+BM32_ROPF	proc	near
+		mov	WORD PTR [di+2] ,0FFFFH
+		jmp	BM16_ROPF
+BM32_ROPF	endp
 
 
 ; TRUTH TABLE

@@ -175,6 +175,15 @@
         call    LineSeg_check_stack
                 endm
 
+; Most of the routines in the original driver seemed to assume that segments do
+; NOT contain partial scanlines - i.e. each scanline is guaranteed to lie within
+; a single bank; no need to bank-switch while running across a scanline.
+; This may be true for memory bitmaps (enforced by GDI?) but it is definitely
+; not true in general for VESA-compliant graphics cards. This switch enables
+; code to calculate drawing positions for cards that have partial scanlines at
+; the beginning/end of banks.
+?PARTIAL_SCANLINES = 1
+
 
 incLogical      = 1                     ;Include GDI Logical object definitions
 incDrawMode     = 1                     ;Include GDI DrawMode definitions
@@ -236,6 +245,7 @@ ifdef PALETTES
 endif
 
         externFP LineSeg_check_stack
+        externFP unpack_physclr_far
 
 ifdef PALETTES
         externFP TranslateBrush         ;'on-the-fly' translation of brush
@@ -330,6 +340,7 @@ MoveTable_bm            dw      offset Bm_Move_Diagonal_4Q
 			dw	offset Bm_Move_Positive_Y
 
 ; Move routine addresses for byte/pixel BITMAPS or SCREEN
+; TODO: bm16/24/32 versions of these too
 
 MoveTable_bm8           dw      offset Bm8_Move_Diagonal_4Q
                         dw      offset Bm8_Move_Positive_X
@@ -358,6 +369,54 @@ BM8_ROP_Table	    dw	    offset BM8_ROP0
 			dw	offset BM8_ROPD
 			dw	offset BM8_ROPE
 			dw	offset BM8_ROPF
+BM16_ROP_Table	    dw	    offset BM16_ROP0
+			dw	offset BM16_ROP1
+			dw	offset BM16_ROP2
+			dw	offset BM16_ROP3
+			dw	offset BM16_ROP4
+			dw	offset BM16_ROP5
+			dw	offset BM16_ROP6
+			dw	offset BM16_ROP7
+			dw	offset BM16_ROP8
+			dw	offset BM16_ROP9
+			dw	offset BM16_ROPA
+			dw	offset BM16_ROPB
+			dw	offset BM16_ROPC
+			dw	offset BM16_ROPD
+			dw	offset BM16_ROPE
+			dw	offset BM16_ROPF
+BM24_ROP_Table	    dw	    offset BM24_ROP0
+			dw	offset BM24_ROP1
+			dw	offset BM24_ROP2
+			dw	offset BM24_ROP3
+			dw	offset BM24_ROP4
+			dw	offset BM24_ROP5
+			dw	offset BM24_ROP6
+			dw	offset BM24_ROP7
+			dw	offset BM24_ROP8
+			dw	offset BM24_ROP9
+			dw	offset BM24_ROPA
+			dw	offset BM24_ROPB
+			dw	offset BM24_ROPC
+			dw	offset BM24_ROPD
+			dw	offset BM24_ROPE
+			dw	offset BM24_ROPF
+BM32_ROP_Table	    dw	    offset BM32_ROP0
+			dw	offset BM32_ROP1
+			dw	offset BM32_ROP2
+			dw	offset BM32_ROP3
+			dw	offset BM32_ROP4
+			dw	offset BM32_ROP5
+			dw	offset BM32_ROP6
+			dw	offset BM32_ROP7
+			dw	offset BM32_ROP8
+			dw	offset BM32_ROP9
+			dw	offset BM32_ROPA
+			dw	offset BM32_ROPB
+			dw	offset BM32_ROPC
+			dw	offset BM32_ROPD
+			dw	offset BM32_ROPE
+			dw	offset BM32_ROPF
 
 ; AND/XOR mask definitions for ROP codes on BITMAPS
 
@@ -668,43 +727,46 @@ load_fg_color:
 
 	assume	ds:nothing
         lds     si,lp_phys_pen              ; DS:SI points to the pen structure
-	; TODO: Pull in unpack_physclr, either here or in ROBJECT
-        mov     ah,[si].oem_pen_pcol.pcol_Clr
-        mov     dx,wptr [si].oem_pen_pcol+1
+        mov     ax,[si].oem_pen_pcol.lo
+        mov     dx,wptr [si].oem_pen_pcol.hi
 	test	DeviceFlags,TYPE_IS_BYTEMAP  ; mono maps color bit is SPECIAL
 	jnz	short ld_fg_color2
-        mov     ah,[si].oem_pen_pcol.SPECIAL
-	shr	ah,1			    ; expand 1 to 8 bits
-	sbb	ah,ah
-	xor	dx,dx
+        mov     ah,[si].oem_pen_accel
+	shr	ah,1			    ; expand 1 to 32 bits
+	sbb	ax,ax
+	cwd
 ld_fg_color2:
-	mov	bptr ForeColor,ah	    ; save the pen color
-	mov	wptr ForeColor+1,dx
-	mov	bptr ForeColor+3,0
+	mov	ForeColor.lo,ax		    ; save the pen color
+	mov	ForeColor.hi,dx
 
 load_bg_color:
 	assume	es:nothing
 	les	di,lp_draw_mode 	    ; point to the draw mode block
 	mov	dx,es:[di].bkMode	    ; get the background mode
         mov     BackMode,dl                 ; save it
-	; TODO: Pull in unpack_physclr, either here or in ROBJECT
-	mov	dl,byte ptr es:[di].bkColor.pcol_Clr
-	mov	bx,word ptr es:[di].bkColor+1
+	mov	ax,byte ptr es:[di].bkColor.lo
+	mov	dx,word ptr es:[di].bkColor.hi
+	call	unpack_physclr_far	    ; TODO: possible w/o far call?
 	test	DeviceFlags,TYPE_IS_BYTEMAP
 	jnz	short ld_bg_color2
-	mov	dl,byte ptr es:[di].bkColor.SPECIAL
-        shr     dl,1                        ; expand 1 to 8 bits
-        sbb     dl,dl
-	xor	bx,bx
+	shr	bh,1			    ; expand 1 to 32 bits
+	errnz	MONO_BIT-00000001B
+	sbb	ax,ax
+	cwd
 ld_bg_color2:
-        mov     bptr BackColor,dl	    ; save the background color
-        mov     wptr BackColor+1,bx
-	mov	bptr BackColor+3,0
+        mov     BackColor.lo,ax	    ; save the background color
+        mov     BackColor.hi,dx
 
 	mov	bx,es:[di].Rop2 	    ; get the ROP code
         dec     bx                          ; make it zero based
         and     bx,RASTER_OP_MASK           ; only 4 bits are significant
         mov     DrawModeIndex,bx            ; save a copy
+
+	; choose which table to index (BM8, BM16, etc.)
+	mov	cl,BytesPerPixel
+	dec	cl
+	shl	cl,RASTER_OP_SHL
+	or	bl,cl
 
 	shiftl	bx,1
 	mov	bx	,cs:[BM8_ROP_Table][bx]
@@ -1366,6 +1428,14 @@ tests_done:
         mov     di,bx                   ; load Xi into di
         xor     dx,dx                   ; will hold SEGMENT value for MAPS
 
+; we will set the no of scans left from bot to a large value for small maps
+; we will set it to 1/2 of wScans for small bitmaps
+        mov     ScansLeftFromBot,0ffffh/2
+
+if	?PARTIAL_SCANLINES
+	test	DeviceFlags,TYPE_IS_DEV
+        jnz     calculate_for_screen       ; target is ega
+endif
 	; DI := BX * BytesPerPixel
 	mov	cl,BytesPerPixel
 @@:
@@ -1375,12 +1445,10 @@ tests_done:
 	jmp	@B
 
 @@:
-; we will set the no of scans left from bot to a large value for small maps
-; we will set it to 1/2 of wScans for small bitmaps
-
-        mov     ScansLeftFromBot,0ffffh/2
+ife	?PARTIAL_SCANLINES
 	test	DeviceFlags,TYPE_IS_DEV
         jnz     calculate_for_screen       ; target is ega
+endif
         test    DeviceFlags,TYPE_IS_HUGE
         jz      calculate_for_small     ; small bit maps
 
@@ -1436,6 +1504,7 @@ calculate_for_bytemap:
 
 calculate_for_screen:
 
+ife	?PARTIAL_SCANLINES
 	inc	dx
 	sub	ax,wScans		; subtract no of scans/seg from Y
 	jnc	calculate_for_screen
@@ -1445,6 +1514,40 @@ calculate_for_screen:
 	mov	ScansLeftFromBot,ax	; save it
 	neg	ax
 	add	ax,wScans		; ax now has scan pos from top of seg
+else
+;
+;	Let's try some new code to handle the general case...
+;	Remember we now have DI == BX == StartX, AX == StartY
+;
+        mul     NextScan	; DX:AX := Beginning of scanline
+	mov	cx,dx
+	xchg	ax,bx
+	; Now CX:BX == Beginning of Yi scanline, AX == StartX
+	xor	dx,dx
+	mov	dl,BytesPerPixel
+	mul	dx		; DX:AX := Beginning position w/i scanline
+	; Now DX:AX = Offset of Xi within current scanline
+	add	bx,ax
+	adc	cx,dx
+	; Now CX:BX = Offset of desired Xi,Yi point, in densely-packed case
+	; What if there are unused bytes in each segment?
+	mov	di,FillBytes
+	test	di,di
+	jz	no_fill
+
+	neg	di	; 64K - FillBytes = actual # of used bytes per segment
+	mov	dx,cx
+	mov	ax,bx
+	div	di
+	; Now AX:DX = Offset of desired Xi,Yi point, plus FillBytes per seg
+	mov	cx,ax
+	mov	bx,dx
+
+no_fill:
+	; Set DX:DI to the offset
+	mov	dx,cx
+	mov	di,bx
+endif	; Back to common code...
 
 	mov	bank_select,dl		; initialize current bank
         mov     TempBank,dl
@@ -1453,14 +1556,21 @@ calculate_for_screen:
 
 	mov	dx,TempCurSeg		; for EGA segment value saved
         mov     ds,dx                   ; load ds
-        mul     NextScan
 
+if	?PARTIAL_SCANLINES
+	mov	ax,di			; all the multiplying up's already done
+else
+        mul     NextScan
         add     ax,di                   ; make DS:DX:AX = absolute video address
+endif
+
         add     ax,TempCurOff           ; + screen begin offset
         mov     TempCurByte,ax
         mov     TempCurByteSty,ax
 	mov	bl,BytesPerPixel
         mov     TempCurBit,bl
+
+	; TODO: Ensure all the subfunctions return the right reg vals?
 
 calculate_addr_for_draw:
         xor     ax,ax
@@ -1575,6 +1685,7 @@ dl_Diagonal:
 	je	dl_Diag_1Q_posx
 
 dl_draw_loop:
+	int	3
         call    S1                      ; draw the slice
         call    S1_Move                 ; step to the next slice
 
@@ -1619,6 +1730,7 @@ dl_Diag_1Q_posx:
 	;S1_Move==Bm8_Move_Positive_X
 dl_Q1posx_loop:
 
+	int	3
         call    S1                      ; draw the slice
 
 	;mov	dh,TmpColor
@@ -1692,6 +1804,7 @@ last_err_negative:
 	;-------------------------------------------------------
 do_the_last_scan:
         mov     cx,Cb                   ; the last slice length
+	int	3
         call    S1                      ; draw the slice
 
 all_passes_done:

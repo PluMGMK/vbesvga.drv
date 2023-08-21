@@ -829,8 +829,6 @@ get_fill_pen:
 
 no_pen_xlat_needed:
 
-;	cmp	[si].oem_pen_style,LS_NOLINE ;for now ignore the null case
-
 	mov	ax	,wptr [si].oem_pen_pcol.pcol_Clr
 	mov	cx	,SIZE_PATTERN * SIZE_PATTERN
 	mov	di	,DataOFFSET rscan.rscolor_pattern

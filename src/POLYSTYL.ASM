@@ -388,11 +388,15 @@ StBm8_Negative_Y        proc    near
         push    si                  ; save
         push    bx                  ; save mask
 
-	mov	si,NextScan	; delta_di = NextScan
-	call	StepsTo64KBound	; Get number of steps to 64K boundary in si
+	; Can't do this as it assumes banks start on a scanline boundary,
+	; which in general is not always the case
+	;mov	si,NextScan	; delta_di = NextScan
+	;call	StepsTo64KBound	; Get number of steps to 64K boundary in si
+	; So now SI is NextScan, not the number of steps :)
 
-        mov     al,TmpColor
-        mov     dl,bStyleError      ; the current value of style error
+        mov     ax,TmpColor.lo
+        mov     dx,TmpColor.hi
+        mov     bl,bStyleError      ; the current value of style error
         mov     bh,bStyleMask       ; current position of style mask
         dec     cx                  ; take out last pixel from loop
         jz      StBm8_Y_last_pixel
@@ -405,17 +409,25 @@ stbm8_vert_ignore:
 
 ; advance the style mask
 
-        xor     dh,dh               ; will hold the hibyte of err add
-        add     dx,wDistVert        ; scale factor in vertical dir
-        xchg    cl,dh               ; if DH = 1, the mask has to shift
-        rol     bh,cl               ; rotate if necessary
-        mov     cl,dh               ; restore count
+        add     bl,wDistVert        ; scale factor in vertical dir (equ 55h)
+	jnc	@F
+        rol     bh,1                ; rotate if necessary
+@@:
 
 ; now move to the next scan line
 
-        dec     si                ; one more scan line taken up
-        jnz     StBm8_Y_same_segment ; still in same seg,ent
+        ;dec     si                ; one more scan line taken up
+        ;jnz     StBm8_Y_same_segment ; still in same seg,ent
+	; TODO: This next bit is unnecessarily verbose. Clean it up?
+	test	si,si
+	js	@F
+        add     di,si       ; next scan may or may not be in same segment
+	jnc	StBm8_Y_same_segment	; positive inc --> CY implies wrap
+	jmp	StBm8_Y_new_segment
+@@:	add	di,si
+	jc	StBm8_Y_same_segment	; negative inc --> NC implies wrap (!)
 
+StBm8_Y_new_segment:
 		test	DeviceFlags, TYPE_IS_DEV
 		jz	stBm8_update_selector
 
@@ -436,10 +448,11 @@ stBm8_update_selector:
 		mov	ds,si
 stBm8_update_offset:
                 add     di,FillBytes      ; bypass the filler bytes at end
-                mov     si,wScans         ; number of scans in full segment
+                ;mov     si,wScans         ; number of scans in full segment
+                mov     si,NextScan       ; get back the scanline increment
 
 StBm8_Y_same_segment:
-        add     di,NextScan       ; next scan in same segment
+        ;add     di,NextScan       ; next scan in same segment
         loop    StBm8_Y_loop      ; process all the pixels
 
 ; do the last pixel
@@ -450,7 +463,7 @@ StBm8_Y_last_pixel:
         jns     stbm8_vert_return    ; no
         call    BM8
 stbm8_vert_return:
-        mov     bStyleError,dl      ; save
+        mov     bStyleError,bl      ; save
         mov     bStyleMask,bh       ; save style mask
         mov     dx,si               ; get scan lines left
         pop     bx                  ; get back mask
@@ -490,10 +503,13 @@ StBm8_Positive_X proc   near
 
         push    si              ; will actually not need the value here
         push    dx              ; save scan line information
-        mov     al,TmpColor
-        mov     dl,bStyleError  ; current value of the error term
+        mov     ax,TmpColor.lo
+        mov     dx,TmpColor.hi
+        mov     bl,bStyleError  ; current value of the error term
         mov     bh,bStyleMask   ; current position of the rotating style mask
-        mov     si,wDistHoriz   ; load the vertical scale factor
+        ;mov     si,wDistHoriz   ; load the vertical scale factor
+	mov	si,BytesPerPixel
+	and	si,0FFh		; this is only one byte
 
 ; the draw loop
 
@@ -510,16 +526,17 @@ stbm8_horiz_loop:
 
 stbm8_horiz_ignore:
 
-        inc     di
+        add     di,si
+	jnc	@F
+	call	inc_bank_select
+@@:
 
 ; advance the mask if necessary
 
-        xor     dh,dh           ; zero out high byte for add result
-        add     dx,si           ; add the horizontal scale factor to error
-        xchg    cl,dh           ; if BH is 1, the mask has to be rotated
-        rol     bh,cl           ; rotate the mask
-        mov     cl,dh           ; get back the count
-        loop    stbm8_horiz_loop        ; process all the pixels
+        add     bl,wDistHoriz   ; add the horizontal scale factor to error
+	jnc	@F
+        rol     bh,1            ; rotate the mask
+@@:     loop    stbm8_horiz_loop        ; process all the pixels
 
 ; draw the last pixel if the mask says so.
 
@@ -531,7 +548,7 @@ stbm8_horiz_return:
 
 ; save the current values of the error term and the style mask
 
-        mov     bStyleError,dl
+        mov     bStyleError,bl
         mov     bStyleMask,bh
         pop     dx              ; get scan line information back
         pop     si              ; restore saved value
@@ -636,4 +653,3 @@ StBm8_Diagonal_1Q proc  near
         ret
 
 StBm8_Diagonal_1Q endp
-
