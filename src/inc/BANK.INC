@@ -28,6 +28,10 @@ far_set_bank_select proc far
         ;
         ;   compare requested bank against the current one
         ;
+;	cmp	dl,7Eh	; TODO: Remove this, just sanity-checking my own setup
+;	jna	@F
+;	int	3
+;@@:
         cmp     dl,ds:[bank_select]
         jz      far_sbs_exit
         ;
@@ -73,6 +77,10 @@ set_bank_select proc    near
         ;
         ;   compare requested bank against the current one
         ;
+; 	cmp	dl,7Eh	; TODO: Remove this, just sanity-checking my own setup
+; 	jna	@F
+; 	int	3
+; @@:
         cmp     dl,ds:[bank_select]
         jz      sbs_exit
         ;

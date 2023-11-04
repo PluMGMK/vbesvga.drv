@@ -314,7 +314,7 @@ realize_pen     endp
 ;   0 are set to the background color passed in.
 ;
 ;   A PATTERN brush is defined with an 8 X 8 pattern in the form of a
-;   physical bitmap.  The bitmap may be monochromw or color.  More
+;   physical bitmap.  The bitmap may be monochrome or color.  More
 ;   discussion on converting is contained under the pattern brush code.
 ;
 ;   A HOLLOW brush is one which can never be seen.  The brush style is
@@ -361,10 +361,10 @@ realize_brush   proc near
 ;
         mov     bx,[si].lbStyle         ; Get the brush style.
         cmp     bx,MaxBrushStyle        ; If an illegal brush, create a solid one
-        ja      realize_brush_10
+        ja      realize_brush_calc_fnptr
         xchg    ax,bx                   ; Need brush style in AX
 ;
-realize_brush_10:
+realize_brush_calc_fnptr:
 	add     ax,ax                   ; Call routine which will do the
         xchg    ax,bx                   ; actual realization
         call    cs:brush_realizations[bx]
@@ -381,20 +381,20 @@ realize_brush_10:
 ; color planes of the brush as solid and not rotating them
 ;
 	test	dh,SOLID_BRUSH
-	jne	realize_brush_30	; No rotations will be required
+	jne	realize_brush_done	; No rotations will be required
 ;
         mov     cx,off_lp_text_xform    ; Get the X origin
         and     cx,111b                 ; If at a byte boundary then
-        jz      realize_brush_20        ; no X rotation is needed
+        jz      realize_brush_xrot_done ; no X rotation is needed
         call    rotate_brush_x          ; Perform X rotation
 ;
-realize_brush_20:
+realize_brush_xrot_done:
         mov     bx,seg_lp_text_xform    ; Get the Y origin
         and     bx,111b                 ; If at a multiple of 8, then
-        jz      realize_brush_30        ; no Y rotation is needed
+        jz      realize_brush_done      ; no Y rotation is needed
         call    rotate_brush_y          ; Perform Y rotation
 ;
-realize_brush_30:
+realize_brush_done:
         ret
 
 realize_brush   endp
@@ -569,18 +569,18 @@ realize_solid   proc    near
         mov     ax,wptr [si].lbColor    ;AL = Red, AH = Green
 	mov	dx,wptr [si].lbColor[2] ;DL = Blue, DH the 4th byte
 ;
-; microsoft change!
-	and	dh,0EFh 		; strip out the 10h bit.
-; microsoft change!
+; ; microsoft change!
+; 	and	dh,0EFh 		; strip out the 10h bit.
+; ; microsoft change!
 ;
-        cmp     dh,0h                   ; if this is an index then process
-	je	@F
+        test    dh,dh                   ; if this is an index then process
+	jz	@F
 ;
         call    realize_solid_with_index ; realize the brush with the index
-	jmp	solid_brush_30		 ; dh returns with accelerators
+	jmp	solid_brush_done	 ; dh returns with accelerators
 ;
 @@:
-	mov	dh,0			 ; flush for 2nd 'jmp @f'
+	xor	dh,dh			 ; flush for 2nd 'jmp @f'
 ;
 ; quick check for a black brush
 ;
@@ -625,8 +625,32 @@ realize_solid   proc    near
 ;----------------------------------------------------------------------------;
 
 	call	sum_RGB_colors_alt	; map into index
+	; At this point:
+	; *IF WE HAVE A PALETTE*
+	; - AL = physical colour
+	; - AH = accelerator flags
+	; - DH = FFh
+	; *IF WE DON'T HAVE A PALETTE*
+	; - DL:AH:AL = physical colour
+	; - DH = accelerator and other flags != FFh
+	push	bx
+	call	unpack_physclr
+	mov	brush_accel,bh
+	pop	bx
+	jc	RSUsePalette
+
+	; Now we have the *actual* physical colour representation in DX:AX
+	mov	[di],ax
+	mov	[di+2],dx
+	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
+
+	; move onto the mono piece
+	add	di,oem_brush_mono
+	jmp	do_mono_brush		;JAK
+
+RSUsePalette:
 	and	ah,not SOLID_BRUSH	; to be set later
-	mov	brush_accel,ah		; save the tentaive accelarators
+	mov	brush_accel,ah		; save the tentative accelarators
 	test	ah,80h			; is it an exact match?
 	jz	RSDitherBrush		; no, so we have to dither it...
 	or	ah,SOLID_BRUSH		; yes, so set the solid bit
@@ -646,7 +670,7 @@ RSSetPlanesLoop:
 ;	 stosw
 ;	 stosw
 ;	 stosw
-;	 jmp	 solid_brush_30
+;	 jmp	 solid_brush_done
 	jmp	do_mono_brush		;JAK
 
 ;
@@ -663,7 +687,7 @@ RSBlackBrush:
 	cbw
 	mov	cx, ((SIZE_PATTERN * SIZE_PATTERN + SIZE_PATTERN) / 2)
 	rep	stosw
-	jmp	short solid_brush_30
+	jmp	short solid_brush_done
 ;
 RSDitherBrush:
 ;
@@ -700,7 +724,7 @@ do_mono_brush:
 set_up_return:
 	mov	dh,brush_accel		;the accelarator bute
 ;
-solid_brush_30:
+solid_brush_done:
 	mov	bx,BS_SOLID		;brush type solid
 	ret
 
@@ -723,7 +747,7 @@ realize_solid	endp
 ; value). The brush accelarator will be set, with the mono bit being 0 if    ;
 ; index is 0 else it will be 1.                                              ;
 ;                                                                            ;
-; This routine retuens BS_SOLID in BX and the accelarator flag in DH         ;
+; This routine returns BS_SOLID in BX and the accelarator flag in DH         ;
 ;									     ;
 ; History:								     ;
 ;   26-Jan-1989       -by-  David D. Miller, Video Seven Inc.		     ;
@@ -821,7 +845,7 @@ realize_pattern proc near
 	dec	dx			; to take care of auto inc in MOVSB
         cmp     [si].bmBitsPixel,8      ; Set 'Z' if color
         lds     si,[si].bmBits          ; --> where the bits are
-        jne     realize_pattern_20      ; Handling monochrome source
+        jne     pattern_copy_mono       ; Handling monochrome source
 ;
 ; COLOR ==> COLOR  (just copy pels to brush)
 ;
@@ -829,12 +853,12 @@ realize_pattern proc near
 	mov	ah,SIZE_PATTERN 	; no of scans to move
 	push	di
 
-realize_pattern_10:
+pattern_copy_colour_loop:
         mov     cx,SIZE_PATTERN         ; Set # bytes to move
         rep     movsb                   ; Move one byte of pattern
         add     si,dx                   ; Skip rest of scanline
         dec     ah
-        jnz     realize_pattern_10
+        jnz     pattern_copy_colour_loop
 
 	pop	si
 	mov	ax	,my_data_seg
@@ -855,9 +879,9 @@ realize_pattern12:
 	mov	al	,ah
 	stosb
 	loop	realize_pattern11
-        jmp     realize_pattern_50
+        jmp     realize_pattern_done
 
-realize_pattern_20:
+pattern_copy_mono:
 
 ;
 ; MONOCHROME ==> MONOCHROME  (just copy the pixels)
@@ -887,7 +911,7 @@ realize_pattern_20:
         .errnz  SIZE_PATTERN-8
 
 
-realize_pattern_50:
+realize_pattern_done:
 
 	mov	bx,BS_PATTERN
         mov     dh,brush_accel                  ; No brush accelerators
@@ -953,10 +977,10 @@ realize_hatch   proc near
 
 	mov	cx,[si].lbHatch 	; Get hatch style
 	cmp	cx,MaxHatchStyle	; Hatch style within range?
-        jbe     realize_hatch_10        ; Yes
+        jbe     realize_hatch_actual        ; Yes
         jmp     realize_solid           ; No, create a solid brush
 
-realize_hatch_10:
+realize_hatch_actual:
 	push	ds
 	push	cx
 	lea	si,[si].lbBkColor	; Compute background color
@@ -1588,19 +1612,19 @@ sEnd    Code
 	public	realize_pen_10
 	public	realize_pen_20
 	public	realize_brush
-	public	realize_brush_10
-	public	realize_brush_20
-	public	realize_brush_30
+	public	realize_brush_calc_fnptr
+	public	realize_brush_xrot_done
+	public	realize_brush_done
 	public	sum_RGB_colors
 	public	sum_RGB_colors_exit
 	public	realize_solid
-	public	solid_brush_30
+	public	solid_brush_done
 	public	greys
 	public	realize_pattern
-	public	realize_pattern_10
-	public	realize_pattern_20
+	public	pattern_copy_colour_loop
+	public	pattern_copy_mono
 	public	realize_hatch
-	public	realize_hatch_10
+	public	realize_hatch_actual
 	public	realize_hollow
 	public	realize_just_a_return
 	public	rotate_brush_x

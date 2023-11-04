@@ -53,6 +53,7 @@ incDevice	= 1
 	externNP hook_int_2Fh		;Hook into multiplexed interrupt
 	externA  PHYS_DEVICE_SIZE	;Size of physical device
 	externA  __WinFlags		;Windows info bit
+	externFP FatalExit
 	externFP AllocSelector		; allocate a new selector
 	externFP PrestoChangeoSelector	; CS <--> DS conversion
 	externFP FreeSelector		; free an allocated selector
@@ -89,6 +90,14 @@ SYSINI	STRUC
     SYSINI_CMPLEN	DW	0
     SYSINI_RETVAL	DW	0
 SYSINI	ENDS
+
+; error messages
+fail_reason	dw	offset general_fail
+bad_width	db	'Width < 640 is not allowed',13,10,'$'
+bad_height	db	'Height < 480 is not allowed',13,10,'$'
+bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
+general_fail	db	'Unsuitable settings for current driver / hardware',13,10,'$'
+press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
 boot_category   db      "VBESVGA.DRV",0
 
@@ -405,10 +414,7 @@ enable_read_profile	PROC	NEAR
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1024,ds,cx>
 	cmp	ax,640
 	jnb	@F
-ifdef	INT3
-	int	3
-endif
-	WriteAux <'Width < 640 is not allowed'>
+	mov	[fail_reason],offset bad_width
 	jmp	enable_read_profile_fail
 @@:	mov	VScreen_Width,ax
 
@@ -418,10 +424,7 @@ endif
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,768,ds,cx>
 	cmp	ax,480
 	jnb	@F
-ifdef	INT3
-	int	3
-endif
-	WriteAux <'Height < 480 is not allowed'>
+	mov	[fail_reason],offset bad_height
 	jmp	enable_read_profile_fail
 @@:	mov	VScreen_Height,ax
 
@@ -431,10 +434,7 @@ endif
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,24,ds,cx>
 	cmp	al,8
 	jnb	@F
-ifdef	INT3
-	int	3
-endif
-	WriteAux <'Depth < 8 is not allowed'>
+	mov	[fail_reason],offset bad_depth
 	jmp	enable_read_profile_fail
 @@:	mov	VScreen_Depth,al
 
@@ -551,17 +551,33 @@ enable_read_profile_done:
 	mov	cursor_ycoord,ax
 
 	mov	ax,1
-@@:
 	pop	bp
 	ret
 
 enable_read_profile_fail:
-ifdef	INT3
-	int	3
-endif
-	WriteAux <'Unsuitable settings for current driver / hardware'>
-	xor	ax,ax
-	jmp	@B
+	; similar failure strategy to other SVGA drivers I've studied:
+	; * Switch to text mode (i.e. get rid of Windows splash screen)
+	; * Print the failure reason
+	; * Invite the user to press a key
+	; * FatalExit, which may not do anything...
+	mov	ax,3	; text mode
+	int	10h
+	mov	dx,[fail_reason]
+	mov	ah,9	; write string to stdout
+	int	21h
+	lea	dx,[press_key]
+	int	21h
+	mov	ah,8	; read character from stdin
+	int	21h
+	cCall	FatalExit,<0>
+
+	; So FatalExit can return, which is not good enough for a possible
+	; user-facing failure mode! It seems all we can do is exit directly to
+	; DOS! (I know this works because it happened successfully when we were
+	; accidentally getting divide-by-zero errors further along; but it still
+	; feels pretty evil...)
+	mov	ax,4CFFh	; exit with code 255
+	int	21h
 
 enable_read_profile	ENDP
 

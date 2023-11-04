@@ -630,6 +630,9 @@ SetupPMInt	proc near
 	pop	es	; kernel call may destroy ES!
 	test	ax,ax
 	jz	@@unlockbiosdata
+ifdef	INT3
+	int	3
+endif
 	mov	[PMIntEntry.sel],ax
 
 	; OK, now it's time to fill it all in!
@@ -650,6 +653,9 @@ SetupPMInt	proc near
 	assumes	ds,Data
 
 	; fill in the selectors as needed
+ifdef	INT3
+	int	3
+endif
 	mov	es:[bp.BIOSDataSel],dx
 	mov	es:[bp.A0000Sel],__A000
 	mov	es:[bp.B0000Sel],__B000
@@ -658,9 +664,6 @@ SetupPMInt	proc near
 	mov	es:[bp.InProtectMode],1
 
 	; get the initialization function and call it
-ifdef	INT3
-	int	3
-endif
 	mov	ax,es:[bp.PMInitialize]
 	mov	[PMIntEntry.off],ax
 	SWITCH_STACK

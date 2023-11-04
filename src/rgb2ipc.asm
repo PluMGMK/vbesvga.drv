@@ -471,15 +471,16 @@ cBegin
 	WriteAux <'ipc-to_rgb'>
 
 	call	unpack_physclr
-	rcl	bl,1		; save CF (palette index indicator)
+	jc	@F		; can't do the next check if it's an index...
+
 	test	bh,ONES_OR_ZEROS
 	jnz	@@ret_accel	; DL:AH:AL are already set, just set DH = accel
 
+@@:
 	mov	ds,cs:_cstods
 	assumes	ds,Data
 
-	; first check for system palette colour
-	shr	bl,1		; get CF back
+	; check again for system palette colour
 	jnc	@F		; NC --> not a palette index
 
 ; the color value we want to return is in Palette (the VGA simulated
@@ -496,7 +497,7 @@ cBegin
 
 lower_end:
 	shl	si,1
-	add	bx,ax			; index into a TRIPLEs table
+	add	si,ax			; index into a TRIPLEs table
 	mov	ax,word ptr Palette[si+0]
 	mov	dx,word ptr Palette[si+2]
 	jmp	short @@ret_accel
