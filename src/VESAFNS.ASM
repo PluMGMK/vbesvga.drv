@@ -271,7 +271,7 @@ CALL_PMINT	macro
 sBegin  Code
 assumes cs,Code
 
-externW		_cstods	; in CURSOR.ASM
+externW		_cstods		; in CURSOR.ASM
 
 ; From INT10.ASM
 externFP	DoInt10h
@@ -462,6 +462,8 @@ sEnd	PaletteSeg
 
 createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
+
+externNP	init_modal_realizations	; in ROBJECT.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
@@ -1138,6 +1140,12 @@ ModeFound:
 FindMode_done:
 	test	di,di
 	jnz	@F
+
+	; while we're here with a code segment alias,
+	; setup modal functions / data for brush realization
+	mov	al,[VESABPP]
+	shr	al,3	; bits to bytes
+	call	init_modal_realizations
 
 	; setup a fallback bank-switch function, just in case we somehow got
 	; this far without one...

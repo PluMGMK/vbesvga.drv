@@ -86,6 +86,24 @@ assumes cs,Code
         externA <DC_HATCH_BR_4,DC_HATCH_BR_5,DC_HATCH_BR_6,DC_HATCH_BR_7>
 ;
 ;
+; realize_sizes
+;
+; realize_sizes contains the size of the memory required to realize
+; each of the objects.  These sizes will be returned to GDI when it
+; inquires the memory needed for an object.
+; PluM: moved this up here to prevent "phase error between passes"
+; when referencing oem_brush_size from code in this module.
+;
+realize_sizes   label   word
+oem_pen_size	dw      SIZE oem_pen_def
+oem_brush_size	dw      SIZE oem_brush_def
+oem_font_size	dw      0
+;
+        errnz   OBJ_PEN-1
+        errnz   OBJ_BRUSH-OBJ_PEN-1
+        errnz   OBJ_FONT-OBJ_BRUSH-1
+;
+;
 ;--------------------------Exported-Routine-----------------------------;
 ; RealizeObject
 ;
@@ -174,8 +192,7 @@ cProc   RealizeObject,<FAR,PUBLIC,WIN,PASCAL>,<es,ds,si,di>
 cBegin
 WriteAux <'RlzObj'>
         cld
-	mov	ax	,ds
-	mov	my_data_seg,ax
+	mov	my_data_seg,ds
 	mov	ax,1			; Assume good exit
         mov     bx,style                ; If delete object, nothing to do
         or      bx,bx                   ; since we don't keep objects
@@ -371,8 +388,11 @@ realize_brush_calc_fnptr:
         lds     di,lp_out_obj           ; --> back to start of oem_brush_def
         assumes ds,nothing
 ;
-        mov     [di].oem_brush_style,bx ; Save brush style
-        mov     [di].oem_brush_accel,dh ; Save brush accelerator
+	; save brush style and accelerator
+	add	di,[oem_brush_size]	; point at end of brush
+	; then address the common part "backwards" from it
+        mov     [di-size oem_brush_com].oem_brush_style,bx
+        mov     [di-size oem_brush_com].oem_brush_accel,dh
 ;
 ; If this is a solid black or a solid white brush, then no
 ; rotation is required.  Otherwise, rotate as needed.
@@ -569,12 +589,9 @@ realize_solid   proc    near
         mov     ax,wptr [si].lbColor    ;AL = Red, AH = Green
 	mov	dx,wptr [si].lbColor[2] ;DL = Blue, DH the 4th byte
 ;
-; ; microsoft change!
-; 	and	dh,0EFh 		; strip out the 10h bit.
-; ; microsoft change!
 ;
-        test    dh,dh                   ; if this is an index then process
-	jz	@F
+        cmp     dh,0FFh                 ; if this is an index then process
+	jne	@F
 ;
         call    realize_solid_with_index ; realize the brush with the index
 	jmp	solid_brush_done	 ; dh returns with accelerators
@@ -638,14 +655,26 @@ realize_solid   proc    near
 	mov	brush_accel,bh
 	pop	bx
 	jc	RSUsePalette
+	; if "somehow" we have 1-byte colours without a
+	; palette, the same code path will work for them too:
+	cmp	[oem_brush_size],SIZE oem_brush_def
+	je	RSSetPlanesLoop_8bit
 
 	; Now we have the *actual* physical colour representation in DX:AX
-	mov	[di],ax
-	mov	[di+2],dx
+	mov	cx,SIZE_PATTERN*SIZE_PATTERN
+RSSetPlanesPref	label byte
+	nop	; Can replace this nop (90h) with a rep (F3h)
+@@:	stosw
+RSSetPlanesXchg:
+	xchg	ax,dx
+RSSetPlanesStos	label byte
+	stosw	; Can decrement this stosw (ABh) to a stosb (AAh)
+	xchg	ax,dx
+	loop	@B
+RSSetPlanesDone:
 	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
 
 	; move onto the mono piece
-	add	di,oem_brush_mono
 	jmp	do_mono_brush		;JAK
 
 RSUsePalette:
@@ -658,19 +687,11 @@ RSUsePalette:
 ;
 ; create a solid color brush
 ;
-RSSetPlanesLoop:
+RSSetPlanesLoop_8bit:
 	mov	dh,ah
 	mov	cx, SIZE_PATTERN * SIZE_PATTERN / 2
 	mov	ah,al
 	rep	stosw
-;	 ror	 dh,1			 ; create the mono portion too
-;	 rol	 dh,1
-;	 sbb	 ax,ax
-;	 stosw
-;	 stosw
-;	 stosw
-;	 stosw
-;	 jmp	 solid_brush_done
 	jmp	do_mono_brush		;JAK
 
 ;
@@ -685,7 +706,13 @@ RSBlackBrush:
 	mov	dh,SOLID_BRUSH+ONES_OR_ZEROS
         mov     al,bl
 	cbw
-	mov	cx, ((SIZE_PATTERN * SIZE_PATTERN + SIZE_PATTERN) / 2)
+	;mov	cx, ((SIZE_PATTERN * SIZE_PATTERN + SIZE_PATTERN) / 2)
+	; calculate the size of the colour + mono buffer
+	mov	cx,[oem_brush_size]
+	; pull off the "common" bit to get the colour buffer (but keep mono bit)
+	sub	cx,size oem_brush_com - oem_brush_mono
+	; divide by two since we're storing words
+	shr	cx,1
 	rep	stosw
 	jmp	short solid_brush_done
 ;
@@ -703,6 +730,7 @@ do_mono_brush:
 ;
 	xor	si,si			;clear GREY indicators
 	mov	dx,bw_sum		;get color value for mono plane
+	; FIXME: Need to update dither to work with multi-byte colours!
 	call	dither			;do the pattern
 	or	si,si			;test for solid or bad dithers
 	jz	set_up_return		;neither solid nor bad dither
@@ -861,8 +889,9 @@ pattern_copy_colour_loop:
         jnz     pattern_copy_colour_loop
 
 	pop	si
-	mov	ax	,my_data_seg
-	mov	ds	,ax
+	;mov	ax	,my_data_seg
+	;mov	ds	,ax
+	mov	ds	,my_data_seg
 	lea	bx	,abPaletteAccl
 	mov	cl	,SIZE_PATTERN
 
@@ -1053,8 +1082,9 @@ realize_hatch20:
         sub     si,SIZE_PATTERN         ; Restore hatch pointer
 	push	si
 	lea	si	,[di - SIZE_PATTERN * SIZE_PATTERN]
-	mov	ax	,my_data_seg
-	mov	ds	,ax
+	;mov	ax	,my_data_seg
+	;mov	ds	,ax
+	mov	ds	,my_data_seg
 	lea	bx	,abPaletteAccl
 	mov	cl	,SIZE_PATTERN
 
@@ -1188,7 +1218,13 @@ assumes es,nothing
 ;
         errnz   SIZE_PATTERN-8
         errnz   oem_brush_clr
-        errnz   oem_brush_mono-SIZE_PATTERN*SIZE_PATTERN
+        errnz   oem_brush_clr2
+        errnz   oem_brush_clr3
+        errnz   oem_brush_clr4
+        errnz   oem_brush_com1-SIZE_PATTERN*SIZE_PATTERN
+        errnz   oem_brush_com2-SIZE_PATTERN*SIZE_PATTERN*2
+        errnz   oem_brush_com3-SIZE_PATTERN*SIZE_PATTERN*3
+        errnz   oem_brush_com4-SIZE_PATTERN*SIZE_PATTERN*4
 ;
         PUBLIC  rotate_brush_x
 rotate_brush_x  proc near
@@ -1587,24 +1623,83 @@ realize_dispatch label  word
         errnz   OBJ_BRUSH-OBJ_PEN-1
         errnz   OBJ_FONT-OBJ_BRUSH-1
 ;
-;
-; realize_sizes
-;
-; realize_sizes contains the size of the memory required to realize
-; each of the objects.  These sizes will be returned to GDI when it
-; inquires the memory needed for an object.
-;
-realize_sizes   label   word
-        dw      SIZE oem_pen_def
-        dw      SIZE oem_brush_def
-        dw      0
-;
-        errnz   OBJ_PEN-1
-        errnz   OBJ_BRUSH-OBJ_PEN-1
-        errnz   OBJ_FONT-OBJ_BRUSH-1
-;
 sEnd    Code
 ;
+
+createSeg _INIT,InitSeg,word,public,CODE
+sBegin	InitSeg
+assumes cs,InitSeg
+
+;--------------------------------------------------------------------------;
+; init_modal_realizations
+;	modifies the code above to create brushes of the appropriate size
+;	for the configured graphics depth
+; Entry:
+;	ES	= Code
+;	AL	= Bytes (not bits!) per pixel
+; Returns:
+;	AL	= trashed
+; Registers Destroyed:
+;	AX,FLAGS
+; Registers Preserved:
+;	BX,CX,DX,SI,DI,BP,DS,ES
+; Calls:
+;	-
+; History:
+;	see Git
+;--------------------------------------------------------------------------;
+public	init_modal_realizations
+init_modal_realizations	proc near
+	assumes	es,Code
+
+	dec	al
+	jnz	@F
+	; if it's only one byte, we're done
+	ret
+
+@@:
+	dec	al
+	jnz	@F
+
+	; two bytes, allowing a major simplification of the above code
+	mov	[RSSetPlanesPref],0F3h	; make a simple "rep stosw"
+	push	di
+	push	cx
+
+	lea	di,[RSSetPlanesXchg]
+	lea	cx,[RSSetPlanesDone]
+	sub	cx,di
+	cld
+	mov	al,90h	; blank out the sequence with nops
+	rep	stosb
+
+	pop	cx
+	pop	di
+
+	; done!
+	mov	[oem_brush_size],size oem_brush_def2
+	ret
+
+@@:
+	dec	al
+	jnz	@F
+
+	; three bytes, meaning the second stosw needs to become a stosb
+	dec	[RSSetPlanesStos]
+	mov	[oem_brush_size],size oem_brush_def3
+	ret
+
+@@:
+	dec	al
+	; no jnz because there shouldn't be any case where AL >= 5
+
+	; the code above should work without issue, just leave this here:
+	mov	[oem_brush_size],size oem_brush_def4
+	ret
+init_modal_realizations	endp
+
+sEnd	InitSeg
+
         ifdef   PUBDEFS
 	public	return_obj_size
 	public	realize_exit

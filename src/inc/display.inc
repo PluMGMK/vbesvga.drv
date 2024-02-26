@@ -117,18 +117,40 @@ COL_ACCEL_MASK	equ	MONO_BIT OR ONES_OR_ZEROS OR GREY_SCALE
 SIZE_PATTERN	equ	8		;Size of an 8 by 8 pattern in bytes
 
 
-oem_brush_def	struc
-    ;color brush, four bytes per pixel
-    ;we decide how many bytes to write to a bitmap based on its bmBitsPixel
-;oem_brush_clr	db	SIZE_PATTERN * SIZE_PATTERN * (size phys_color) dup (?)
-oem_brush_clr	db	SIZE_PATTERN * SIZE_PATTERN dup (?)
+; Common fields in OEM brush structure
+; Accessible @ oem_brush_defX + size oem_brush_defX - size oem_brush_com
+oem_brush_com	struc
 oem_brush_mono	db	SIZE_PATTERN dup (?)	;Mono portion
 oem_brush_style dw	0			;Style of the brush
 oem_brush_accel db	0			;Accelerator for solids
 oem_brush_mask	db	SIZE_PATTERN dup (?)	;transparency mask
 						;(it is the hatch pattern)
-oem_brush_def   ends                            ;  (same as "Special" above)
+oem_brush_com	ends                            ;  (same as "Special" above)
 
+
+; 8-bit version
+oem_brush_def	struc
+oem_brush_clr	db	SIZE_PATTERN * SIZE_PATTERN dup (?)
+oem_brush_com1	db	size oem_brush_com dup (?)
+oem_brush_def	ends
+
+; 16-bit version
+oem_brush_def2	struc
+oem_brush_clr2	db	SIZE_PATTERN * SIZE_PATTERN * 2 dup (?)
+oem_brush_com2	db	size oem_brush_com dup (?)
+oem_brush_def2	ends
+
+; 24-bit version
+oem_brush_def3	struc
+oem_brush_clr3	db	SIZE_PATTERN * SIZE_PATTERN * 3 dup (?)
+oem_brush_com3	db	size oem_brush_com dup (?)
+oem_brush_def3	ends
+
+; 32-bit version
+oem_brush_def4	struc
+oem_brush_clr4	db	SIZE_PATTERN * SIZE_PATTERN * 4 dup (?)
+oem_brush_com4	db	size oem_brush_com dup (?)
+oem_brush_def4	ends
 
 
 ;	The pen structure is OEM dependant, and can contain whatever
