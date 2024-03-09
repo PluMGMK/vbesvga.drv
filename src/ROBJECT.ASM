@@ -44,10 +44,14 @@ incLogical      =       1               ; Include control for gdidefs.inc
         ??_out  robject
 ;
 
+DEBUG_PREVIEW_BRUSH	equ 1
 
 sBegin	Data
 
 externB abPaletteAccl
+ifdef	DEBUG_PREVIEW_BRUSH
+externW	ScreenSelector
+endif
 
 sEnd    Data
 
@@ -61,6 +65,9 @@ assumes cs,Code
         public  realize_solid
         public  realize_brush
         public  realize_pattern
+ifdef	DEBUG_PREVIEW_BRUSH
+	externW	MemoryWidth
+endif
         externNP dither                 ;Brush dithering code
 	externNP ColorDither
         externNP rgb_to_ipc             ;Logical to physical color conv
@@ -188,6 +195,9 @@ cProc   RealizeObject,<FAR,PUBLIC,WIN,PASCAL>,<es,ds,si,di>
         localB  dither_flags            ; for dithering
 	localW	bw_sum			; Black & white sum for a brush
 	localW	my_data_seg		;copy of data segment selector
+	; extra stuff for hatching on a 286 (and maybe other things)
+	localD	spill_colour_1
+	localD	spill_colour_2
 ;
 cBegin
 WriteAux <'RlzObj'>
@@ -207,7 +217,7 @@ WriteAux <'RlzObj'>
         shl     bx,1                    ; Compute index into dispatch table
 ;
         les     di,lp_out_obj           ; If lp_out_obj is NULL, then return
-        assumes es,nothing              ; size requirement?
+        assumes es,nothing              ; size requirement
         mov     cx,es
         or      cx,di
         jz      return_obj_size         ; They want the size
@@ -415,6 +425,89 @@ realize_brush_xrot_done:
         call    rotate_brush_y          ; Perform Y rotation
 ;
 realize_brush_done:
+ifdef	DEBUG_PREVIEW_BRUSH
+	; Rudimentary preview of the brush we just created:
+	; paint it in the upper-left corner of the screen
+	; and do an int3 so we can look at it.
+	mov	es,[_cstods]
+	assumes	es,Data
+
+        lds     si,lp_out_obj           ; --> back to start of oem_brush_def
+	mov	cx,[oem_brush_size]
+	sub	cx,size oem_brush_com
+	; now CX = size in bytes of the colour portion of the brush
+	; divide by eight to get the size of a single line
+	shr	cx,3
+	errnz	SIZE_PATTERN-8
+	mov	bl,SIZE_PATTERN	; BL = number of lines
+	shr	cx,1	; Change from bytes to words
+
+	; back up the bank selection
+	mov	dl,[bank_select_byte]
+	push	dx
+
+	; point ES:DI at top-left of screen
+	mov	es,[ScreenSelector]
+	assumes	es,nothing
+	xor	di,di
+	xor	dl,dl
+	SET_BANK
+
+	; fill in line-by-line
+@@:
+	push	di
+	push	cx
+	rep	movsw
+	pop	cx
+	pop	di
+	add	di,[MemoryWidth]
+	dec	bl
+	jnz	@B
+	; solid brushes seem OK, so only show non-solid ones
+        cmp     [si].oem_brush_style,BS_SOLID
+	je	@F
+	int	3	; show the colour brush
+@@:
+
+	; now do the mono part, which DS:SI already points to
+	xor	di,di
+	; set CX to the bytes per pixel
+	; need to SHL 1 to convert words back to bytes
+	; then SHR 3 to divide by SIZE_PATTERN again to get single pixel
+	; Net: we SHR 2
+	shr	cx,2
+	; use BX to count pixels: BH for lines, BL for pixels per line
+	mov	bh,SIZE_PATTERN
+preview_mono_lineloop:
+	mov	bl,SIZE_PATTERN
+	push	di
+	lodsb
+	mov	ah,al
+@@:
+	rcl	ah,1	; move the next bit into CF
+	sbb	al,al	; AL becomes FF if the bit was 1, or 00 otherwise
+	push	cx
+	rep	stosb	; store AL as many times as needed to make a full pixel
+	pop	cx
+	dec	bl	; next pixel
+	jnz	@B
+
+	pop	di
+	add	di,[MemoryWidth]
+	dec	bh
+	jnz	preview_mono_lineloop
+
+	; solid brushes seem OK, so only show non-solid ones
+        cmp     [si-SIZE_PATTERN].oem_brush_style,BS_SOLID
+	je	@F
+	int	3	; show the mono brush
+@@:
+
+	; restore bank selection
+	pop	dx
+	SET_BANK
+
+endif
         ret
 
 realize_brush   endp
@@ -655,6 +748,9 @@ realize_solid   proc    near
 	mov	brush_accel,bh
 	pop	bx
 	jc	RSUsePalette
+
+	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
+FillSolidPlane:
 	; if "somehow" we have 1-byte colours without a
 	; palette, the same code path will work for them too:
 	cmp	[oem_brush_size],SIZE oem_brush_def
@@ -672,10 +768,12 @@ RSSetPlanesStos	label byte
 	xchg	ax,dx
 	loop	@B
 RSSetPlanesDone:
-	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
 
 	; move onto the mono piece
-	jmp	do_mono_brush		;JAK
+	test	brush_accel,SOLID_BRUSH
+	jnz	do_mono_brush		;JAK
+	; This may be a hatched brush with identical fg and bg colours:
+	jmp	realize_hatch20
 
 RSUsePalette:
 	and	ah,not SOLID_BRUSH	; to be set later
@@ -692,7 +790,10 @@ RSSetPlanesLoop_8bit:
 	mov	cx, SIZE_PATTERN * SIZE_PATTERN / 2
 	mov	ah,al
 	rep	stosw
-	jmp	do_mono_brush		;JAK
+	test	brush_accel,SOLID_BRUSH
+	jnz	do_mono_brush		;JAK
+	; This may be a hatched brush with identical fg and bg colours:
+	jmp	realize_hatch20
 
 ;
 ; create a solid white brush (& mono brush portion too)
@@ -706,11 +807,10 @@ RSBlackBrush:
 	mov	dh,SOLID_BRUSH+ONES_OR_ZEROS
         mov     al,bl
 	cbw
-	;mov	cx, ((SIZE_PATTERN * SIZE_PATTERN + SIZE_PATTERN) / 2)
 	; calculate the size of the colour + mono buffer
 	mov	cx,[oem_brush_size]
 	; pull off the "common" bit to get the colour buffer (but keep mono bit)
-	sub	cx,size oem_brush_com - oem_brush_mono
+	sub	cx,size oem_brush_com - size oem_brush_mono
 	; divide by two since we're storing words
 	shr	cx,1
 	rep	stosw
@@ -871,19 +971,25 @@ realize_pattern proc near
 ; DX will have the offset to the next scan line for the source.
 ;
 	dec	dx			; to take care of auto inc in MOVSB
-        cmp     [si].bmBitsPixel,8      ; Set 'Z' if color
+        cmp     [si].bmBitsPixel,1      ; Clear 'Z' if color
         lds     si,[si].bmBits          ; --> where the bits are
-        jne     pattern_copy_mono       ; Handling monochrome source
+        je      pattern_copy_mono       ; Handling monochrome source
 ;
 ; COLOR ==> COLOR  (just copy pels to brush)
 ;
-	sub	dx,SIZE_PATTERN-1
+	mov	cx,[oem_brush_size]
+	sub	cx,size oem_brush_com
+	shr	cx,3			; divide by SIZE_PATTERN==8
+	dec	cx			; counteract the "dec dx" above
+	sub	dx,cx
 	mov	ah,SIZE_PATTERN 	; no of scans to move
 	push	di
 
 pattern_copy_colour_loop:
-        mov     cx,SIZE_PATTERN         ; Set # bytes to move
-        rep     movsb                   ; Move one byte of pattern
+        ;mov     cx,SIZE_PATTERN         ; Set # bytes to move
+	db	0B9h			; == mov cx,
+pattern_copy_numwords	dw SIZE_PATTERN SHR 1
+        rep     movsw                   ; Move word by word
         add     si,dx                   ; Skip rest of scanline
         dec     ah
         jnz     pattern_copy_colour_loop
@@ -918,7 +1024,8 @@ pattern_copy_mono:
 ; Handle the monochrome plane of the brush.
 ;
 
-	add	di	,SIZE_PATTERN * SIZE_PATTERN
+	add	di	,[oem_brush_size]
+	sub	di	,size oem_brush_com
 	mov	brush_accel,GREY_SCALE	; This is a grey scale
 
 	movsb
@@ -1012,17 +1119,30 @@ realize_hatch   proc near
 realize_hatch_actual:
 	push	ds
 	push	cx
+
+	; A lot of spillage here! It is impossible to keep this many 32-bit
+	; colours in registers on a 286. Once we're happy this works, we should
+	; look into using BigFontFlags to select a 386 version which doesn't
+	; spill any colours onto the stack.
+
 	lea	si,[si].lbBkColor	; Compute background color
         call    sum_RGB_colors
+	call	unpack_physclr
+	; spill_colour_1 := ACTUAL physical representation of BG colour
+	mov	[spill_colour_1.lo],ax
+	mov	[spill_colour_1.hi],dx
 
-	push	ax			; Save bground rgb + mono color info
         sub     si,lbBkColor-lbColor    ; Compute foreground color
         call    sum_RGB_colors
-	pop	dx			; Get fground rgb + mono color info
+	call	unpack_physclr
+	xor	ax,[spill_colour_1.lo]
+	xor	dx,[spill_colour_1.hi]
+
+	; spill_colour_2 := FG colour XOR BG colour (physical reps of both)
+	mov	[spill_colour_2.lo],ax
+	mov	[spill_colour_2.hi],dx
 
 	pop	cx
-	xchg	dh,al			; dh=fg, dl=bg, ah=fgflg,al=bgflg
-
 	mov	si,cx			; Compute address of hatch pattern
 	shiftl	si,3
 	lea	si,hatched_brushes[si]	; bx --> hatch pattern to use
@@ -1030,39 +1150,48 @@ realize_hatch_actual:
 
 
 ;	State of regs:desired regs
-;	AX -				SI - hatch pattern:
+;	AX - lower word of fg XOR bg:	SI - hatch pattern:
 ;	BX -				DI - color brush:
 ;	CX -				DS - input object seg:
-;	DX - fgcolor,bgcolor:		ES - output object seg:
+;	DX - upper word of fg XOR bg:	ES - output object seg:
 
 ;
 ;	MOVE THE COLOR HATCH portion of the brush
 
-	cmp	dh,dl			; see if colors are the same
-	jne	realize_hatch_17
+	or	dx,ax			; see if colors are the same (XOR == 0)
+	jnz	realize_hatch_17
 
-	mov	cx,(SIZE_PATTERN*SIZE_PATTERN)/2 ; Set up move for full brush
-	errnz	<SIZE_PATTERN and 1>
-	mov	ax,dx			; The colors are the same, so just
-	rep	stosw			; create a solid plane of the color
-	add	si,SIZE_PATTERN
-	jmp	realize_hatch20
+	; The colors are the same, so just create a solid plane of the color,
+	; reusing the modal code we have setup for solid brushes!
+	; FIXME: Set DX:AX to the colour!
+	jmp	FillSolidPlane
 
 realize_hatch_17:
-	xor	dh,dl			; dh=fg xor bg, dl = bg
 	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 
 realize_hatch_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lods	bptr cs:[si]		; Get next byte of pattern
-	mov	ah,al
+	mov	bh,al
 
 realize_hatch_inner_loop:
-	rol	ah,1
-	sbb	al,al			; ff = fg
-	and	al,dh
-	xor	al,dl			; select either fg or bg
-	stosb
+	rol	bh,1
+	sbb	ax,ax			; ffff = fg
+	cwd
+	and	ax,[spill_colour_2.lo]
+	; If the bit was 1, then [DX:]AX == fg xor bg, otherwise [DX:]AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	ax,[spill_colour_2.lo]
+realize_hatch_first_stos label byte
+	stosw
+realize_hatch_second_word:
+	and	dx,[spill_colour_2.hi]
+	xor	dx,[spill_colour_2.hi]
+	mov	ax,dx
+realize_hatch_second_stos label byte
+	stosw
+realize_hatch_second_word_done:
 	dec	ch
 	jnz	realize_hatch_inner_loop
 	loop	realize_hatch_outer_loop
@@ -1081,7 +1210,8 @@ realize_hatch20:
 
         sub     si,SIZE_PATTERN         ; Restore hatch pointer
 	push	si
-	lea	si	,[di - SIZE_PATTERN * SIZE_PATTERN]
+	;lea	si	,[di - SIZE_PATTERN * SIZE_PATTERN]
+	mov	si	,lp_out_obj.off
 	;mov	ax	,my_data_seg
 	;mov	ds	,ax
 	mov	ds	,my_data_seg
@@ -1092,6 +1222,7 @@ realize_hatch11:
 	mov	ch	,SIZE_PATTERN
 
 realize_hatch12:
+	; FIXME: What if we don't have a palette?
 	lods	BYTE PTR es:[si]
 	xlat
 	ror	al	,1
@@ -1654,7 +1785,21 @@ init_modal_realizations	proc near
 
 	dec	al
 	jnz	@F
-	; if it's only one byte, we're done
+
+	; only need to store one byte at a time for hatched brush
+	dec	[realize_hatch_first_stos]
+	push	di
+	push	cx
+remove_second_word:
+	lea	di,[realize_hatch_second_word]
+	lea	cx,[realize_hatch_second_word_done]
+	sub	cx,di
+	cld
+	mov	al,90h	; blank out the sequence with nops
+	rep	stosb
+
+	pop	cx
+	pop	di
 	ret
 
 @@:
@@ -1673,12 +1818,9 @@ init_modal_realizations	proc near
 	mov	al,90h	; blank out the sequence with nops
 	rep	stosb
 
-	pop	cx
-	pop	di
-
-	; done!
 	mov	[oem_brush_size],size oem_brush_def2
-	ret
+	mov	[pattern_copy_numwords],SIZE_PATTERN	; 8 words = 8*16 bits
+	jmp	remove_second_word	; shared code with 8-bit case
 
 @@:
 	dec	al
@@ -1686,6 +1828,8 @@ init_modal_realizations	proc near
 
 	; three bytes, meaning the second stosw needs to become a stosb
 	dec	[RSSetPlanesStos]
+	dec	[realize_hatch_second_stos]
+	mov	[pattern_copy_numwords],SIZE_PATTERN+(SIZE_PATTERN SHR 1)
 	mov	[oem_brush_size],size oem_brush_def3
 	ret
 
@@ -1694,6 +1838,7 @@ init_modal_realizations	proc near
 	; no jnz because there shouldn't be any case where AL >= 5
 
 	; the code above should work without issue, just leave this here:
+	mov	[pattern_copy_numwords],SIZE_PATTERN SHL 1	; 16 words
 	mov	[oem_brush_size],size oem_brush_def4
 	ret
 init_modal_realizations	endp

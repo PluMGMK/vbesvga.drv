@@ -85,7 +85,7 @@ cProc	Output,<FAR,PUBLIC,WIN,PASCAL>,<si,di>
 	parmD	lp_phys_pen		;--> to physical pen
 	parmD	lp_phys_brush		;--> to physical brush
 	parmD	lp_draw_mode		;--> to a Drawing mode
-	parmD	lp_clip_rect		;--> to a clipping rectange if <> 0
+	parmD	lp_clip_rect		;--> to a clipping rectangle if <> 0
 
 cBegin	<nogen>
         WriteAux <'Output'>
