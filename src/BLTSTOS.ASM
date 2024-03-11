@@ -134,12 +134,13 @@ STOS_SRC2_DST_CMP = $ - stos_src2_dst_cmp
 PUBLIC	bltstos
 bltstos 	PROC	NEAR
 
-	test	byte ptr local_board_flags,BOARD_FLAG_SPLITBANK
-	jz	@F
-	call	bltstos_splitbank		;we can use splitbank adressing
-	ret
-
-@@:	call	bltstos_prep
+;	test	byte ptr local_board_flags,BOARD_FLAG_SPLITBANK
+;	jz	@F
+;	call	bltstos_splitbank		;we can use splitbank adressing
+;	ret
+;
+;@@:	call	bltstos_prep
+	call	bltstos_prep
 
 	mov	cx,STOS_SRC1_SIZE		;move first template on and
 	lea	si,stos_src1_template		; do all the fixups

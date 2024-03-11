@@ -44,43 +44,43 @@ mono_bits		EQU	<[bp - 3CH]> ;bgmonobit:fgmonobit = hibyte:lobyte
 pattern_offset		EQU	<[bp - 3EH]> ;used in blts with patterns
 rop_offset		EQU	<[bp - 40H]> ;offset of ropcode in roptable
 rop_length		EQU	<[bp - 42H]> ;length of the rop code
-pattern_work		EQU	<[bp - 82H]> ;temporary workspace for pattern
-pattern_space		EQU    <[bp - 102H]> ;pattern will be placed on 64 byte bdry
+pattern_work		EQU    <[bp - 182H]> ;temporary workspace for pattern
+pattern_space		EQU    <[bp - 282H]> ;pattern will be placed on 64 byte bdry
 
-vert_dir		EQU	<[bp - 104H]>
-horz_dir		EQU	<[bp - 106H]>
-dst_page		EQU	<[bp - 108H]> ;used in some DST is SCREEN blts
-dst_bank		EQU	<[bp - 10AH]> ;used in some DST is SCREEN blts
-src_page		EQU	<[bp - 10CH]> ;used in some SRC is SCREEN blts
-src_bank		EQU	<[bp - 10EH]> ;used in some SRC is SCREEN blts
-first_edge_mask_count	EQU	<[bp - 110H]>
-nibble_function 	EQU	<[bp - 112H]>
-pattern_row_counter	EQU	<[bp - 114H]>
-same_pattern_row_counter  EQU	<[bp - 116H]>
-src_more_than_1byte	EQU	<[bp - 118H]>
-nibble_count		EQU	<[bp - 11AH]>
+vert_dir		EQU	<[bp - 284H]>
+horz_dir		EQU	<[bp - 286H]>
+dst_page		EQU	<[bp - 288H]> ;used in some DST is SCREEN blts
+dst_bank		EQU	<[bp - 28AH]> ;used in some DST is SCREEN blts
+src_page		EQU	<[bp - 28CH]> ;used in some SRC is SCREEN blts
+src_bank		EQU	<[bp - 28EH]> ;used in some SRC is SCREEN blts
+first_edge_mask_count	EQU	<[bp - 290H]>
+nibble_function 	EQU	<[bp - 292H]>
+pattern_row_counter	EQU	<[bp - 294H]>
+same_pattern_row_counter  EQU	<[bp - 296H]>
+src_more_than_1byte	EQU	<[bp - 298H]>
+nibble_count		EQU	<[bp - 29AH]>
 
-color_xlat_table	EQU	<[bp - 21AH]>	;for speed, tbl copied to stack
-cblt_code_end           EQU     <[bp - 218H]>   ;last byte in cblt_code
-cblt_code		EQU	<[bp - 31AH]>	;space for compiled blt code
-local_board_flags	EQU	<[bp - 31CH]>	;Video_Board_Flags onto stack
-src_left_edge		EQU	<[bp - 31EH]>	;leftedge of srcrect after clip
-src_top_edge		EQU	<[bp - 320H]>	;topedge of srcrect after clip
-dst_left_edge		EQU	<[bp - 322H]>	;leftedge of dstrect after clip
-dst_top_edge            EQU     <[bp - 324H]>   ;topedge of dstrect after clip
-background_mode 	EQU	<[bp - 326H]>	;background mode for xpar blts
-dst2_page		EQU	<[bp - 328H]> ;leftover bytes in dst segment
-first_edge_count	EQU	<[bp - 32AH]>
-right_edge_count	EQU	<[bp - 32CH]>
-full_byte_count 	EQU	<[bp - 32EH]>
-dst2_width_bytes	EQU	<[bp - 330H]>
-dst2_blt_offset 	EQU	<[bp - 332H]>
-blt216_scandir_func	EQU	<[bp - 334H]>
-blt216_reg_cd		EQU	<[bp - 336H]>
+color_xlat_table	EQU	<[bp - 39AH]>	;for speed, tbl copied to stack
+cblt_code_end           EQU     <[bp - 398H]>   ;last byte in cblt_code
+cblt_code		EQU	<[bp - 49AH]>	;space for compiled blt code
+local_board_flags	EQU	<[bp - 49CH]>	;Video_Board_Flags onto stack
+src_left_edge		EQU	<[bp - 49EH]>	;leftedge of srcrect after clip
+src_top_edge		EQU	<[bp - 4A0H]>	;topedge of srcrect after clip
+dst_left_edge		EQU	<[bp - 4A2H]>	;leftedge of dstrect after clip
+dst_top_edge            EQU     <[bp - 4A4H]>   ;topedge of dstrect after clip
+background_mode 	EQU	<[bp - 4A6H]>	;background mode for xpar blts
+dst2_page		EQU	<[bp - 4A8H]> ;leftover bytes in dst segment
+first_edge_count	EQU	<[bp - 4AAH]>
+right_edge_count	EQU	<[bp - 4ACH]>
+full_byte_count 	EQU	<[bp - 4AEH]>
+dst2_width_bytes	EQU	<[bp - 4B0H]>
+dst2_blt_offset 	EQU	<[bp - 4B2H]>
+blt216_scandir_func	EQU	<[bp - 4B4H]>
+blt216_reg_cd		EQU	<[bp - 4B6H]>
 
 
 
-BLT_STACK_SIZE		EQU	0350H
+BLT_STACK_SIZE		EQU	05D0H
 SOURCE_PRESENT	equ	0010000000000000b
 PATTERN_PRESENT	equ	0100000000000000b
 NEGATE_NEEDED	equ	1000000000000000b

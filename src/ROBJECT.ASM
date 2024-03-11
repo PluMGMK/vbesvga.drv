@@ -65,6 +65,8 @@ assumes cs,Code
         public  realize_solid
         public  realize_brush
         public  realize_pattern
+	public	pattern_copy_numwords
+	public	oem_brush_size
 ifdef	DEBUG_PREVIEW_BRUSH
 	externW	MemoryWidth
 endif

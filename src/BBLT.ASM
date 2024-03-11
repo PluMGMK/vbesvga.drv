@@ -61,6 +61,8 @@ include ropdefs.blt
 include roptable.blt
 
 externW _cstods
+externW	pattern_copy_numwords	; in ROBJECT.ASM
+externW	oem_brush_size		; in ROBJECT.ASM
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
@@ -267,16 +269,16 @@ bitblt_prep_rop_etal	PROC	NEAR
 	cmp	[si].bmType,1
 	jc	@F
 	or	al,DEVFLAG_SRC_SCREEN or DEVFLAG_SRC_COLOR
-@@:	cmp	[si].bmBitsPixel,08H
-	jne	bitblt_prep_rop_src_done
+@@:	cmp	[si].bmBitsPixel,01H
+	je	bitblt_prep_rop_src_done
 	or	al,DEVFLAG_SRC_COLOR
 
 bitblt_prep_rop_src_done:
 	cmp	es:[di].bmType,1
 	jc	@F
 	or	al,DEVFLAG_DST_SCREEN or DEVFLAG_DST_COLOR
-@@:	cmp	es:[di].bmBitsPixel,08H
-	jne	@F
+@@:	cmp	es:[di].bmBitsPixel,01H
+	je	@F
 	or	al,DEVFLAG_DST_COLOR
 @@:	mov	device_flags,ax
 	clc	
@@ -306,9 +308,11 @@ bitblt_prep_pattern	PROC	NEAR
 	mov	ax,ds
 	or	ax,si				;if the brush is NULL then
 	je	bitblt_prep_pattern_error	; there is an error
-	mov	al,[si].oem_brush_accel
+	mov	bx,[oem_brush_size]
+	sub	bx,size oem_brush_com
+	mov	al,[bx+si].oem_brush_accel
 	mov	brush_accel_flags,ax
-	mov	ax,[si].oem_brush_style
+	mov	ax,[bx+si].oem_brush_style
 	cmp	ax,BS_HOLLOW			;if the brush is hollow then
 	je	bitblt_prep_pattern_error	; there is an error
 
@@ -318,14 +322,14 @@ bitblt_prep_pattern	PROC	NEAR
         mov     pattern_offset,di
 	lea	di,pattern_work
 
-	mov	bx,ss
-	mov	es,bx
+	mov	cx,ss
+	mov	es,cx
 	cmp	ax,BS_SOLID			;solid and hatched brushes
 	je	bitblt_prep_pattern_copy	; go exactly as they are since
 	cmp	ax,BS_HATCHED			; they are created in both hues
 	je	bitblt_prep_pattern_copy	; but they may need rotation
 
-	test	byte ptr [si].oem_brush_accel,GREY_SCALE
+	test	byte ptr [bx+si].oem_brush_accel,GREY_SCALE
 	je	bitblt_prep_color_pattern
 	test	word ptr device_flags,DEVFLAG_DST_COLOR
 	jne	@F
@@ -349,25 +353,29 @@ bitblt_prep_pattern_error:
         stc
         ret
 
+public	bitblt_prep_pattern_copy
 bitblt_prep_pattern_copy:
-	mov	cx,SIZE_PATTERN * SIZE_PATTERN
+	mov	cx,[pattern_copy_numwords]
+	shl	cx,3
+	errnz	SIZE_PATTERN-8
 	test	word ptr device_flags,DEVFLAG_DST_COLOR
 	jnz	@F
-	mov	cx,SIZE_PATTERN
-	add	si,oem_brush_mono
-@@:	rep	movsb
+	mov	cx,SIZE_PATTERN SHR 1
+	add	si,[oem_brush_size]
+	sub	si,size oem_brush_com
+@@:	rep	movsw
 
 bitblt_prep_pattern_rotate:
 	mov	bx,0707H			;assume the worst that we must
 	test	word ptr device_flags,DEVFLAG_DST_SCREEN     ; byte align the
-	je	@F				; pattern in the x direction
+	jz	@F				; pattern in the x direction
 	test	rop_flags,SOURCE_PRESENT	;if the latches can be used
-	jne	@F				; we only need to order the
+	jnz	@F				; we only need to order the
 	mov	bx,0704H			; nibbles in the x direction
-	test	word ptr local_board_flags,BOARD_FLAG_ENABLE_216
-	je	@F			;if a 216 is available, no need to
-	mov	bx,0700H		; rotate, since 8 bytes can be done
-					; in a single cycle
+;	test	word ptr local_board_flags,BOARD_FLAG_ENABLE_216
+;	je	@F			;if a 216 is available, no need to
+;	mov	bx,0700H		; rotate, since 8 bytes can be done
+;					; in a single cycle
 @@:	mov	ax,es
 	mov	ds,ax
 	lea	si,pattern_work
@@ -617,7 +625,7 @@ bitblt_dispatch PROC	NEAR
 	je	dispatch_dst_memory		; be handled quicker by hard-
 	test	rop_flags,SOURCE_PRESENT	; code, if only the dst and a
 	jne	dispatch_src_to_screen		; pattern (but no src) are
-	cmp	word ptr background_mode,OPAQUE ; are involved and if bgmode
+	cmp	word ptr background_mode,OPAQUE ; involved and if bgmode
 	je	@F				; is OPAQUE because the vga
 	jmp	dispatch_blt88			; hardware can be used
 @@:	call	blt_pat_dst			
@@ -625,24 +633,10 @@ bitblt_dispatch PROC	NEAR
 
 dispatch_src_to_screen:
 
-	test	word ptr device_flags,DEVFLAG_SRC_SCREEN  ;if both src and dst
-	je	dispatch_memory_to_screen	; are the screen and we are
+	test	word ptr device_flags,DEVFLAG_SRC_SCREEN
+	je	dispatch_memory_to_screen
 
-	test	word ptr local_board_flags,BOARD_FLAG_ENABLE_216  ;on a 216
-	je	@F				; and the rop
-;	mov	bl,byte ptr Rop[2]		; only involves the src and
-;	mov	bh,bl				; dst, then the 216 hardware
-;	and	bx,0FF0H			; can handle it
-;	shr	bl,4
-;	cmp	bl,bh
-;	jne	dispatch_true_rop3
-;        cmp     word ptr background_mode,OPAQUE
-;	jne	dispatch_mode_xpar
-;
-;	call	blt216_src_dst
-;	jmp	short bitblt_hardcode_done
-
-@@:	cmp	byte ptr Rop[2],11001100B	; scr to scr but no 216
+	cmp	byte ptr Rop[2],11001100B	; scr to scr but no 216
 	jne	dispatch_true_rop3		; but we will still use
 	cmp	word ptr background_mode,OPAQUE ; latches to do a srccopy
 	jne	dispatch_mode_xpar		; if opaque mode and

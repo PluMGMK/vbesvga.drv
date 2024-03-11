@@ -27,6 +27,9 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
+externW	oem_brush_size		; in ROBJECT.ASM
+externW	pattern_copy_numwords	; in ROBJECT.ASM
+
 ;
 ;	blt_clip
 ;
@@ -330,7 +333,8 @@ brush_convert_mono_to_mono ENDP 		;
 public	brush_convert_mono_to_color
 brush_convert_mono_to_color	   PROC    NEAR
 
-	add	si,oem_brush_mono		;point to mono portion
+	add	si,[oem_brush_size]
+	sub	si,size oem_brush_com		;point to mono portion
 	mov	cl,SIZE_PATTERN 		;SIZE_PATTERN rows of data
 	xor	bh,bl
 
@@ -415,8 +419,10 @@ brush_convert_color_to_mono	   ENDP 	;
 public	brush_convert_color_to_color
 brush_convert_color_to_color	    PROC    NEAR
 
-	mov	cx,SIZE_PATTERN * SIZE_PATTERN	;SIZE_PATTERN rows of data
-	rep	movsb				;copy over color pattern
+	mov	cx,[pattern_copy_numwords]
+	shl	cx,3
+	errnz	SIZE_PATTERN-8
+	rep	movsw				;copy over color pattern
 	ret
 
 brush_convert_color_to_color	    ENDP	;
