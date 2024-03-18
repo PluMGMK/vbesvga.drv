@@ -122,22 +122,32 @@ blt_ctoc_prep	PROC	NEAR
 	mov	ax,SrcyOrg
 	mov	bx,SrcxOrg
 	mul	word ptr src_width_bytes
-	add	ax,bx				;FIXME: bitness, possible overflow
+	add	ax,bx				;FIXME: bitness
+	adc	dx,0
 	mov	src_blt_offset,ax
 	mov	src_page,dx
-	clc
-	call	set_page
+	SET_BANK
 
 @@:	test	word ptr device_flags,DEVFLAG_DST_SCREEN
 	je	@F
 	mov	ax,DestyOrg
 	mov	bx,DestxOrg
 	mul	word ptr dst_width_bytes
-	add	ax,bx				;FIXME: bitness, possible overflow
+	add	ax,bx				;FIXME: bitness
+	adc	dx,0
 	mov	dst_blt_offset,ax
-	mov	dst_page,dx			;if dst is the screen, may need
-	call	set_both_pages			; to read AND write to it, so
-@@:	ret					; set both pages, not just dst
+	mov	dst_page,dx
+	SET_BANK
+@@:	; At this point, inner_loop_count may be <dst_xExt_bytes, to allow for
+	; loading pixels from a mono source. But since we're in BLT88, we know
+	; we will only be loading from colour sources, so we can simplify by
+	; doing this:
+	mov	ax,inner_loop_count
+	mov	dx,dst_xExt_bytes
+	cmp	ax,dx
+	jae	@F
+	mov	inner_loop_count,dx
+@@:	ret
 
 blt_ctoc_prep	ENDP			;
 

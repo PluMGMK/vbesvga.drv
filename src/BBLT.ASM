@@ -429,11 +429,14 @@ bitblt_prep_src PROC	NEAR
 	mov	src_fill_bytes,ax
 	mov	ax,[si].bmWidthBytes
 	mov	src_width_bytes,ax
-	mov	ax,xExt 			;assume a color src: thus the x
-	;FIXME: account for source bitness
-	mov	src_xExt_bytes,ax		; extent of the blt IN BYTES is
+	mov	ax,xExt 			;assume a color src
+	mov	cl,[si].bmBitsPixel
+	xor	ch,ch
+	shr	cx,3				;convert bits to bytes
+	mul	cx
+	mov	src_xExt_bytes,ax
 
-	test	word ptr device_flags,DEVFLAG_SRC_COLOR  ; the same as the xExt
+	test	word ptr device_flags,DEVFLAG_SRC_COLOR
 	jne	@F
 	mov	bx,SrcxOrg			;for mono blts, the x extent
 	lea	ax,[bx + 07H]			; IN BYTES!! is equal to
@@ -481,10 +484,7 @@ bitblt_prep_dst PROC	NEAR
 	mov	dst_fill_bytes,ax
 	mov	ax,es:[di].bmWidthBytes
 	mov	dst_width_bytes,ax
-	mov	ax,xExt 			;assume a color dst: thus the x
-	; FIXME: account for destination bitness!
-	mov	dst_xExt_bytes,ax		; extent of the blt IN BYTES is
-	mov	inner_loop_count,ax		; the same as the xExt
+	mov	ax,xExt
 
 	test	word ptr device_flags,DEVFLAG_DST_COLOR
 	jne	@F
@@ -512,12 +512,20 @@ bitblt_prep_dst PROC	NEAR
 public  zero_alignment
 zero_alignment:
 	mov	align_rotate_count,ax		; cases
+	jmp	bitblt_prep_dst_done
 
-@@:	test	word ptr device_flags,DEVFLAG_DST_SCREEN
+@@:	mov	inner_loop_count,ax		;loop over exactly x pixels
+	mov	cl,es:[di].bmBitsPixel
+	xor	ch,ch
+	shr	cx,3				;convert bits to bytes
+	mul	cx
+	mov	dst_xExt_bytes,ax		;may be >inner_loop_count
+
+	; this is in the colour section since the screen is never mono
+	test	word ptr device_flags,DEVFLAG_DST_SCREEN
 	je	bitblt_prep_dst_done
 	mov	bx,DestxOrg			; planar mode. When the dst
 	mov	cx,xExt 			; is the screen, this is almost
-	; FIXME: Why?? Even the original V7VGA used packed pixels...
 	call	get_edge_masks_nibbles		; always the case (think about
 	mov	byte ptr first_edge_mask,bl	; src copy and pattern fills.)
 	mov	byte ptr last_edge_mask,bh
