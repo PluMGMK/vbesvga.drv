@@ -63,6 +63,7 @@ include roptable.blt
 externW _cstods
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 externW	oem_brush_size		; in ROBJECT.ASM
+externNP unpack_physclr		; in RGB2IPC.ASM
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
@@ -138,7 +139,7 @@ bitblt_error:
 	and	al,DEVFLAG_BOTH_SCREEN
 	je	short bitblt_noreg_restore
 
-	call	unexclude_far
+	call	unexclude_far			; FIXME: doesn't need to be far!
 
 	mov	al,SET_RESET_FOREGROUND or WRITE_MODE_0
 	mov	ah,FUNC_COPY or SEQ_CHAIN_4_MODE
@@ -202,7 +203,7 @@ PUBLIC	bitblt_prep_rop_etal
 bitblt_prep_rop_etal	PROC	NEAR
 
 	sub	ax,ax			;assume one of first 128 rops
-	mov	bx,[bp + 10H]
+	mov	bx,Rop[2]
 	or	bl,bl
 	jns	@F
 	or	ah, HIGH NEGATE_NEEDED
@@ -232,12 +233,24 @@ bitblt_prep_rop_etal	PROC	NEAR
 	mov	local_board_flags,al
 
 	les	di,lpDrawMode			;these may not be needed but
-	mov	ah,es:[di].bkColor.pcol_fb	; putting them on the stack
-	mov	al,es:[di].TextColor.pcol_fb	; now can save a lot of hassle
-	mov	mono_bits,ax			; and segment reloads later
-	mov	ah,es:[di].bkColor.pcol_Clr	; if they are needed
-        mov     al,es:[di].TextColor.pcol_Clr
-	mov	colors,ax
+	;mov	ah,es:[di].bkColor.pcol_fb	
+	;mov	al,es:[di].TextColor.pcol_fb	
+	;mov	mono_bits,ax			
+	;mov	ah,es:[di].bkColor.pcol_Clr	
+        ;mov     al,es:[di].TextColor.pcol_Clr
+	;mov	colors,ax
+	mov	ax,es:[di].bkColor.lo		; putting them on the stack
+	mov	dx,es:[di].bkColor.hi		; now can save a lot of hassle
+	call	unpack_physclr			; and segment reloads later
+	mov	bl,bh				; if they are needed
+	mov	[bgcolour.lo],ax
+	mov	[bgcolour.hi],dx
+	mov	ax,es:[di].TextColor.lo
+	mov	dx,es:[di].TextColor.hi
+	call	unpack_physclr
+	mov	[mono_bits],bx
+	mov	[fgcolour.lo],ax
+	mov	[fgcolour.hi],dx
 	mov	word ptr background_mode,OPAQUE
 	mov	ax,es:[di].bkMode
 	cmp	ax,3
@@ -336,7 +349,7 @@ bitblt_prep_pattern	PROC	NEAR
 	mov	bx,mono_bits
         call    brush_convert_mono_to_mono
 	jmp	short	bitblt_prep_pattern_rotate
-@@:	mov	bx,colors
+@@:	mov	bx,colors			; FIXME: deal with larger colours!
 	call	brush_convert_mono_to_color
         jmp     short   bitblt_prep_pattern_rotate
 
@@ -419,6 +432,7 @@ bitblt_prep_src PROC	NEAR
 	mov	ax,[si].bmWidthBytes
 	mov	src_width_bytes,ax
 	mov	ax,xExt 			;assume a color src: thus the x
+	;FIXME: account for source bitness
 	mov	src_xExt_bytes,ax		; extent of the blt IN BYTES is
 
 	test	word ptr device_flags,DEVFLAG_SRC_COLOR  ; the same as the xExt
@@ -470,6 +484,7 @@ bitblt_prep_dst PROC	NEAR
 	mov	ax,es:[di].bmWidthBytes
 	mov	dst_width_bytes,ax
 	mov	ax,xExt 			;assume a color dst: thus the x
+	; FIXME: account for destination bitness!
 	mov	dst_xExt_bytes,ax		; extent of the blt IN BYTES is
 	mov	inner_loop_count,ax		; the same as the xExt
 
@@ -504,6 +519,7 @@ zero_alignment:
 	je	bitblt_prep_dst_done
 	mov	bx,DestxOrg			; planar mode. When the dst
 	mov	cx,xExt 			; is the screen, this is almost
+	; FIXME: Why?? Even the original V7VGA used packed pixels...
 	call	get_edge_masks_nibbles		; always the case (think about
 	mov	byte ptr first_edge_mask,bl	; src copy and pattern fills.)
 	mov	byte ptr last_edge_mask,bh
@@ -566,7 +582,7 @@ bitblt_prep_final	PROC	NEAR
 	mov	cx,bx
 	mov	dx,ax
 	xchg	si,di
-	call	exclude_far
+	call	exclude_far			; FIXME: doesn't need to be far!
         pop     ax                              ;remove device flags parm
 
 final_no_exclude:

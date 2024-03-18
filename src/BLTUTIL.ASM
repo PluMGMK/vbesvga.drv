@@ -178,7 +178,7 @@ sma1:	cmp	ax,[si].bmScanSegment
         jnc     @B
 
 sma2:	mul	[si].bmWidthBytes		;compute offset into bitmap
-        add     ax,bx
+        add     ax,bx				;FIXME: Get correct number of bits
         add     ax,word ptr [si].bmBits         ;add start of bitmap
         jnc     @F                              ;if there was a carry from this
         add     cx,__NEXTSEG                    ; add, go into next segment
@@ -329,7 +329,9 @@ brush_convert_mono_to_mono ENDP 		;
 ;		of the brush (NOTE: The entire brush structure is NOT there.
 ;		Just sixty-four bytes of color data.)
 ;
-
+; FIXME: Best thing to do here might be to refactor realize_hatched (in robject)
+; to allow modal code reuse between this function and that one. Might be better
+; to sort out heap corruption before we start messing with robject again...
 public	brush_convert_mono_to_color
 brush_convert_mono_to_color	   PROC    NEAR
 
@@ -453,7 +455,7 @@ pattern_rotate  PROC    NEAR
 	je	pattern_rotate_mono
 
         sub     bx,ax                   ;bh:bl = 8 - y : 8 - x
-        shl     ch,3                    ;8 bytes per pattern row
+        shl     ch,3                    ;8 bytes per pattern row - FIXME: rewrite for correct byteness!
         add     cl,ch                   ;add in x rotate count
         sub     ch,ch                   ;clear out ch
         add     si,cx                   ;add offset into si

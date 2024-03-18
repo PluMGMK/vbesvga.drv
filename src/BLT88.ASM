@@ -122,7 +122,7 @@ blt_ctoc_prep	PROC	NEAR
 	mov	ax,SrcyOrg
 	mov	bx,SrcxOrg
 	mul	word ptr src_width_bytes
-	add	ax,bx
+	add	ax,bx				;FIXME: bitness, possible overflow
 	mov	src_blt_offset,ax
 	mov	src_page,dx
 	clc
@@ -133,7 +133,7 @@ blt_ctoc_prep	PROC	NEAR
 	mov	ax,DestyOrg
 	mov	bx,DestxOrg
 	mul	word ptr dst_width_bytes
-	add	ax,bx
+	add	ax,bx				;FIXME: bitness, possible overflow
 	mov	dst_blt_offset,ax
 	mov	dst_page,dx			;if dst is the screen, may need
 	call	set_both_pages			; to read AND write to it, so

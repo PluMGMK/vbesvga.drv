@@ -28,6 +28,7 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
+; FIXME: Looks like a hardcoded screensize - this whole module probably needs rewriting!
 SCREEN_DSCAN	EQU	1024
 
 ;
@@ -41,9 +42,9 @@ blt_pat_dst_prep	PROC	NEAR
 	mov	ax,DestyOrg		;the dst address
 	mov	bx,DestxOrg
 	mov	dx,word ptr dst_width_bytes
-	shr	dx,2
+	shr	dx,2			;why are we dividing by four??
 	mul	dx
-        shr     bx,2
+        shr     bx,2			;why are we dividing by four??
 	add	ax,bx
 	mov	dst_blt_offset,ax
 	mov	dst_bank,dx

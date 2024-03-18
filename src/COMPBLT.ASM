@@ -659,7 +659,7 @@ sypt0:	cmp	di,01234H		;01234H becomes dst_width_bytes
 sypt1:	jae	@F
 	mov	dx,05678H		;05678H starts out at (dst_page + 1)
 sypt2:	inc	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-sypt3:	call	far_set_both_pages
+sypt3:	call	far_set_bank_select	;oth_pages
 @@:
 
 SYPT_SIZE = $ - screen_yplus_template
@@ -675,7 +675,7 @@ symt0:
 symt1:	jb	@F
 	mov	dx,05678H		;05678H starts out at (dst_page - 1)
 symt2:	dec	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-symt3:	call	far_set_both_pages
+symt3:	call	far_set_bank_select	;oth_pages
 @@:
 
 SYMT_SIZE = $ - screen_yminus_template

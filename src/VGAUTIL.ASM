@@ -210,6 +210,7 @@ set_page	PROC	NEAR
 	pop	ax
 	shr	dl,2				;prepare to set bank bits
 	popf					;carry flag is important
+	; FIXME: set_banko is not the same thing as SET_BANK (factor-of-four difference)
 	SET_BANK	;call	set_banko
         sti
         ret
@@ -271,6 +272,7 @@ set_both_pages	PROC	NEAR
 	pop	dx
 	pop	ax
 	shr	dl,2				;prepare to set bank bits
+	; FIXME: set_both_banko is not the same thing as SET_BANK (factor-of-four difference)
 	SET_BANK	;call	set_both_banko
 	sti
 	pop	dx
