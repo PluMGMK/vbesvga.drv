@@ -1,12 +1,10 @@
 v31.obj + 
 bblt.obj + 
-blt216.obj + 
 blt11.obj + 
 blt18.obj + 
 blt81.obj + 
 blt88.obj + 
 bltstos.obj + 
-bltpat.obj + 
 vgautil.obj + 
 bltutil.obj + 
 compblt.obj + 
@@ -52,8 +50,7 @@ trn_pal.obj +
 vesafns.obj + 
 vgastate.obj + 
 vgavram.obj + 
-3xswitch.obj + 
-bs216.obj
+3xswitch.obj
 display.drv 
 display.map/map/al:16 
 libw/NOD 

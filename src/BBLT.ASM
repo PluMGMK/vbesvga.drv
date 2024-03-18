@@ -30,9 +30,7 @@ include blt11.inc
 include blt18.inc
 include blt81.inc
 include blt88.inc
-;include blt216.inc
 include bltstos.inc
-include bltpat.inc
 
 externFP PrestoChangeoSelector	; CS <--> DS conversion (hopefully CS <-> SS)
 EXTRN	unexclude_far:FAR
@@ -637,15 +635,8 @@ bitblt_dispatch PROC	NEAR
         mov     ax,ss
         mov     es,ax
 
-	test	word ptr device_flags,DEVFLAG_DST_SCREEN ;blts to screen can
-	je	dispatch_dst_memory		; be handled quicker by hard-
-	test	rop_flags,SOURCE_PRESENT	; code, if only the dst and a
-	jne	dispatch_src_to_screen		; pattern (but no src) are
-	cmp	word ptr background_mode,OPAQUE ; involved and if bgmode
-	je	@F				; is OPAQUE because the vga
-	jmp	dispatch_blt88			; hardware can be used
-@@:	call	blt_pat_dst			
-	jmp	bitblt_hardcode_done
+	test	word ptr device_flags,DEVFLAG_DST_SCREEN
+	je	dispatch_dst_memory
 
 dispatch_src_to_screen:
 
@@ -680,12 +671,10 @@ dispatch_dst_memory:
 	jmp	short	dispatch_blt11
 
 dispatch_dst_color_memory:
+dispatch_memory_to_screen:
 
         test    rop_flags,SOURCE_PRESENT        ;if src is not used in the blt
         jz      short   dispatch_blt88          ; or the blt has a color src
-
-dispatch_memory_to_screen:
-
         test    word ptr device_flags,DEVFLAG_SRC_COLOR  ;use blt_color_to_xxxx
         jnz     short   dispatch_blt88          ; which is faster code than
         jmp     short   dispatch_blt18          ; than blt_mono_to_xxxx

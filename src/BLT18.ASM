@@ -88,7 +88,7 @@ blt_mtoc_prep	PROC	NEAR
 	je	@F
 	mov	ax,DestyOrg		 ; compute the starting address
 	mul	word ptr dst_width_bytes
-	add	ax,DestxOrg
+	add	ax,DestxOrg		; FIXME: account for correct byteness
         mov     dst_blt_offset,ax
 	mov	dst_page,dx		;if dst is screen, may need to read AND
 	call	set_both_pages		; write to it, so set both src and dst
@@ -103,7 +103,7 @@ blt_mtoc_prep	ENDP			;
 ;	then top to bottom (blt is X+Y+); Since a color and mono bitmap will
 ;	never be the same device, they cannot overlap.
 ;
-
+;	FIXME: Colour expansion code currently only works for 8-bit colour
 mtoc_src1_template:
 	mov	cx,01234H		;01234H will become inner_loop_count
 mtoc_src1_inner_loop:
