@@ -44,7 +44,7 @@ incLogical      =       1               ; Include control for gdidefs.inc
         ??_out  robject
 ;
 
-DEBUG_PREVIEW_BRUSH	equ 1
+;DEBUG_PREVIEW_BRUSH	equ 1
 
 sBegin	Data
 
@@ -52,6 +52,8 @@ externB abPaletteAccl
 ifdef	DEBUG_PREVIEW_BRUSH
 externW	ScreenSelector
 endif
+
+dodgy_brush_count	db 1
 
 sEnd    Data
 
@@ -105,7 +107,7 @@ endif
 ;
 realize_sizes   label   word
 oem_pen_size	dw      SIZE oem_pen_def
-oem_brush_size	dw      SIZE oem_brush_def
+oem_brush_size	dw      SIZE oem_brush_def4
 oem_font_size	dw      0
 ;
         errnz   OBJ_PEN-1
@@ -401,10 +403,11 @@ realize_brush_calc_fnptr:
         assumes ds,nothing
 ;
 	; save brush style and accelerator
-	add	di,[oem_brush_size]	; point at end of brush
+	mov	cx,bx
+	mov	bx,[oem_brush_size]	; point at end of brush
 	; then address the common part "backwards" from it
-        mov     [di-size oem_brush_com].oem_brush_style,bx
-        mov     [di-size oem_brush_com].oem_brush_accel,dh
+        mov     [bx+di-size oem_brush_com].oem_brush_style,cx
+        mov     [bx+di-size oem_brush_com].oem_brush_accel,dh
 ;
 ; If this is a solid black or a solid white brush, then no
 ; rotation is required.  Otherwise, rotate as needed.
@@ -990,7 +993,7 @@ realize_pattern proc near
 pattern_copy_colour_loop:
         ;mov     cx,SIZE_PATTERN         ; Set # bytes to move
 	db	0B9h			; == mov cx,
-pattern_copy_numwords	dw SIZE_PATTERN SHR 1
+pattern_copy_numwords	dw SIZE_PATTERN SHL 1	; 16 words = 8*32 bits
         rep     movsw                   ; Move word by word
         add     si,dx                   ; Skip rest of scanline
         dec     ah
@@ -1165,7 +1168,8 @@ realize_hatch_actual:
 
 	; The colors are the same, so just create a solid plane of the color,
 	; reusing the modal code we have setup for solid brushes!
-	; FIXME: Set DX:AX to the colour!
+	mov	ax,[spill_colour_1.lo]
+	mov	dx,[spill_colour_1.hi]
 	jmp	FillSolidPlane
 
 realize_hatch_17:
@@ -1788,6 +1792,9 @@ init_modal_realizations	proc near
 	dec	al
 	jnz	@F
 
+	mov	[pattern_copy_numwords],SIZE_PATTERN SHR 1	; 4 words
+	mov	[oem_brush_size],size oem_brush_def
+
 	; only need to store one byte at a time for hatched brush
 	dec	[realize_hatch_first_stos]
 	push	di
@@ -1839,9 +1846,7 @@ remove_second_word:
 	dec	al
 	; no jnz because there shouldn't be any case where AL >= 5
 
-	; the code above should work without issue, just leave this here:
-	mov	[pattern_copy_numwords],SIZE_PATTERN SHL 1	; 16 words
-	mov	[oem_brush_size],size oem_brush_def4
+	; the code above should work without issue
 	ret
 init_modal_realizations	endp
 
