@@ -34,7 +34,7 @@ include bltstos.inc
 
 externFP PrestoChangeoSelector	; CS <--> DS conversion (hopefully CS <-> SS)
 EXTRN	unexclude_far:FAR
-EXTRN	exclude_far:FAR
+EXTRN	exclude:near
 EXTRN   PaletteModified:byte
 EXTRN	set_bank_select:near
 
@@ -588,8 +588,30 @@ bitblt_prep_final	PROC	NEAR
 	mov	cx,bx
 	mov	dx,ax
 	xchg	si,di
-	call	exclude_far			; FIXME: doesn't need to be far!
+	call	exclude
         pop     ax                              ;remove device flags parm
+
+	; We also need to fixup the xOrg(s) to account for the correct bitness
+	; (this simplifies code in BLT88)
+	xor	cx,cx
+	mov	bx,device_flags
+	test	bx,DEVFLAG_SRC_SCREEN
+	jz	@F
+	lds	si,lpSrcDev
+	mov	cl,[si].bmBitsPixel
+	shr	cx,3	; convert bits to bytes
+	mov	ax,SrcxOrg
+	mul	cx
+	mov	SrcxOrg,ax
+@@:
+	test	bx,DEVFLAG_DST_SCREEN
+	jz	final_no_exclude
+	les	di,lpDestDev
+	mov	cl,es:[di].bmBitsPixel
+	shr	cx,3	; convert bits to bytes
+	mov	ax,DestxOrg
+	mul	cx
+	mov	DestxOrg,ax
 
 final_no_exclude:
 	mov	ax,device_flags

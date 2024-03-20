@@ -120,9 +120,9 @@ blt_ctoc_prep	PROC	NEAR
 	test	word ptr device_flags,DEVFLAG_SRC_SCREEN
 	je	@F
 	mov	ax,SrcyOrg
-	mov	bx,SrcxOrg
+	mov	bx,SrcxOrg	;was fixed for bitness in bitblt_prep_final
 	mul	word ptr src_width_bytes
-	add	ax,bx				;FIXME: bitness
+	add	ax,bx
 	adc	dx,0
 	mov	src_blt_offset,ax
 	mov	src_page,dx
@@ -131,9 +131,9 @@ blt_ctoc_prep	PROC	NEAR
 @@:	test	word ptr device_flags,DEVFLAG_DST_SCREEN
 	je	@F
 	mov	ax,DestyOrg
-	mov	bx,DestxOrg
+	mov	bx,DestxOrg	;was fixed for bitness in bitblt_prep_final
 	mul	word ptr dst_width_bytes
-	add	ax,bx				;FIXME: bitness
+	add	ax,bx
 	adc	dx,0
 	mov	dst_blt_offset,ax
 	mov	dst_page,dx

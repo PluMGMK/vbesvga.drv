@@ -158,10 +158,22 @@ blt_set_directions	ENDP		;
 PUBLIC  set_memory_address
 set_memory_address      PROC    NEAR
 
-	cmp	[si].bmBitsPixel,1		;if the bitmap is mono
+	mov	cl,[si].bmBitsPixel
+	cmp	cl,1				;if the bitmap is mono
 	jne	@f				; then divide the x coord
         shr     bx,3                            ; by 8 to get the byte offset
-@@:     mov     cx,word ptr [si + 2].bmBits     ;first segment of bitmap in cx
+	jmp	set_memory_address_getseg
+@@:
+	xor	ch,ch
+	shr	cx,3				;convert bits to bytes
+	cmp	cl,1				;if only one byte, then
+	jbe	set_memory_address_getseg	; no multiplication needed
+	xchg	ax,bx
+	mul	cx
+	xchg	bx,ax
+
+set_memory_address_getseg:
+	mov     cx,word ptr [si + 2].bmBits     ;first segment of bitmap in cx
 
 	push	ax
 	mov	ax,[si].bmHeight		;if bitmap is not >= 64K, the
@@ -178,7 +190,7 @@ sma1:	cmp	ax,[si].bmScanSegment
         jnc     @B
 
 sma2:	mul	[si].bmWidthBytes		;compute offset into bitmap
-        add     ax,bx				;FIXME: Get correct number of bits
+        add     ax,bx
         add     ax,word ptr [si].bmBits         ;add start of bitmap
         jnc     @F                              ;if there was a carry from this
         add     cx,__NEXTSEG                    ; add, go into next segment

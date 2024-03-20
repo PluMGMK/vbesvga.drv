@@ -23,6 +23,7 @@ include compblt.inc
 include vgautil.inc
 
 externA __NEXTSEG
+externFP far_set_bank_select	; in BANK.INC
 
 .286
 sBegin	Code
