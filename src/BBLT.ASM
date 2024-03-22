@@ -59,9 +59,10 @@ include ropdefs.blt
 include roptable.blt
 
 externW _cstods
-externW	pattern_copy_numwords	; in ROBJECT.ASM
-externW	oem_brush_size		; in ROBJECT.ASM
-externNP unpack_physclr		; in RGB2IPC.ASM
+externW	pattern_copy_numwords		; in ROBJECT.ASM
+externW	oem_brush_size			; in ROBJECT.ASM
+externW	compile_colour_stos_table	; in COMPBLT.ASM
+externNP unpack_physclr			; in RGB2IPC.ASM
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
@@ -383,10 +384,6 @@ bitblt_prep_pattern_rotate:
 	test	rop_flags,SOURCE_PRESENT	;if the latches can be used
 	jnz	@F				; we only need to order the
 	mov	bx,0704H			; nibbles in the x direction
-;	test	word ptr local_board_flags,BOARD_FLAG_ENABLE_216
-;	je	@F			;if a 216 is available, no need to
-;	mov	bx,0700H		; rotate, since 8 bytes can be done
-;					; in a single cycle
 @@:	mov	ax,es
 	mov	ds,ax
 	lea	si,pattern_work
@@ -515,11 +512,16 @@ zero_alignment:
 	jmp	bitblt_prep_dst_done
 
 @@:	mov	inner_loop_count,ax		;loop over exactly x pixels
-	mov	cl,es:[di].bmBitsPixel
-	xor	ch,ch
-	shr	cx,3				;convert bits to bytes
-	mul	cx
+	mov	bl,es:[di].bmBitsPixel
+	xor	bh,bh
+	shr	bx,3				;convert bits to bytes
+	mul	bx
 	mov	dst_xExt_bytes,ax		;may be >inner_loop_count
+
+	; set the appropriate compile_colour_stosX function
+	shl	bx,1
+	mov	ax,compile_colour_stos_table[bx-2]
+	mov	[compile_colour_stos],ax
 
 	; this is in the colour section since the screen is never mono
 	test	word ptr device_flags,DEVFLAG_DST_SCREEN

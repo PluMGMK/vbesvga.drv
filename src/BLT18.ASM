@@ -88,11 +88,11 @@ blt_mtoc_prep	PROC	NEAR
 	je	@F
 	mov	ax,DestyOrg		 ; compute the starting address
 	mul	word ptr dst_width_bytes
-	add	ax,DestxOrg		; FIXME: account for correct byteness
+	add	ax,DestxOrg		;fixed for bitness in bitblt_prep_final
         mov     dst_blt_offset,ax
-	mov	dst_page,dx		;if dst is screen, may need to read AND
-	call	set_both_pages		; write to it, so set both src and dst
-@@:	ret				; pages, not just dst page
+	mov	dst_page,dx
+	SET_BANK
+@@:	ret
 
 blt_mtoc_prep	ENDP			;
 
@@ -103,7 +103,7 @@ blt_mtoc_prep	ENDP			;
 ;	then top to bottom (blt is X+Y+); Since a color and mono bitmap will
 ;	never be the same device, they cannot overlap.
 ;
-;	FIXME: Colour expansion code currently only works for 8-bit colour
+
 mtoc_src1_template:
 	mov	cx,01234H		;01234H will become inner_loop_count
 mtoc_src1_inner_loop:
@@ -114,18 +114,25 @@ mtoc_src1_fix0:
 	rol	bl,04H			;04H becomes (SrcxOrg & 07H)
 mtoc_src1_fix1:
 	rol	bl,1
-	sbb	al,al
-	and	al,0FFH 		;0FFH will become (fgcolor xor bgcolor)
+	sbb	ax,ax
+	cwd
+	and	ax,1234h	 	;1234h will become (fgcolor xor bgcolor)
 mtoc_src1_fix2:
-	xor	al,0FFH 		;0FFH will become fgcolor
+	and	dx,1234h		;ditto
+mtoc_src1_fix2a:
+	xor	ax,1234h		;1234h will become fgcolor
 mtoc_src1_fix3:
+	xor	dx,1234h		;ditto
+mtoc_src1_fix3a:
 
 MTOC_SRC1_LEN = $ - mtoc_src1_template
 MTOC_SRC1_INNER_LOOP = $ - mtoc_src1_inner_loop + 2
 MTOC_SRC1_FIXUP0 = $ - mtoc_src1_fix0 + 1
 MTOC_SRC1_FIXUP1 = $ - mtoc_src1_fix1 + 1
-MTOC_SRC1_FIXUP2 = $ - mtoc_src1_fix2 + 1
-MTOC_SRC1_FIXUP3 = $ - mtoc_src1_fix3 + 1
+MTOC_SRC1_FIXUP2 = $ - mtoc_src1_fix2 + 2
+MTOC_SRC1_FIXUP2A = $ - mtoc_src1_fix2a + 2
+MTOC_SRC1_FIXUP3 = $ - mtoc_src1_fix3 + 2
+MTOC_SRC1_FIXUP3A = $ - mtoc_src1_fix3a + 2
 MTOC_SRC1_ADDR_SAVE = $ - mtoc_src1_fix1
 
 PUBLIC	compile_mtoc_src1
@@ -142,10 +149,15 @@ compile_mtoc_src1	PROC	NEAR
 	mov	al,1
 	rol	al,cl
 	mov	es:[di - MTOC_SRC1_FIXUP0],al	;fixup left edge pre-roll
-	mov	ax,colors			;fixup the standard mono
-	xor	ah,al
-	mov	es:[di - MTOC_SRC1_FIXUP2],ah
-	mov	es:[di - MTOC_SRC1_FIXUP3],al
+
+	mov	ax,fgcolour.lo			;fixup the standard mono
+	mov	dx,fgcolour.hi
+	mov	es:[di - MTOC_SRC1_FIXUP3],ax
+	mov	es:[di - MTOC_SRC1_FIXUP3A],dx
+	xor	ax,bgcolour.lo
+	xor	dx,bgcolour.hi
+	mov	es:[di - MTOC_SRC1_FIXUP2],ax
+	mov	es:[di - MTOC_SRC1_FIXUP2A],dx
 	lea	ax,[di - MTOC_SRC1_ADDR_SAVE]	;save looping address for
 	mov	any_jmp_address,ax		; later
 	ret
@@ -178,7 +190,7 @@ MTOC_LOOP_LEN = $ - mtoc_loop_template
 PUBLIC	compile_mtoc_loop
 compile_mtoc_loop	PROC	NEAR
 
-	call	compile_color_stosb
+	call	compile_colour_stos
 
 	mov	cx,MTOC_LOOP_LEN
 	lea	si,mtoc_loop_template

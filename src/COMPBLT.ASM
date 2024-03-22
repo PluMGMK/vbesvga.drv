@@ -872,6 +872,8 @@ compile_dst_splitbank_yupdate	ENDP
 ;	stosb is skipped; otherwise the value gets stored in the dst bitmap.
 ;	If the blt is not a transparent blt, then the value is always stored.
 
+;	FIXME: Might be worth moving these into InitSeg and copying just one...
+
 color_stosb_xpar_template:
 	cmp	al,034H 			;034H will become the bg color
 cstxf:	je	@F
@@ -881,7 +883,6 @@ cstxf:	je	@F
 
 COLOR_STOSB_XPAR_LEN	=  $ - color_stosb_xpar_template
 COLOR_STOSB_XPAR_FIX	=  $ - cstxf + 1
-
 
 PUBLIC	compile_color_stosb
 compile_color_stosb	PROC	NEAR
@@ -895,11 +896,131 @@ compile_color_stosb	PROC	NEAR
 @@:	lea	si,color_stosb_xpar_template
 	mov	cx,COLOR_STOSB_XPAR_LEN
 	rep	movs byte ptr es:[di], cs:[si]
-	mov	al,byte ptr [colors + 1]
+	mov	al,byte ptr [bgcolour]
 	mov	es:[di - COLOR_STOSB_XPAR_FIX],al
 	ret
 
 compile_color_stosb	ENDP
+
+
+color_stosw_xpar_template:
+	cmp	ax,01234H 			;01234H will become the bg color
+cstwxf:	je	@F
+	stosw
+	dec	di
+	dec	di
+@@:	inc	di
+	inc	di
+
+COLOR_STOSW_XPAR_LEN	=  $ - color_stosw_xpar_template
+COLOR_STOSW_XPAR_FIX	=  $ - cstwxf + 2
+
+PUBLIC	compile_color_stosw
+compile_color_stosw	PROC	NEAR
+
+	cmp	word ptr background_mode,OPAQUE
+	jne	@F
+	mov	al,I_STOSW
+	stosb
+	ret
+
+@@:	lea	si,color_stosw_xpar_template
+	mov	cx,COLOR_STOSW_XPAR_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,word ptr [bgcolour]
+	mov	es:[di - COLOR_STOSW_XPAR_FIX],ax
+	ret
+
+compile_color_stosw	ENDP
+
+
+color_stos3b_xpar_template:
+	cmp	ax,01234H 			;1234H will become the bg colour
+cst3xf:	jne	cst3xg
+	cmp	dl,78H				;  78H will become the bg colour
+cst3xg:	je	@F
+colour_stos3b_uncond:
+	stosw
+	mov	al,dl
+	stosb
+colour_stos3b_uncond_end:
+	sub	di,3
+@@:	add	di,3
+
+COLOR_STOS3B_XPAR_LEN	=  $ - color_stos3b_xpar_template
+COLOR_STOS3B_XPAR_FIX	=  $ - cst3xf + 2
+COLOR_STOS3B_XPAR_FIXA	=  $ - cst3xg + 1
+
+COLOUR_STOS3B_UNCOND_LEN=  colour_stos3b_uncond_end - colour_stos3b_uncond
+
+PUBLIC	compile_color_stos3b
+compile_color_stos3b	PROC	NEAR
+
+	cmp	word ptr background_mode,OPAQUE
+	jne	@F
+	lea	si,colour_stos3b_uncond
+	mov	cx,COLOUR_STOS3B_UNCOND_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	ret
+
+@@:	lea	si,color_stos3b_xpar_template
+	mov	cx,COLOR_STOS3B_XPAR_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,word ptr [bgcolour]
+	mov	es:[di - COLOR_STOS3B_XPAR_FIX],ax
+	mov	dl,byte ptr [bgcolour+2]
+	mov	es:[di - COLOR_STOS3B_XPAR_FIXA],dl
+	ret
+
+compile_color_stos3b	ENDP
+
+
+color_stosd_xpar_template:
+	cmp	ax,01234H 			;1234H will become the bg colour
+cstdxf:	jne	cstdxg
+	cmp	dx,05678H			;5678H will become the bg colour
+cstdxg:	je	@F
+colour_stosd_uncond:
+	stosw
+	mov	ax,dx
+	stosw
+colour_stosd_uncond_end:
+	sub	di,4
+@@:	add	di,4
+
+COLOR_STOSD_XPAR_LEN	=  $ - color_stosd_xpar_template
+COLOR_STOSD_XPAR_FIX	=  $ - cstdxf + 2
+COLOR_STOSD_XPAR_FIXA	=  $ - cstdxg + 2
+
+COLOUR_STOSD_UNCOND_LEN	=  colour_stosd_uncond_end - colour_stosd_uncond
+
+PUBLIC	compile_color_stosd
+compile_color_stosd	PROC	NEAR
+
+	cmp	word ptr background_mode,OPAQUE
+	jne	@F
+	lea	si,colour_stosd_uncond
+	mov	cx,COLOUR_STOSD_UNCOND_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	ret
+
+@@:	lea	si,color_stosd_xpar_template
+	mov	cx,COLOR_STOSD_XPAR_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,word ptr [bgcolour]
+	mov	es:[di - COLOR_STOSD_XPAR_FIX],ax
+	mov	dx,word ptr [bgcolour+2]
+	mov	es:[di - COLOR_STOSD_XPAR_FIXA],dx
+	ret
+
+compile_color_stosd	ENDP
+
+public	compile_colour_stos_table
+compile_colour_stos_table	label word
+	dw	offset compile_color_stosb
+	dw	offset compile_color_stosw
+	dw	offset compile_color_stos3b
+	dw	offset compile_color_stosd
 
 sEnd
 
