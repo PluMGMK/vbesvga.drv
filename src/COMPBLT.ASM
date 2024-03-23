@@ -33,6 +33,7 @@ assumes es,Nothing
 assumes ss,Nothing
 
 extrn	roptable:byte
+extrn	oem_brush_size:word	; in ROBJECT.ASM
 
 ;
 ;	compile_mono_pattern_fetch
@@ -90,22 +91,15 @@ compile_mono_pattern_fetch   ENDP
 ;
 
 color_pattern_fetch_template:
-	and	bp,NOT 07H
-	or	bp,ss:[01234H]	      ;1234 becomes pattern column counter addr
+	and	bp,01234H             ;1234 becomes negative pattern row size
+cpfta:	or	bp,ss:[01234H]	      ;1234 becomes pattern column counter addr
 cpft:	mov	dh,[bp + 01234H]      ;01234H will become address of pattern
 cpft0:	inc	word ptr ss:[01234H]  ;1234 becomes pattern column counter addr
 cpft1:	and	word ptr ss:[01234H],5678H ;1234 becomes pat col counter addr
-cpft2:				      ; and 5678 will become 07H -- if 07H were
-				      ; put there the code length is compiler
-				      ; dependent (there is a short form of the
-				      ; and word ptr [####],$$$$ where $$$$ is
-				      ; only a byte which is sign extended to a
-				      ; word before being ANDed. I make certain
-				      ; that $$$$ is the full word form of the
-				      ; instruction by using 5678H and then do
-				      ; the fixup.) JAKX
+cpft2:				      ; and 5678 will become pattern row size -1
 
 CPFT_SIZE = $ - color_pattern_fetch_template
+CPFTA_OFFSET = $ - cpfta
 CPFT_OFFSET  = $ - cpft
 CPFT0_OFFSET = $ - cpft0
 CPFT1_OFFSET = $ - cpft1
@@ -127,7 +121,16 @@ compile_color_pattern_fetch	PROC	NEAR
 	mov	es:[di - CPFT_OFFSET - 2],bx
 	mov	es:[di - CPFT1_OFFSET - 2],bx
 	mov	es:[di - CPFT2_OFFSET - 4],bx
-	mov	word ptr es:[di - CPFT2_OFFSET - 2],0007H
+
+	; fixup the pattern size
+	mov	dx,[oem_brush_size]
+	sub	dx,size oem_brush_com		;just the colour pattern size
+	errnz	SIZE_PATTERN-8
+	shr	dx,3				;divide by eight to get one row
+	dec	dx				;column counter mask
+	mov	es:[di - CPFT2_OFFSET - 2],dx
+	not	dx				;row counter mask
+	mov	es:[di - CPFTA_OFFSET - 2],dx
 	ret
 
 compile_color_pattern_fetch	ENDP
@@ -151,9 +154,9 @@ compile_color_pattern_fetch	ENDP
 ;
 
 pattern_yupdate_template:
-	add	bp,SIZE_PATTERN
-	and	bp,SIZE_PATTERN * (SIZE_PATTERN - 1)
-	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
+	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
+pyud0:	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
+pyud1:	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
 					     ; for start of next line. 5678H
 					     ; becomes a 0000H. I want to force
 					     ; use of the long form of the
@@ -162,6 +165,8 @@ pattern_yupdate_template:
 
 PYUD_SIZE = $ - pattern_yupdate_template
 PYUD_OFFSET = $ - pattern_yupdate_template
+PYUD_PATSIZE_OFFSET = $ - pyud0 + 2
+PYUD_PATMASK_OFFSET = $ - pyud1 + 2
 I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
 
 PUBLIC	compile_pattern_yupdate
@@ -174,6 +179,16 @@ compile_pattern_yupdate PROC	NEAR
 	mov	es:[di - 4],bx
 	mov	word ptr es:[di - 2],0
 
+	; fixup the pattern size
+	mov	ax,[oem_brush_size]
+	sub	ax,size oem_brush_com		;just the colour pattern size
+	mov	dx,ax
+	errnz	SIZE_PATTERN-8
+	shr	dx,3				;divide by eight to get one row
+	mov	es:[di - PYUD_PATSIZE_OFFSET],dx
+	sub	ax,dx				;full size of pattern minus size
+	mov	es:[di - PYUD_PATMASK_OFFSET],ax; of one row = correct mask so
+						; that the row counter wraps
 	or	word ptr dst_swing_bytes,0	;if the y direction is y-
 	jns	@F				; then change inc bp to dec bp
 	mov	word ptr es:[di - PYUD_OFFSET],I_SUB_BP_I
@@ -660,7 +675,7 @@ sypt0:	cmp	di,01234H		;01234H becomes dst_width_bytes
 sypt1:	jae	@F
 	mov	dx,05678H		;05678H starts out at (dst_page + 1)
 sypt2:	inc	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-sypt3:	call	far_set_bank_select	;oth_pages
+sypt3:	call	far_set_bank_select
 @@:
 
 SYPT_SIZE = $ - screen_yplus_template
@@ -676,7 +691,7 @@ symt0:
 symt1:	jb	@F
 	mov	dx,05678H		;05678H starts out at (dst_page - 1)
 symt2:	dec	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-symt3:	call	far_set_bank_select	;oth_pages
+symt3:	call	far_set_bank_select
 @@:
 
 SYMT_SIZE = $ - screen_yminus_template

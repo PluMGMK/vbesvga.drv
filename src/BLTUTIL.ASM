@@ -447,7 +447,7 @@ brush_convert_color_to_color	    ENDP	;
 ;       PARMS:
 ;       DS:SI   ptr to pattern
 ;       ZERO    CLEAR (NOT EQUAL) if the pattern pointed to by DS:SI is color
-;               pattern (64 bytes)
+;               pattern (64*bpp bytes)
 ;               SET   (EQUAL) if the pattern pointed to by DS:SI is a
 ;               mono pattern (8 bytes)
 ;       ES:DI   ptr to place to put new rotated pattern
@@ -462,27 +462,44 @@ pattern_rotate  PROC    NEAR
 
         push    ax                      ;save regs
         push    bx
+	push	dx
         mov     ax,cx
         mov     bx,(SIZE_PATTERN SHL 8) OR SIZE_PATTERN
 	je	pattern_rotate_mono
 
-        sub     bx,ax                   ;bh:bl = 8 - y : 8 - x
-        shl     ch,3                    ;8 bytes per pattern row - FIXME: rewrite for correct byteness!
-        add     cl,ch                   ;add in x rotate count
+	mov	bx,[oem_brush_size]
+	sub	bx,size oem_brush_com
+	shr	bx,6			;divide by 64==SIZE_PATTERN**2
+	errnz	SIZE_PATTERN-8
+	mul	bx			;multiply both AH and AL by bpp number
+	mov	cl,al
+	shl	bx,3			;get back to full row size
+	errnz	SIZE_PATTERN-8
+	mov	dx,bx
+	mov	bh,SIZE_PATTERN		;row counter NOT multiplied by bpp
+        sub     bx,cx                   ;bh:bl = 8 - y : (8 - x) * bpp
+        shl     ah,3                    ;8 pixels per pattern row
+	errnz	SIZE_PATTERN-8
+        add     cl,ah                   ;add in x rotate count
+	mov	ah,ch			;save unmultiplied row count
         sub     ch,ch                   ;clear out ch
         add     si,cx                   ;add offset into si
 
 pattern_rotate_color_column:
-        mov     cl,bl                   ;get number of pixels til end of row
+        mov     cl,bl                   ;get number of bytes til end of row
         rep     movsb                   ;move them into new pattern
-        sub     si,8                    ;point to start of src pattern row
-        mov     cl,al                   ;number of pixels til the start offset
+        sub     si,dx                   ;point to start of src pattern row
+        mov     cl,al                   ;number of bytes til the start offset
         rep     movsb
 
-        add     si,8                    ;go down to next src row
+        add     si,dx                   ;go down to next src row
         dec     bh                      ;one less row til we have to wrap
         jne     pattern_rotate_color_column
-        sub     si,SIZE_PATTERN * SIZE_PATTERN  ;row wrap
+	shl	dx,3			;increase to full pattern size
+	errnz	SIZE_PATTERN-8
+        sub     si,dx			;row wrap
+	shr	dx,3			;go back to just row size
+	errnz	SIZE_PATTERN-8
         or      bh,ah                   ;now do rows up to row offset
         mov     ah,0                    ; 2nd time thru, we want to terminate
         jne     pattern_rotate_color_column
@@ -507,6 +524,7 @@ pattern_rotate_mono_row:
         jne     pattern_rotate_mono_row
 
 pattern_rotate_done:
+	pop	dx
         pop     bx
         pop     ax
         ret
