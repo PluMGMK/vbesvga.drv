@@ -437,8 +437,8 @@ ssypt0: cmp	si,01234H		;01234H becomes src_width_bytes
 ssypt1: jae	@F
 	mov	dx,05678H		;05678H starts out at (src_page + 1)
 ssypt2: inc	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-ssypt3: clc				;flag indicating src opposed to dst
-	call	far_set_page
+ssypt3: ;clc				;flag indicating src opposed to dst
+	call	far_set_bank_select	;page
 @@:
 
 SSYPT_SIZE = $ - src_screen_yplus_template
@@ -454,8 +454,8 @@ ssymt0:
 ssymt1: jb	@F
 	mov	dx,05678H		;05678H starts out at (src_page - 1)
 ssymt2: dec	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-ssymt3: clc				;flag indicating src as opposed to dst
-	call	far_set_page
+ssymt3: ;clc				;flag indicating src as opposed to dst
+	call	far_set_bank_select	;page
 @@:
 
 SSYMT_SIZE = $ - src_screen_yminus_template
@@ -578,84 +578,6 @@ dmy_negative:
         ret
 
 compile_dst_memory_yupdate   ENDP		;
-
-;
-;	compile_dst_screen_yupdate
-;
-;	This routine places dst screen address y update code onto the stack.
-;
-;	PARMS:
-;	dst_swing_bytes and the initial dst_page should be available on the
-;	stack.
-;
-
-dst_screen_yplus_template:
-	add	di,01234H		;01234H will become dst_swing_bytes
-dsypt0: cmp	di,01234H		;01234H will become dst_width_bytes
-dsypt1: jae	@F
-	mov	dx,05678H		;05678H starts out at (dst_page + 1)
-dsypt2: inc	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-dsypt3: stc				;flag indicating dst as opposed to src
-	call	far_set_page
-@@:
-
-DSYPT_SIZE = $ - dst_screen_yplus_template
-DSYPT0 = $ - dsypt0
-DSYPT1 = $ - dsypt1
-DSYPT2 = $ - dsypt2
-DSYPT3 = $ - dsypt3
-
-dst_screen_yminus_template:
-	add	di,01234H	   ;01234H becomes dst_swing_bytes
-dsymt0: cmp	di,01234H	   ;01234H becomes -dst_width_bytes
-dsymt1: jb	@F
-	mov	dx,05678H		;05678H starts out at (dst_page - 1)
-dsymt2: dec	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-dsymt3: stc				;flag indicating dst as opposed to src
-	call	far_set_page
-@@:
-
-DSYMT_SIZE = $ - dst_screen_yminus_template
-DSYMT0 = $ - dsymt0
-DSYMT1 = $ - dsymt1
-DSYMT2 = $ - dsymt2
-DSYMT3 = $ - dsymt3
-
-PUBLIC	compile_dst_screen_yupdate
-compile_dst_screen_yupdate   PROC    NEAR
-
-        or      word ptr dst_swing_bytes,0
-	js	@F
-	lea	si,dst_screen_yplus_template
-	mov	cx,DSYPT_SIZE
-	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,dst_swing_bytes
-	mov	es:[di - DSYPT0 - 2],ax
-	mov	ax,dst_width_bytes
-	mov	es:[di - DSYPT1 - 2],ax
-	mov	ax,dst_page
-	inc	ax
-	lea	bx,[di - DSYPT2 - 2]
-	mov	es:[bx],ax
-	mov	es:[di - DSYPT3 - 2],bx
-	ret
-
-@@:	lea	si,dst_screen_yminus_template
-	mov	cx,DSYMT_SIZE
-	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,dst_swing_bytes
-	mov	es:[di - DSYMT0 - 2],ax
-	mov	ax,dst_width_bytes
-	neg	ax
-	mov	es:[di - DSYMT1 - 2],ax
-	mov	ax,dst_page
-	dec	ax
-	lea	bx,[di - DSYMT2 - 2]
-	mov	es:[bx],ax
-	mov	es:[di - DSYMT3 - 2],bx
-	ret
-
-compile_dst_screen_yupdate   ENDP		;
 
 ;
 ;	compile_screen_yupdate

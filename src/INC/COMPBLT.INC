@@ -20,7 +20,6 @@ EXTRN	compile_outer_loop:NEAR
 EXTRN	compile_src_memory_yupdate:NEAR
 EXTRN	compile_src_screen_yupdate:NEAR
 EXTRN	compile_dst_memory_yupdate:NEAR
-EXTRN	compile_dst_screen_yupdate:NEAR
 EXTRN	compile_screen_yupdate:NEAR
 EXTRN   compile_jmp_back_to_start:NEAR
 EXTRN	compile_src_splitbank_yupdate:NEAR
