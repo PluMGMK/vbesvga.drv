@@ -1052,10 +1052,13 @@ FindMode_attrsOK:
 	cmp	ax,[VScreen_Height]
 	jne	jnelp		; NEXT!
 
+	mov	al,es:[di.OFF_VESA_DEPTH]
+	test	al,7		; is our pixel an integer number of bytes?
+	jnz	jnelp		; NEXT!
+
 	; Packed pixel?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_PACKED
-	mov	al,es:[di.OFF_VESA_DEPTH]	; depth is as given
-	je	@F
+	je	@F				; depth is as given
 
 	; Direct colour?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_DIRECT

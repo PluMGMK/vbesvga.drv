@@ -30,8 +30,9 @@ src_blt_segment 	EQU	<[bp - 22H]> ;start segment of src
 src_blt_offset		EQU	<[bp - 24H]> ;start offset of src
 dst_blt_segment 	EQU	<[bp - 26H]> ;start segment of dst
 dst_blt_offset		EQU	<[bp - 28H]> ;start offset of dst
-compblt_segment 	EQU	<[bp - 2AH]>
-compblt_offset		EQU	<[bp - 2CH]>
+
+src_seg_wrap	 	EQU	<[bp - 2AH]> ;loop iterations left to do if/when
+dst_seg_wrap		EQU	<[bp - 2CH]> ; we wrap to the next segment
 WorkSelector		EQU	<[bp - 2EH]>
 any_jmp_address 	EQU	<[bp - 30H]> ;temp storage for a compiled address
 

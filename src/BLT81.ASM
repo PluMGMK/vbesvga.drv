@@ -64,6 +64,7 @@ blt81	PROC	NEAR
 	stosb
 	pop	bx
 	call	compile_inner_loop_end		;generate the loop @B
+	call	compile_inner_loop_wraps
 
 @@:	mov	ax,8				;compute number of pixels in
 	sub	ax,align_rotate_count		; last edge byte

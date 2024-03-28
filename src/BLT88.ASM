@@ -83,6 +83,7 @@ blt88_repmovsb: 				;just for debugging
 	stosb
 
 blt88_nomovsb:
+	call	compile_inner_loop_wraps
 	call	compile_outer_loop
 
 	test	word ptr rop_flags,SOURCE_PRESENT

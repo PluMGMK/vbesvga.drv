@@ -232,12 +232,6 @@ bitblt_prep_rop_etal	PROC	NEAR
 	mov	local_board_flags,al
 
 	les	di,lpDrawMode			;these may not be needed but
-	;mov	ah,es:[di].bkColor.pcol_fb	
-	;mov	al,es:[di].TextColor.pcol_fb	
-	;mov	mono_bits,ax			
-	;mov	ah,es:[di].bkColor.pcol_Clr	
-        ;mov     al,es:[di].TextColor.pcol_Clr
-	;mov	colors,ax
 	mov	ax,es:[di].bkColor.lo		; putting them on the stack
 	mov	dx,es:[di].bkColor.hi		; now can save a lot of hassle
 	call	unpack_physclr			; and segment reloads later
@@ -379,11 +373,11 @@ bitblt_prep_pattern_copy:
 
 bitblt_prep_pattern_rotate:
 	mov	bx,0707H			;assume the worst that we must
-	test	word ptr device_flags,DEVFLAG_DST_SCREEN     ; byte align the
-	jz	@F				; pattern in the x direction
-	test	rop_flags,SOURCE_PRESENT	;if the latches can be used
-	jnz	@F				; we only need to order the
-	mov	bx,0704H			; nibbles in the x direction
+;	test	word ptr device_flags,DEVFLAG_DST_SCREEN     ; byte align the
+;	jz	@F				; pattern in the x direction
+;	test	rop_flags,SOURCE_PRESENT	;if the latches can be used
+;	jnz	@F				; we only need to order the
+;	mov	bx,0704H			; nibbles in the x direction
 @@:	mov	ax,es
 	mov	ds,ax
 	lea	si,pattern_work
@@ -422,10 +416,25 @@ bitblt_prep_src PROC	NEAR
 	call	blt_clip
 	jc	bitblt_prep_src_done
 
-	mov	ax,[si].bmFillBytes		;copy a few things to the stack
-	mov	src_fill_bytes,ax
-	mov	ax,[si].bmWidthBytes
-	mov	src_width_bytes,ax
+	mov	bx,[si].bmFillBytes		;copy a few things to the stack
+	mov	cx,[si].bmWidthBytes
+	mov	src_fill_bytes,bx
+	mov	src_width_bytes,cx
+
+	; check if it's a large bitmap
+	cmp	[si].bmWidthPlanes.hi,0
+	jz	@F
+	; calculate the extent of the scanlines that fit in one segment
+	mov	ax,[si].bmScanSegment
+	mul	cx
+	; add in the bytes left over
+	add	ax,bx
+	; should wrap around to exactly zero
+	jz	@F
+
+	; OK, we have a situation where scanlines can cross segments (banks)!
+	or	[device_flags+1],high DEVFLAG_SRC_SCAN_X_SEG
+@@:
 	mov	ax,xExt 			;assume a color src
 	mov	cl,[si].bmBitsPixel
 	xor	ch,ch
@@ -477,10 +486,25 @@ bitblt_prep_src ENDP				;
 PUBLIC	bitblt_prep_dst
 bitblt_prep_dst PROC	NEAR
 
-	mov	ax,es:[di].bmFillBytes		;copy a few things to the stack
-	mov	dst_fill_bytes,ax
-	mov	ax,es:[di].bmWidthBytes
-	mov	dst_width_bytes,ax
+	mov	bx,es:[di].bmFillBytes		;copy a few things to the stack
+	mov	cx,es:[di].bmWidthBytes
+	mov	dst_fill_bytes,bx
+	mov	dst_width_bytes,cx
+
+	; check if it's a large bitmap
+	cmp	es:[di].bmWidthPlanes.hi,0
+	jz	@F
+	; calculate the extent of the scanlines that fit in one segment
+	mov	ax,es:[di].bmScanSegment
+	mul	cx
+	; add in the bytes left over
+	add	ax,bx
+	; should wrap around to exactly zero
+	jz	@F
+
+	; OK, we have a situation where scanlines can cross segments (banks)!
+	or	[device_flags+1],high DEVFLAG_DST_SCAN_X_SEG
+@@:
 	mov	ax,xExt
 
 	test	word ptr device_flags,DEVFLAG_DST_COLOR

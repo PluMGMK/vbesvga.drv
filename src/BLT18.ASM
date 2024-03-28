@@ -171,6 +171,21 @@ compile_mtoc_src1	ENDP			;
 ;	compile_mtoc_loop
 ;
 
+mtoc_wrap_template:
+	test	di,di			;if DI is zero, we wrapped on this pixel
+	jnz	@F
+        mov	dx,ss:[1234H]		;1234H becomes offset of dst_page
+mtoc_wrap_fix1:
+	inc	dx			;always INC since mono-to-colour
+        mov	ss:[1234H],dx		;1234H becomes offset of dst_page
+mtoc_wrap_fix2:
+	call	far_set_bank_select
+@@:
+
+MTOC_WRAP_FIXUP1 = $ - mtoc_wrap_fix1
+MTOC_WRAP_FIXUP2 = $ - mtoc_wrap_fix2
+MTOC_WRAP_LEN = $ - mtoc_wrap_template
+
 mtoc_loop_template:
 	dec	cx
 	je	@F
@@ -192,7 +207,20 @@ compile_mtoc_loop	PROC	NEAR
 
 	call	compile_colour_stos
 
-	mov	cx,MTOC_LOOP_LEN
+	;check if we wrap around the end of a segment
+	test	word ptr [device_flags],DEVFLAG_DST_SCAN_X_SEG
+	jz	@F
+	test	word ptr [device_flags],DEVFLAG_DST_SCREEN
+	jz	@F	; we don't support wrapping memory segments (not needed)
+
+	mov	cx,MTOC_WRAP_LEN
+	lea	si,mtoc_wrap_template
+	rep	movs byte ptr es:[di], cs:[si]
+	lea	ax,dst_page
+	mov	es:[di - MTOC_WRAP_FIXUP1 - 2],ax
+	mov	es:[di - MTOC_WRAP_FIXUP2 - 2],ax
+
+@@:	mov	cx,MTOC_LOOP_LEN
 	lea	si,mtoc_loop_template
 	rep	movs byte ptr es:[di], cs:[si]
 	mov	ax,any_jmp_address

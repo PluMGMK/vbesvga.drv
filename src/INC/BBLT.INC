@@ -7,6 +7,14 @@
 ;	context throughout most of the device driver.
 ;
 
+; PluM: extended device flags - all device_flags code seems to treat it as a
+; word, so it shouldn't be a problem to add a second byte of flags...
+; (just a bit inelegant maybe...)
+; These indicate if scanlines in the src/dest can cross segment boundaries
+; (which makes life more difficult in determining when to bank-switch!)
+DEVFLAG_SRC_SCAN_X_SEG	EQU	00000010b SHL 8
+DEVFLAG_DST_SCAN_X_SEG	EQU	00000001b SHL 8
+DEVFLAG_SCAN_X_SEG	EQU	00000011b SHL 8	; check both at once
 
 DEVFLAG_MOVSB		EQU	10000000b
 DEVFLAG_REP		EQU	01000000b

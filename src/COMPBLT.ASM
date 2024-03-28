@@ -279,9 +279,103 @@ compile_inner_loop_start   PROC    NEAR
 	stosb
 	mov	ax,inner_loop_count
 	stosw
+
+	test	[device_flags],DEVFLAG_SCAN_X_SEG
+	jz	@F
+	call	compile_inner_loop_wrapchecks
+
 @@:	ret
 
 compile_inner_loop_start   ENDP
+
+
+
+;
+;	compile_inner_loop_wrapchecks
+;
+;	This routine places code on the stack to check if the next scanline
+;	will wrap around to the next segment.
+;
+
+wrap_check_template:
+	;"***" in these comments is either "src" or "dst"
+	xor	dx,dx
+	mov	ax,1234H	;1234H becomes ***_xExt_bytes
+wct0:	mov	word ptr ss:[1234H],dx	;1234H becomes offset of ***_seg_wrap
+wct1:	add	ax,si		;01H,0F0H ; change to F8H to make it DI instead
+wct1a:	jnc	@F		;decrement to make JC instead of JNC
+	;in the unlikely event that we wrap to the next segment, then figure out
+	; how many inner loop iterations are needed before and after the wrap
+	cwd
+	mov	bx,1234H	;1234H becomes (***_xExt_bytes/inner_loop_count)
+wct2:	idiv	bx
+	mov	ss:[1234H],ax	;1234H becomes offset of ***_seg_wrap
+wct3:	sub	cx,ax		;CX := iterations left to end of segment
+@@:
+
+WCT_SIZE = $ - wrap_check_template
+WCT_XEXT_BYTES_OFFSET = $ - wct0 + 2
+WCT_SEGWRAP_PTR_OFFSET1 = $ - wct1 + 2
+WCT_ADDINST_OFFSET = $ - wct1
+WCT_JNC_OFFSET = $ - wct1a
+WCT_RATIO_OFFSET = $ - wct2 + 2
+WCT_SEGWRAP_PTR_OFFSET2 = $ - wct3 + 2
+
+PUBLIC	compile_inner_loop_wrapchecks
+compile_inner_loop_wrapchecks	PROC	NEAR
+
+	test	[device_flags],DEVFLAG_SRC_SCAN_X_SEG
+	jz	wcdst
+	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
+	jz	wcdst	; we don't support wrapping memory segments (not needed)
+
+	lea	si,wrap_check_template
+	mov	cx,WCT_SIZE
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,src_xExt_bytes
+	lea	bx,src_seg_wrap
+	mov	cx,inner_loop_count
+	cwd
+	test	ax,ax
+	jns	@F
+	dec	byte ptr es:[di - WCT_JNC_OFFSET]	; change JNC to JC
+@@:	mov	es:[di - WCT_XEXT_BYTES_OFFSET],ax
+	mov	es:[di - WCT_SEGWRAP_PTR_OFFSET1],bx
+	mov	es:[di - WCT_SEGWRAP_PTR_OFFSET2],bx
+	idiv	cx
+	;At this point, DX should be zero - should we check for this?
+	mov	es:[di - WCT_RATIO_OFFSET],ax
+
+wcdst:
+	test	word ptr [device_flags],DEVFLAG_DST_SCAN_X_SEG
+	jz	wcdone
+	test	word ptr [device_flags],DEVFLAG_DST_SCREEN
+	jz	wcdone	; we don't support wrapping memory segments (not needed)
+
+	lea	si,wrap_check_template
+	mov	cx,WCT_SIZE
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,dst_xExt_bytes
+	lea	bx,dst_seg_wrap
+	mov	cx,inner_loop_count
+	cwd
+	test	ax,ax
+	jns	@F
+	dec	byte ptr es:[di - WCT_JNC_OFFSET]	; change JNC to JC
+@@:	mov	es:[di - WCT_XEXT_BYTES_OFFSET],ax
+	mov	es:[di - WCT_SEGWRAP_PTR_OFFSET1],bx
+	mov	es:[di - WCT_SEGWRAP_PTR_OFFSET2],bx
+	idiv	cx
+	;At this point, DX should be zero - should we check for this?
+	mov	es:[di - WCT_RATIO_OFFSET],ax
+	;change SI to DI
+	db	0B8h		;mov ax,imm16
+		add	ax,di	;this instruction becomes an immediate
+	mov	es:[di - WCT_ADDINST_OFFSET],ax
+
+wcdone:	ret
+
+compile_inner_loop_wrapchecks	ENDP
 
 
 
@@ -305,11 +399,101 @@ compile_inner_loop_end	 PROC	 NEAR
 	stosb
 	lea	ax,[di + 1]
 	sub	ax,bx
-	neg	ax
+	test	ah,ah
+	jz	@F
+	int	3	;we're in trouble here son...
+@@:	neg	ax
 	stosb
 @@:     ret
 
 compile_inner_loop_end	 ENDP
+
+
+
+;
+;	compile_inner_loop_wraps
+;
+;	This routine places code on the stack to  if the next scanline
+;	will wrap around to the next segment.
+;
+
+wrap_screen_template:
+	;"***" in these comments is either "src" or "dst"
+	xchg	cx,ss:[1234H]	;1234H becomes offset of ***_seg_wrap
+wt0:	jcxz	@F
+	;we've wrapped, so switch the bank and head back to the beginning of the
+	; inner loop for another X amount of iterations...
+	mov	dx,ss:[1234H]	;1234H becomes offset of ***_page
+wt1:	inc	dx		;42h ; change to 4Ah to make it DEC DX
+	mov	ss:[1234H],dx	;1234H becomes offset of ***_page
+wt2:	call	far_set_bank_select
+	jmp	short wt0	;wt0 becomes start of inner loop
+@@:
+
+WST_SIZE = $ - wrap_screen_template
+WST_SEGWRAP_PTR_OFFSET = $ - wt0 + 2
+WST_PAGE_PTR_OFFSET1 = $ - wt1 + 2
+WST_INCDEC_OFFSET = $ - wt1
+WST_PAGE_PTR_OFFSET2 = $ - wt2 + 2
+
+PUBLIC	compile_inner_loop_wraps
+compile_inner_loop_wraps	PROC	NEAR
+
+	test	[device_flags],DEVFLAG_SRC_SCAN_X_SEG
+	jz	dstwrap
+	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
+	jz	dstwrap	; we don't support wrapping memory segments (not needed)
+
+	lea	si,wrap_screen_template
+	mov	cx,WST_SIZE
+	rep	movs byte ptr es:[di], cs:[si]
+	lea	ax,src_seg_wrap
+	lea	cx,src_page
+	or	word ptr src_xExt_bytes,0
+	jns	@F
+	or	byte ptr es:[di - WST_INCDEC_OFFSET],8	; change to DEC
+@@:	mov	es:[di - WST_SEGWRAP_PTR_OFFSET],ax
+	mov	es:[di - WST_PAGE_PTR_OFFSET1],cx
+	mov	es:[di - WST_PAGE_PTR_OFFSET2],cx
+	; fixup the jump back to start
+	mov	ax,di
+	sub	ax,bx
+	test	ah,ah
+	jz	@F
+	int	3	;we're in trouble here son...
+@@:	neg	ax
+	mov	es:[di - 1],al
+
+dstwrap:
+	test	word ptr [device_flags],DEVFLAG_DST_SCAN_X_SEG
+	jz	donewrap
+	test	word ptr [device_flags],DEVFLAG_DST_SCREEN
+	jz	donewrap; we don't support wrapping memory segments (not needed)
+
+	lea	si,wrap_screen_template
+	mov	cx,WST_SIZE
+	rep	movs byte ptr es:[di], cs:[si]
+	lea	ax,dst_seg_wrap
+	lea	cx,dst_page
+	or	word ptr dst_xExt_bytes,0
+	jns	@F
+	or	byte ptr es:[di - WST_INCDEC_OFFSET],8	; change to DEC
+@@:	mov	es:[di - WST_SEGWRAP_PTR_OFFSET],ax
+	mov	es:[di - WST_PAGE_PTR_OFFSET1],cx
+	mov	es:[di - WST_PAGE_PTR_OFFSET2],cx
+	; fixup the jump back to start
+	mov	ax,di
+	sub	ax,bx
+	test	ah,ah
+	jz	@F
+	int	3	;we're in trouble here son...
+@@:	neg	ax
+	mov	es:[di - 1],al
+
+donewrap:
+	ret
+
+compile_inner_loop_wraps	ENDP
 
 
 
@@ -437,8 +621,7 @@ ssypt0: cmp	si,01234H		;01234H becomes src_width_bytes
 ssypt1: jae	@F
 	mov	dx,05678H		;05678H starts out at (src_page + 1)
 ssypt2: inc	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-ssypt3: ;clc				;flag indicating src opposed to dst
-	call	far_set_bank_select	;page
+ssypt3: call	far_set_bank_select	;page
 @@:
 
 SSYPT_SIZE = $ - src_screen_yplus_template
@@ -454,8 +637,7 @@ ssymt0:
 ssymt1: jb	@F
 	mov	dx,05678H		;05678H starts out at (src_page - 1)
 ssymt2: dec	word ptr ss:[01234H]	;01234H becomes addr of 05678H above
-ssymt3: ;clc				;flag indicating src as opposed to dst
-	call	far_set_bank_select	;page
+ssymt3: call	far_set_bank_select	;page
 @@:
 
 SSYMT_SIZE = $ - src_screen_yminus_template
@@ -464,10 +646,31 @@ SSYMT1 = $ - ssymt1
 SSYMT2 = $ - ssymt2
 SSYMT3 = $ - ssymt3
 
+; "paranoid" version is aware of segment wrapping and may take a bit longer
+src_screen_paranoid_template:
+	add	si,01234H		;01234H becomes src_swing_bytes
+sspt0:  jnc	@F			;no carry means we don't wrap
+	mov	dx,ss:[1234H]		;1234H becomes offset of src_page
+sspt1:	inc	dx			;42h ; change to 4Ah to make it DEC DX
+	mov	ss:[1234H],dx		;1234H becomes offset of src_page
+sspt2:  call	far_set_bank_select
+@@:
+
+SSPT_SIZE = $ - src_screen_paranoid_template
+SSPT0 = $ - sspt0
+SSPT1 = $ - sspt1
+SSPT2 = $ - sspt2
+
 PUBLIC	compile_src_screen_yupdate
 compile_src_screen_yupdate   PROC    NEAR
 
-	or	word ptr src_swing_bytes,0
+	test	[device_flags],DEVFLAG_SRC_SCAN_X_SEG
+	jz	@F
+	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
+	jz	@F	; we don't support wrapping memory segments (not needed)
+	jmp	compile_paranoid_src_yupdate
+
+@@:	or	word ptr src_swing_bytes,0
 	js	@F
 	lea	si,src_screen_yplus_template
 	mov	cx,SSYPT_SIZE
@@ -497,6 +700,21 @@ compile_src_screen_yupdate   PROC    NEAR
 	mov	es:[bx],ax
 	mov	es:[di - SSYMT3 - 2],bx
 	ret
+
+compile_paranoid_src_yupdate:
+	lea	si,src_screen_paranoid_template
+	mov	cx,SSPT_SIZE
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,src_swing_bytes
+	lea	bx,src_page
+	mov	es:[di - SSPT0 - 2],ax
+	mov	es:[di - SSPT1 - 2],bx
+	mov	es:[di - SSPT2 - 2],bx
+	test	ax,ax
+	jns	@F
+	dec	byte ptr es:[di - SSPT0]	; change JNC to JC
+	or	byte ptr es:[di - SSPT1],8	; change to DEC
+@@:	ret
 
 compile_src_screen_yupdate   ENDP		;
 
@@ -622,10 +840,31 @@ SYMT1 = $ - symt1
 SYMT2 = $ - symt2
 SYMT3 = $ - symt3
 
+; "paranoid" version is aware of segment wrapping and may take a bit longer
+screen_paranoid_template:
+	add	di,01234H		;01234H becomes dst_swing_bytes
+spt0:   jnc	@F			;no carry means we don't wrap
+        mov	dx,ss:[1234H]		;1234H becomes offset of dst_page
+spt1:   inc	dx			;42h ; change to 4Ah to make it DEC DX
+        mov	ss:[1234H],dx		;1234H becomes offset of dst_page
+spt2:   call	far_set_bank_select
+@@:
+
+SPT_SIZE = $ - screen_paranoid_template
+SPT0 = $ - spt0
+SPT1 = $ - spt1
+SPT2 = $ - spt2
+
 PUBLIC	compile_screen_yupdate
 compile_screen_yupdate	 PROC	 NEAR
 
-        or      word ptr dst_swing_bytes,0
+	test	word ptr [device_flags],DEVFLAG_DST_SCAN_X_SEG
+	jz	@F
+	test	word ptr [device_flags],DEVFLAG_DST_SCREEN
+	jz	@F	; we don't support wrapping memory segments (not needed)
+	jmp	compile_paranoid_dst_yupdate
+
+@@:     or      word ptr dst_swing_bytes,0
 	js	@F
 	lea	si,screen_yplus_template
 	mov	cx,SYPT_SIZE
@@ -655,6 +894,21 @@ compile_screen_yupdate	 PROC	 NEAR
 	mov	es:[bx],ax
 	mov	es:[di - SYMT3 - 2],bx
 	ret
+
+compile_paranoid_dst_yupdate:
+	lea	si,screen_paranoid_template
+	mov	cx,SPT_SIZE
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,dst_swing_bytes
+	lea	bx,dst_page
+	mov	es:[di - SPT0 - 2],ax
+	mov	es:[di - SPT1 - 2],bx
+	mov	es:[di - SPT2 - 2],bx
+	test	ax,ax
+	jns	@F
+	dec	byte ptr es:[di - SPT0]		; change JNC to JC
+	or	byte ptr es:[di - SPT1],8	; change to DEC
+@@:	ret
 
 compile_screen_yupdate	ENDP		   ;
 
