@@ -272,6 +272,7 @@ sBegin  Code
 assumes cs,Code
 
 externW		_cstods		; in CURSOR.ASM
+externW		pxbytes		; in SWCURS.ASM
 
 ; From INT10.ASM
 externFP	DoInt10h
@@ -1148,6 +1149,8 @@ FindMode_done:
 	; setup modal functions / data for brush realization
 	mov	al,[VESABPP]
 	shr	al,3	; bits to bytes
+	cbw
+	mov	[pxbytes],ax
 	call	init_modal_realizations
 
 	; setup a fallback bank-switch function, just in case we somehow got

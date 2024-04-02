@@ -18,7 +18,6 @@ colorinf.obj +
 control.obj + 
 cursor.obj + 
 swcurs.obj + 
-hwcurs.obj + 
 dibsel.obj + 
 disable.obj + 
 discreen.obj + 

@@ -45,12 +45,15 @@ save_screen_xclip	DW	CURSOR_WIDTH
 save_screen_yclip	DW	CURSOR_HEIGHT
 save_screen_address     DW      0
 save_screen_bank	DW	0
-save_screen_buffer	DW	1024 DUP(0)
+; CURSOR_WIDTH * CURSOR_HEIGHT pixels, times (up to) four bytes per pixel
+save_screen_buffer	DW	CURSOR_WIDTH*CURSOR_HEIGHT*4 DUP(0)
 
 swcursor_local	DW		0
 swcursor_flags	DW		0
 swcursor	cursorShape	<>
-swcursor_data	DW		2048 DUP (0)
+; CURSOR_WIDTH * CURSOR_HEIGHT pixels, times (up to) four bytes per pixel,
+; times two because we have both the cursor image and the AND mask!
+swcursor_data	DW		CURSOR_WIDTH*CURSOR_HEIGHT*4*2 DUP (0)
 sEnd    Data
 
 
@@ -80,23 +83,31 @@ swcursor_set	PROC	NEAR
 	mov	cx,(SIZE cursorShape) / 2	;copy in header information
 	lea	di,swcursor
 	rep	movsw
-	mov	dx,80H				;# bytes in AND mask
+	mov	dh,CURSOR_WIDTH*CURSOR_HEIGHT/8	;# bytes in AND mask
 
 swcursor_expand_loop:
-	mov	ah,[si + 80H]
+	mov	ah,[si + CURSOR_WIDTH*CURSOR_HEIGHT/8]
 	lodsb
 	mov	bx,ax
 
-	mov	cx,8
+	mov	dl,8
 @@:	shl	bl,1
 	sbb	al,al
 	shl	bh,1
 	sbb	ah,ah
-	stosw
-	loop	@B
 
-	dec	dx
-	jne	swcursor_expand_loop
+	org	$+1
+PUBLIC	pxbytes	;this gets set in VESAFNS.ASM and referenced through the module
+pxbytes label	word
+	org	$-1
+	mov	cx,1234h
+
+	rep	stosw
+	dec	dl
+	jnz	@B
+
+	dec	dh
+	jnz	swcursor_expand_loop
         push    es
         pop     ds
         call    swcursor_move
@@ -266,7 +277,7 @@ swcursor_exclude_test	ENDP
 ;
 ;	This routine copies a rectangular area of the screen into a static
 ;	local buffer. The rectangular area cannot be greater than 32x32 = 1024
-;	total bytes.
+;	total pixels (up to 4096 bytes).
 ;	PARMS:
 ;	ds	Data segment
 
@@ -282,23 +293,38 @@ swcursor_save_screen	PROC	NEAR
 	lea	di,save_screen_buffer
 	mov	dx,save_screen_bank
 	mov	bx,save_screen_height
-        mov     cx,save_screen_width
+        mov     ax,save_screen_width
+	mul	byte ptr [pxbytes]	;safe since AX<=20H, i.e. AH==0
+	mov	cx,ax
         mov     ax,ScreenSelector
         mov     ds,ax
 
 swcursor_save_screen_loop:
 	push	si
 	push	cx
-	shr	cx,1
+	mov	ax,cx
+	add	ax,si
+	sbb	ax,ax			;zero AX if we don't wrap
+	jz	@F
+	mov	ax,cx
+	add	ax,si			;recalc # remaining bytes in next bank
+	mov	cx,si
+	neg	cx			;# bytes to end of current bank
+@@:	shr	cx,1
 	rep	movsw
 	rcl	cx,1
 	rep	movsb
-	pop	cx
+	xchg	cx,ax			;check if any bytes are left
+	jcxz	@F
+	inc	dx
+	call	far_set_bank_select
+	jmp	@B
+@@:	pop	cx
 	pop	si
 	add	si,MemoryWidth
 	jnc	@F
 	inc	dx
-	call	far_set_both_pages
+	call	far_set_bank_select	; oth_pages
 
 @@:	dec	bx
 	jne	swcursor_save_screen_loop
@@ -320,7 +346,7 @@ PUBLIC	swcursor_restore_screen
 swcursor_restore_screen PROC	NEAR
 
 	mov	dx,save_screen_bank
-	call	far_set_both_pages
+	call	far_set_bank_select	; oth_pages
 
 	lea	si,save_screen_buffer
 	mov	ax,ScreenSelector
@@ -330,16 +356,30 @@ swcursor_restore_screen PROC	NEAR
 
 swcursor_restore_screen_loop:
 	push	di
-	mov	cx,save_screen_width
-        shr     cx,1
+	mov	ax,save_screen_width
+	mul	byte ptr [pxbytes]	;safe since AX<=20H, i.e. AH==0
+	mov	cx,ax
+	add	ax,di
+	sbb	ax,ax			;zero AX if we don't wrap
+	jz	@F
+	mov	ax,cx
+	add	ax,di			;recalc # remaining bytes in next bank
+	mov	cx,di
+	neg	cx			;# bytes to end of current bank
+@@:     shr     cx,1
 	rep	movsw
 	rcl	cx,1
 	rep	movsb
-	pop	di
+	xchg	cx,ax			;check if any bytes are left
+	jcxz	@F
+	inc	dx
+	call	far_set_bank_select
+	jmp	@B
+@@:	pop	di
 	add	di,MemoryWidth
 	jnc	@F
 	inc	dx
-	call	far_set_both_pages
+	call	far_set_bank_select	; oth_pages
 
 @@:	dec	bx
 	jne	swcursor_restore_screen_loop
@@ -361,39 +401,49 @@ PUBLIC	swcursor_draw
 swcursor_draw	PROC	NEAR
 
 	cld
-	mov	dx,save_screen_bank
-	call	far_set_both_pages
-
 	lea	si,swcursor_data
 	mov	ax,save_screen_yclip		;clip top of cursor data
 	shl	ax,5
 	add	ax,save_screen_xclip		;clip right of cursor data
 	shl	ax,1
+	mul	[pxbytes]
 	add	si,ax
 	mov	ax,ScreenSelector
 	mov	es,ax
 	mov	di,save_screen_address
         mov     bx,save_screen_height
 
+	mov	dx,save_screen_bank
+	call	far_set_bank_select	; oth_pages
+
 swcursor_draw_loop:
         push    di
 	push	si
-	mov	cx,save_screen_width
+        mov     ax,save_screen_width
+	mul	byte ptr [pxbytes]	;safe since AX<=20H, i.e. AH==0
+	mov	cx,ax
 
 @@:	lodsw						;ah:al = XOR:AND mask
 	and	al,es:[di]
 	xor	al,ah
 	stosb
-	loop	@B
+	test	di,di
+	loopnz	@B
+	jcxz	@F
+	inc	dx
+	call	far_set_bank_select
+	jmp	@B
 
+@@:	mov	al,CURSOR_WIDTH*2
+	mul	byte ptr [pxbytes]			;AX:=40H*BPP (max 100h)
 	pop	si					;goto next row of
-	add	si,40H					; cursor data
+	add	si,ax					; cursor data
 
         pop     di
 	add	di,MemoryWidth
 	jnc	@F
 	inc	dx
-	call	far_set_both_pages
+	call	far_set_bank_select	; oth_pages
 
 @@:	dec	bx
 	jne	swcursor_draw_loop
@@ -425,7 +475,7 @@ swcursor_draw	ENDP
 PUBLIC	swcursor_setaddr
 swcursor_setaddr	PROC	NEAR
 
-	mov	si,20H
+	mov	si,CURSOR_WIDTH
 	mov	save_screen_xclip,0
 	mov	cx,save_screen_x
 	sub	cx,swcursor.csHotX
@@ -436,14 +486,14 @@ swcursor_setaddr	PROC	NEAR
 
 swcursor_clip_right:
 	mov	ax,VScreen_Width
-        sub     ax,20H
+        sub     ax,CURSOR_WIDTH
 	cmp	ax,cx
 	jns	swcursor_clip_top
 	add	si,ax
 	sub	si,cx
 
 swcursor_clip_top:
-	mov	di,20H
+	mov	di,CURSOR_HEIGHT
 	mov	dx,save_screen_y
 	mov	save_screen_yclip,0
 	sub	dx,swcursor.csHotY
@@ -454,7 +504,7 @@ swcursor_clip_top:
 
 swcursor_clip_bottom:
 	mov	ax,VScreen_Height
-	sub	ax,20H
+	sub	ax,CURSOR_HEIGHT
 	cmp	ax,dx
 	jns	@F
 	add	di,ax
@@ -462,10 +512,14 @@ swcursor_clip_bottom:
 
 @@:	mov	ax,MemoryWidth
 	mul	dx
-	add	ax,cx
+	xchg	ax,cx			;stash offset in CX and get XCoord in AX
+	mov	bx,dx			;stash bank index in BX
+	mul	[pxbytes]		;DX:AX := XCoord * bytes per pixel
+	add	ax,cx			;compute final offset
+	adc	dx,bx			;and final bank index
 	mov	save_screen_address,ax
 	mov	save_screen_bank,dx
-	call	far_set_both_pages
+	call	far_set_bank_select	; oth_pages
 	mov	save_screen_width,si
 	mov	save_screen_height,di
 	ret

@@ -162,11 +162,6 @@ $(OBJ)\swcurs.obj:      $(SRC)\swcurs.asm $(SRC)\inc\cursor.inc
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
-$(OBJ)\hwcurs.obj:      $(SRC)\hwcurs.asm $(SRC)\inc\cursor.inc
-			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
-			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
-			$(ASM) < vrammak
-
 $(OBJ)\dibsel.obj:      $(SRC)\dibsel.asm
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
@@ -518,7 +513,6 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\control.obj      \
 		$(OBJ)\cursor.obj       \
 		$(OBJ)\swcurs.obj       \
-		$(OBJ)\hwcurs.obj       \
 		$(OBJ)\dibsel.obj       \
 		$(OBJ)\disable.obj      \
 		$(OBJ)\discreen.obj     \

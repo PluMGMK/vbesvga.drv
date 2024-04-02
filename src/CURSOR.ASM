@@ -20,7 +20,7 @@ include windefs.inc
 include gdidefs.inc
 include vgareg.inc
 include vgautil.inc
-include hwcurs.inc
+; include hwcurs.inc
 include swcurs.inc
 include cursor.inc
 
@@ -67,24 +67,8 @@ cursor_data		DW	(SIZE cursorShape + 100H) DUP(?)
 cursor_state_lock	DW	0
 cursor_state            DB      30H DUP(0)
 work_buf		DB	(256 + SIZE cursorShape) DUP(0)
-cursor_funcs	DW	hwcursor_set, hwcursor_move, hwcursor_check
-		DW	hwcursor_off, hwcursor_exclude, hwcursor_unexclude
-
-hwcurs_funcs    LABEL   WORD
-DW	hwcursor_set
-DW      hwcursor_move
-DW	hwcursor_check
-DW	hwcursor_off
-DW      hwcursor_exclude
-DW	hwcursor_unexclude
-
-swcurs_funcs	LABEL	WORD
-DW	swcursor_set
-DW	swcursor_move
-DW	swcursor_check
-DW	swcursor_off
-DW	swcursor_exclude
-DW	swcursor_unexclude
+cursor_funcs	DW	swcursor_set, swcursor_move, swcursor_check
+		DW	swcursor_off, swcursor_exclude, swcursor_unexclude
 
 sEnd    Data
 
@@ -155,7 +139,6 @@ SetCursor_OldXY:
 	mov	exclude_global,0
         or      cursor_flags,YES_CURSOR
 
-	call	Set_Cursor_Type 		;Hardware or software cursor?
 	call	cursor_funcs.CURSFUNC_SET	;pass cursor info to submodule
 
 SetCursor_Exit:
@@ -207,7 +190,6 @@ Move_cursor_busy_0:
 	push	ds
 	pop	es
 	lea	si,cursor_data
-	call	Set_Cursor_Type 		;Hardware or software cursor?
 	call	cursor_funcs.CURSFUNC_SET	;pass cursor info to submodule
 	and	cursor_flags,NOT LOCAL_LOAD
 
@@ -238,7 +220,6 @@ cBegin
 	push	ds
 	pop	es
 	lea	si,cursor_data
-	call	Set_Cursor_Type 		;Hardware or software cursor?
 	call	cursor_funcs.CURSFUNC_SET	;pass cursor info to submodule
 	and	cursor_flags,NOT LOCAL_LOAD
 
@@ -337,110 +318,6 @@ unexclude	PROC	NEAR
 	ret
 
 unexclude	ENDP
-
-
-
-
-;       Set_Cursor_Type
-;
-;	This routine determines whether a hardware or software cursor will
-;	be used. The determination works correctly on the following Video 7
-;	boards: VRAM I, VRAMII, 1024I. (I think it works on VGA16 as well.)
-;	The correct family of functions are loaded into the jump table
-;	cursor_funcs.xxxx   The actual determination is quite simple:
-;	32x32 HW cursors are supported by all boards in 16 color modes.
-;	32x32 HW cursors are supported by all boards in a 256 color mode IF
-;		bit 6 of Attribute register 10H is a 0; otherwise only
-;		16x32 cursors are supported for the 256 color mode.
-;
-;	If a 32x32 HW cursor is supported, hardware cursor code will be used.
-;       If it is determined that only a 16x32 cursor is supported in the
-;	current mode, then a check will be made upon the cursor data to
-;	see if the non-xparent data width" is 16 or less. If so, then the bits
-;	in this "active data area" will be bit-doubled and a hardware cursor
-;	can still be used. If the non-xparent data area is greater than 16
-;	bits wide, then a software cursor will be used.
-;
-;	PARMS:
-;	es:si	pointer to cursor structure (the structure, not just the data)
-;	ds	DATA segment
-;
-;	RETURNS:
-;	es:si	pointer to a cursor structure. If the cursor data had to be
-;		bit-doubled to enable use of the hardware cursor, then a new
-;		cursor structure was created with some fixups to the x hot
-;		spot coordinate and ds:si will return pointing to this new
-;		cursor structure.
-
-
-PUBLIC	Set_Cursor_Type
-Set_Cursor_Type 	PROC	NEAR
-
-;	First see if we can use a hardware cursor!!
-
-	lea	bx,hwcurs_funcs 		;assume a hardware cursor
-
-	and	cursor_flags,NOT DOUBLE_PUMP
-	mov	dx,VGAREG_STATUS1_R		;reset attribute toggle
-	in	al,dx
-	mov	dx,VGAREG_AT_ADDR		;We are in a 256 color mode
-	mov	al,VGAREG_AT_MODE + 20H 	; 20H prevents screen blanking
-	out	dx,al
-	inc	dx
-	in	al,dx				;If the double-pump memory
-	and	al,40H				; bit is not set, then we
-	je	Set_Cursor_Type_Found		; can use a hardware cursor
-	or	cursor_flags,DOUBLE_PUMP
-
-;       See if we are forced to use a software cursor
-
-	call	Get_Cursor_Width_Mask
-
-	lea	bx,swcurs_funcs 		;if ax != 0 then non-xparent
-	or	ax,ax				; data is > 16 bits wide and a
-	jne	Set_Cursor_Type_Found		; software cursor must be used
-	cmp	dx,es:[si].csHotX		;if hot spot is in xparent part
-	ja	Set_Cursor_Type_Found		; of data at left edge - hosed!
-
-
-;	Hardware cursor is OK if we bit double and fixup the header info
-
-	push	ds
-	push	es
-	pop	ds
-	pop	es
-	cld
-	lea	di,work_buf			;mock up a cursor structure
-	mov	ax,[si].csHotX			;Because of realignment and
-	sub	ax,dx				; bit-doubling of active data,
-	stosw
-	add	si,2
-
-	mov	cx,(SIZE cursorShape - 2) / 2	;copy in header information
-	rep	movsw
-
-	call	Bit_Double_Cursor
-	lea	bx,hwcurs_funcs 		;hardware cursor usable
-	mov	ax,es				;restore Data Segment
-	mov	ds,ax
-	lea	si,work_buf
-
-Set_Cursor_Type_Found:
-	mov	ax,[bx + 0]
-	mov	[cursor_funcs].CURSFUNC_SET,ax
-	mov	ax,[bx + 2]
-	mov	[cursor_funcs].CURSFUNC_MOVE,ax
-	mov	ax,[bx + 4]
-	mov	[cursor_funcs].CURSFUNC_CHECK,ax
-	mov	ax,[bx + 6]
-	mov	[cursor_funcs].CURSFUNC_OFF,ax
-	mov	ax,[bx + 8]
-	mov	[cursor_funcs].CURSFUNC_EXCLUDE,ax
-	mov	ax,[bx + 10]
-	mov	[cursor_funcs].CURSFUNC_UNEXCLUDE,ax
-	ret
-
-Set_Cursor_Type         ENDP
 
 
 
@@ -850,18 +727,18 @@ cursor_restore_state	ENDP
 
 PUBLIC	cursor_kludge
 cursor_kludge	PROC	FAR
-
-	lea	ax,hwcursor_set
-	cmp	ax,[cursor_funcs]
-	jne	cursor_kludge_done
-
-	sub	cx,cx				;check for screen busy and
-	xchg	screen_busy,cl			; prevent reentrance
-	jcxz	cursor_kludge_done
-
-	call	hwcursor_kludge 		;this forces a cursor reload
-	mov	screen_busy,1
-
+; 
+; 	lea	ax,hwcursor_set
+; 	cmp	ax,[cursor_funcs]
+; 	jne	cursor_kludge_done
+; 
+; 	sub	cx,cx				;check for screen busy and
+; 	xchg	screen_busy,cl			; prevent reentrance
+; 	jcxz	cursor_kludge_done
+; 
+; 	call	hwcursor_kludge 		;this forces a cursor reload
+; 	mov	screen_busy,1
+; 
 cursor_kludge_done:
 	ret
 
