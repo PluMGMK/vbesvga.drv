@@ -300,6 +300,7 @@ swcursor_save_screen	PROC	NEAR
         mov     ds,ax
 
 swcursor_save_screen_loop:
+	push	dx
 	push	si
 	push	cx
 	mov	ax,cx
@@ -321,6 +322,7 @@ swcursor_save_screen_loop:
 	jmp	@B
 @@:	pop	cx
 	pop	si
+	pop	dx
 	add	si,MemoryWidth
 	jnc	@F
 	inc	dx
@@ -355,6 +357,7 @@ swcursor_restore_screen PROC	NEAR
         mov     bx,save_screen_height
 
 swcursor_restore_screen_loop:
+	push	dx
 	push	di
 	mov	ax,save_screen_width
 	mul	byte ptr [pxbytes]	;safe since AX<=20H, i.e. AH==0
@@ -376,6 +379,7 @@ swcursor_restore_screen_loop:
 	call	far_set_bank_select
 	jmp	@B
 @@:	pop	di
+	pop	dx
 	add	di,MemoryWidth
 	jnc	@F
 	inc	dx
@@ -417,6 +421,7 @@ swcursor_draw	PROC	NEAR
 	call	far_set_bank_select	; oth_pages
 
 swcursor_draw_loop:
+	push	dx
         push    di
 	push	si
         mov     ax,save_screen_width
@@ -440,6 +445,7 @@ swcursor_draw_loop:
 	add	si,ax					; cursor data
 
         pop     di
+	pop	dx
 	add	di,MemoryWidth
 	jnc	@F
 	inc	dx
