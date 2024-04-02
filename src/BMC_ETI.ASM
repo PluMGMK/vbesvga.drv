@@ -900,6 +900,7 @@ create_color_table proc	near
 	mov	ax, ss			; get stack segment into es
 	mov	es, ax
 	lea	di, color_xlate
+	mov	bl, [total_depth_bytes]	; zero if converting to mono
 
 @@:	; load RGBQUAD into DX:AX
 	lodsw
@@ -908,12 +909,25 @@ create_color_table proc	near
 	xchg	dh,ah			; AH:=green - now we're ready to call:
 	call	sum_RGB_alt_far
 	call	unpack_physclr_far
+	test	bl,bl			; colour or mono?
+	jz	cct_mono
+
 	; store the four-byte physical representation
 	stosw
 	mov	ax,dx
 	stosw
 	loop	@B
+	jmp	cct_done
 
+cct_mono:
+	; all the "i1" code seems to assume two bytes per colour, with MONO_BIT
+	; as the LSB of each - we achieve that by storing BH (accels) twice
+	mov	al,bh
+	stosb
+	stosb
+	loop	@B
+
+cct_done:
 	pop	di
 	pop	si
         pop     ds
