@@ -37,7 +37,7 @@ CAN_CROSS_SEG           equ     00010000b
 	localW	filler_bytes		; filler bytes at segment end
 	localW	prev_offset		; lst scan offset in prev segment
 	localB	temp_bit_count		; Work area for conversion routines
-	localV	color_xlate,512 	; Color translation table 2 bytes/entry, so 256 * 2
+	localV	color_xlate,1024 	; Color translation table - up to 4 bytes/entry, so 256 * 4
 	localD  DeviceColorMatch	; GDI color match routine
 	localB	num_pels_per_src_byte	; number of pixels per source byte
 	localB	dl_bank

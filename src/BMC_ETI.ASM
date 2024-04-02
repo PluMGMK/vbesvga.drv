@@ -60,6 +60,7 @@ MONO_BIT		equ	00000001b
 	externA		__NEXTSEG	; offset to next segment
 
 	externFP	sum_RGB_alt_far		; in ROBJECT.ASM
+	externFP	unpack_physclr_far	; in RGB2IPC.ASM
 
 
 sBegin Data
@@ -900,7 +901,18 @@ create_color_table proc	near
 	mov	es, ax
 	lea	di, color_xlate
 
-	rep	movsw			; word indices
+@@:	; load RGBQUAD into DX:AX
+	lodsw
+	mov	dx,ax			; DH:=green, DL:=blue
+	lodsw				; AH:=alpha, AL:=red
+	xchg	dh,ah			; AH:=green - now we're ready to call:
+	call	sum_RGB_alt_far
+	call	unpack_physclr_far
+	; store the four-byte physical representation
+	stosw
+	mov	ax,dx
+	stosw
+	loop	@B
 
 	pop	di
 	pop	si
@@ -1449,29 +1461,52 @@ page
         ?_pub   copy_e1i8
 copy_e1i8	proc near
 
-	lea	bx, color_xlate
-	xor	al, al
-	xlat	ss:[bx]
-	mov	ah, al
-	mov	al, 2
-	xlat	ss:[bx]
-	mov	bx, ax			;bh = color for	bit '0'
-	xor	bl, bh			;bl = color for	bit '1'	xor bh
+	; at this point, "color_xlate" points at the physical background colour
+	; and "color_xlate+4" points at the physical foreground colour
+	mov	ax, color_xlate[0].lo
+	mov	dx, color_xlate[0].hi
+	; get fg XOR bg
+	xor	ax, color_xlate[4].lo
+	xor	dx, color_xlate[4].hi
+	; and stash it at "color_xlate+8" since we have plenty of room
+	mov	color_xlate[8].lo, ax
+	mov	color_xlate[8].hi, dx
+
+	; use both nibbles of BL as counters
+	mov	bl, [total_depth_bytes]
+	shl	bl, 4	; upper nibble
 
 ce1i8_next_byte:
-	mov	dl, 8
+	or	bl, 8	; lower nibble
 	lodsb
-	mov	ah, al
+	mov	bh, al
 
-; Note:	GLM changed following logic for	inline computation (890411)
+; Note:	this could be made more efficient (fewer insts, no stack spillage)
+;       with 386 registers - should look into making it modal
 ce1i8_next_pixel:
-	shl	ah, 1
-	sbb	al, al
-	and	al, bl			;if 1 select bh|bl
-	xor	al, bh			;if 0 select bh
+	shl	bh, 1
+	sbb	ax, ax
+	cwd
+	and	ax, color_xlate[8].lo	;if 1 select fg XOR bg
+	xor	ax, color_xlate[0].lo	;if 0 select bg
+	cmp	bl, 20h			;byte counter (upper nibble) >= 2?
+	jnb	@F
 	stosb
-	dec	dl
-	jne	ce1i8_next_pixel
+	jmp	ce1i8_dec_counter
+@@:	stosw
+	jna	ce1i8_dec_counter	;flags are still set by CMP above
+	mov	ax, dx			;saved by CWD above
+	and	ax, color_xlate[8].hi
+	xor	ax, color_xlate[0].hi
+	cmp	bl, 40h			;byte counter (upper nibble) >= 4?
+	jnb	@F
+	stosb
+	jmp	ce1i8_dec_counter
+@@:	stosw
+ce1i8_dec_counter:
+	dec	bl
+	test	bl, 0Fh			;is lower nibble zero?
+	jnz	ce1i8_next_pixel
 
 	loop	ce1i8_next_byte
 
@@ -1503,24 +1538,42 @@ page
 
 copy_e1i8_partial proc near
 
-	lea	bx, color_xlate
-	xor	al, al
-	xlat	ss:[bx]
-	mov	ah, al
-	mov	al, 2
-	xlat	ss:[bx]
-	mov	bx, ax			;bh = color for	bit '0'
-	xor	bl, bh			;bl = color for	bit '1'	xor bh
+	; at this point, "color_xlate" points at the physical background colour
+	; and "color_xlate+4" points at the physical foreground colour
+	mov	ax, color_xlate[0].lo
+	mov	dx, color_xlate[0].hi
+	; get fg XOR bg
+	xor	ax, color_xlate[4].lo
+	xor	dx, color_xlate[4].hi
+	; and stash it at "color_xlate+8" since we have plenty of room
+	mov	color_xlate[8].lo, ax
+	mov	color_xlate[8].hi, dx
 
+	mov	bl, [total_depth_bytes]
 	lodsb
-	mov	ah, al
+	mov	bh, al
 
 ce1i8p_next_pixel:
-	shl	ah, 1
-	sbb	al, al
-	and	al, bl			;if 1 select bh|bl
-	xor	al, bh			;if 0 select bh
-        stosb
+	shl	bh, 1
+	sbb	ax, ax
+	cwd
+	and	ax, color_xlate[8].lo	;if 1 select fg XOR bg
+	xor	ax, color_xlate[0].lo	;if 0 select bg
+	cmp	bl, 2h			;byte counter >= 2?
+	jnb	@F
+	stosb
+	loop	ce1i8p_next_pixel
+@@:	stosw
+	ja	@F			;flags are still set by CMP above
+	loop	ce1i8p_next_pixel
+@@:	mov	ax, dx			;saved by CWD above
+	and	ax, color_xlate[8].hi
+	xor	ax, color_xlate[0].hi
+	cmp	bl, 4h			;byte counter >= 4?
+	jnb	@F
+	stosb
+	loop	ce1i8p_next_pixel
+@@:	stosw
 	loop	ce1i8p_next_pixel
 	dec	si
 	jmp	load_with_seg_check
@@ -1556,16 +1609,29 @@ copy_e4i8	proc near
 
 ce4i8_next_pixel:
 	lodsb
+	mov	dh, [total_depth_bytes]
 	mov	ah, al
-	shiftr	al, 3
-	and	al, 01eh
-	xlat	ss:[bx]
+	and	al, 0f0h
+	shiftr	al, 2	; AL := first pixel colour index * 4
+	mov	dl, al
+@@:	xlat	ss:[bx]
 	stosb
+	inc	dl
+	dec	dh
+	mov	al,dl
+	jnz	@B
+
+	mov	dh, [total_depth_bytes]
 	mov	al, ah
 	and	al, 0fh
-	shl	al, 1
-	xlat	ss:[bx]
+	shiftl	al, 2	; AL := second pixel colour index * 4
+	mov	dl, al
+@@:	xlat	ss:[bx]
 	stosb
+	inc	dl
+	dec	dh
+	mov	al,dl
+	jnz	@B
 
 	loop	ce4i8_next_pixel
 	ret
@@ -1597,23 +1663,38 @@ page
 
 copy_e4i8_partial proc near
 
+	mov	dh, [total_depth_bytes]
 	shr	cl, 1			; Source is pels (nibbles)
 	lea	bx, color_xlate
 ce4i8p_next_pixel:
 	call	load_with_seg_check	; Get 2	bits of	source data
-	mov	ah, al			; save it
-	shiftr	al, 3			; high nibble is the first pel
-	and	al, 01eh
-	xlat	ss:[bx]
+
+	mov	ch, dh
+	mov	ah, al
+	and	al, 0f0h
+	shiftr	al, 2	; AL := first pixel colour index * 4
+	mov	dl, al
+@@:	xlat	ss:[bx]
 	stosb
+	inc	dl
+	dec	ch
+	mov	al,dl
+	jnz	@B
+
+	mov	ch, dh
 	mov	al, ah
 	and	al, 0fh
-	shl	al, 1
-	xlat	ss:[bx]
+	shiftl	al, 2	; AL := second pixel colour index * 4
+	mov	dl, al
+@@:	xlat	ss:[bx]
 	stosb
+	inc	dl
+	dec	ch
+	mov	al,dl
+	jnz	@B
+
 	dec	cl
 	jne	ce4i8p_next_pixel
-
         ret
 
 copy_e4i8_partial endp

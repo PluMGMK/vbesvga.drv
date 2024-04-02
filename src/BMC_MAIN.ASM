@@ -257,6 +257,11 @@ cBegin
 	jmp	short ax_has_num_planes
 
 format_is_color:
+	mov	al,[total_depth_bytes]
+	cbw
+	xchg	ax,si
+	mul	si			; convert pixels to bytes
+	xchg	si,ax
 	inc	si			; allign to word boundary
 	and	si, 0fffeh		;
 
