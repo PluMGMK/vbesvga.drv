@@ -309,8 +309,10 @@ wct1a:	jnc	@F		;decrement to make JC instead of JNC
 	cwd
 	mov	bx,1234H	;1234H becomes (***_xExt_bytes/inner_loop_count)
 wct2:	idiv	bx
+	inc	ax		;guarantee it is not zero on this codepath
 	mov	ss:[1234H],ax	;1234H becomes offset of ***_seg_wrap
 wct3:	sub	cx,ax		;CX := iterations left to end of segment
+	inc	cx		;restore so we get the correct # of iterations
 @@:
 
 WCT_SIZE = $ - wrap_check_template
@@ -427,7 +429,8 @@ wt0:	jcxz	@F
 wt1:	inc	dx		;42h ; change to 4Ah to make it DEC DX
 	mov	ss:[1234H],dx	;1234H becomes offset of ***_page
 wt2:	call	far_set_bank_select
-	jmp	short wt0	;wt0 becomes start of inner loop
+	dec	cx		;***_seg_wrap was incremented when it was set
+	jnz	wt0		;wt0 becomes start of inner loop
 @@:
 
 WST_SIZE = $ - wrap_screen_template
