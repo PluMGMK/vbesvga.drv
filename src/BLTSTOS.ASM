@@ -39,23 +39,48 @@ stos_src1_template:
 	sub	sp,01234H		;01234H will become |src_xExt_bytes| + 8
 
 stos_src1_outer_loop:
-	mov	dx,01234H		;0FFH will become the src_page
+	mov	dx,01234H		;01234H will become the src_page
 stos_src1_src_page:			;set the correct src page (also sets
 
 	call	far_set_bank_select	;the dst page, but that doesn't matter)
 	mov	cx,01234H		;01234H will become |src_xExt_bytes|
-	; FIXME: Check if this wraps around a segment boundary
 stos_src1_xExt_1:
-
 	push	di			;Since the src and dst may be in
 	push	es			; different pages of the screen,
 	mov	di,sp			; copy a scanline of the src to a
 	add	di,01234H		; temporary buffer on the stack.
-stos_src1_xExt_2:			;01234H:=|src_xExt_bytes|+8 if X- else 0
-
+stos_src1_xExt_2:			;01234H:=|src_xExt_bytes|+8 if X- else 8
 	mov	ax,ss			; This way src and dst pages need
 	mov	es,ax			; not be switched every pixel, but
-	rep	movsb			; only every scanline.
+					; only every scanline.
+	mov	bx,si
+stos_src1_add_check_1:
+	add	bx,cx			;ADD becomes SUB if X-
+	sbb	ax,ax			;AX:=FFFFh if we wrap, zero otherwise
+	jz	@F
+
+	and	ax,bx		;set AX to our count, and set SF appropriately
+	jns	ss1ia1
+	neg	ax
+	dec	ax		;if X-, need extra iteration to get to SI==FFFFh
+ss1ia1:	inc	ax		;guarantee it is not zero on this codepath
+	sub	cx,ax		;CX := iterations left to end of segment
+	inc	cx		;restore so we get the correct # of iterations
+
+@@:	rep	movsb
+	xchg	cx,ax		;get back remaining iterations from before
+	jcxz	@F
+	;we've wrapped, so switch the bank and head back to the beginning of the
+	; inner loop for another X amount of iterations...
+	mov	dx,ss:[1234H]	;1234H becomes offset of stos_src1_src_page
+stos_src1_src_page_off1:
+	inc	dx		;42h ; change to 4Ah to make it DEC DX
+	mov	ss:[1234H],dx	;1234H becomes offset of stos_src1_src_page
+stos_src1_src_page_off2:
+	call	far_set_bank_select
+	dec	cx		;AX was incremented when it was set
+	jnz	@B
+@@:
 	pop	es
 	pop	di
 
@@ -64,20 +89,34 @@ stos_src1_dst_page:
 
 	call	far_set_bank_select	;Set BOTH src and dst page to dst_page
 	mov	cx,01234H		;01234H will become |src_xExt_bytes|
-	; FIXME: Check if this wraps around a segment boundary
 stos_src1_xExt_3:
 
 	push	si			; and set the src to point to the
 	push	ds			; copy of the src that was just copied
 	mov	si,sp			; to the stack
-	add	si,01234H		;01234H:=|src_xExt_bytes|+8 if X- else 0
+	add	si,01234H		;01234H:=|src_xExt_bytes|+8 if X- else 8
 stos_src1_xExt_4:
 
 	mov	ax,ss
 	mov	ds,ax
 
+	mov	bx,di
+stos_src1_add_check_2:
+	add	bx,cx		;ADD becomes SUB if X-
+	sbb	ax,ax		;AX:=FFFFh if we wrap, zero otherwise
+	jz	@F
+
+	and	ax,bx		;set AX to our count, and set SF appropriately
+	jns	ss1ia2
+	neg	ax
+	dec	ax		;if X-, need extra iteration to get to DI==FFFFh
+ss1ia2:	inc	ax		;guarantee it is not zero on this codepath
+	sub	cx,ax		;CX := iterations left to end of segment
+	inc	cx		;restore so we get the correct # of iterations
+@@:	mov	ss:[01234H],ax	;01234H becomes dst_seg_wrap
+
 stos_src1_inner_loop:
-	lodsb				;load a src byte
+	lodsb			;load a src byte
 
 STOS_SRC1_SIZE = $ - stos_src1_template
 STOS_SRC1_DST_PAGE = $ - stos_src1_dst_page + 2
@@ -88,11 +127,32 @@ STOS_SRC1_XEXT_1 = $ - stos_src1_xExt_1 + 2
 STOS_SRC1_XEXT_2 = $ - stos_src1_xExt_2 + 2
 STOS_SRC1_XEXT_3 = $ - stos_src1_xExt_3 + 2
 STOS_SRC1_XEXT_4 = $ - stos_src1_xExt_4 + 2
+STOS_SRC1_ADDSUB_1 = $ - stos_src1_add_check_1
+STOS_SRC1_ADDSUB_2 = $ - stos_src1_add_check_2
+STOS_SRC1_INCDEC = $ - stos_src1_src_page_off1
+STOS_SRC1_SRC_PAGE_OFF1 = $ - stos_src1_src_page_off1 + 2
+STOS_SRC1_SRC_PAGE_OFF2 = $ - stos_src1_src_page_off2 + 2
+STOS_SRC1_DST_SEGWRAP_OFF = $ - stos_src1_inner_loop + 2
 
 
 stos_src2_template:
 	loop	stos_src1_inner_loop	;do every pixel on the scanline
-stos_src2_inner_loop:
+stos_src2_inner_loop1:
+
+	xchg	cx,ss:[1234H]	;1234H becomes offset of dst_seg_wrap
+stos_src2_dst_segwrap_off:
+	jcxz	stos_src2_inner_loop2
+	;we've wrapped, so switch the bank and head back to the beginning of the
+	; inner loop for another X amount of iterations...
+	mov	dx,ss:[1234H]	;1234H becomes offset of stos_src1_dst_page
+stos_src2_dst_page_off1:
+	inc	dx		;42h ; change to 4Ah to make it DEC DX
+	mov	ss:[1234H],dx	;1234H becomes offset of stos_src1_dst_page
+stos_src2_dst_page_off2:
+	call	far_set_bank_select
+	dec	cx		;dst_seg_wrap was incremented when it was set
+	jnz	stos_src1_inner_loop
+stos_src2_inner_loop2:
 
 	pop	ds			;restore ds,si to point to the src
 	pop	si			; on the screen
@@ -108,6 +168,7 @@ stos_src2_clear_stack:
 stos_src2_src_swing_bytes:
 	cmp	si,01234H	;if blt y+, 01234H will become src_width_bytes
 				;if blt y-, 01234H will become -src_width_bytes
+				;if scanxseg, 01234H will become src_swing_bytes
 stos_src2_src_cmp:
 					;segment update code: if blt is y-, the
 	adc	byte ptr ss:[01234H],0	; 0 will become -1. 01234H points to
@@ -117,13 +178,19 @@ stos_src2_src_yupdate:			; compiled addr stos_src1_src_page - 2
 stos_src2_dst_swing_bytes:
 	cmp	di,01234H	;if blt y+ 01234H will become dst_width_bytes
 				;if blt y- 01234H will become -dst_width_bytes
+				;if scanxseg, 01234H will become dst_swing_bytes
 stos_src2_dst_cmp:
 
 	adc	byte ptr ss:[01234H],0
 stos_src2_dst_yupdate:
 
 STOS_SRC2_SIZE = $ - stos_src2_template
-STOS_SRC2_INNER_LOOPADDR = $ - stos_src2_inner_loop
+STOS_SRC2_INNER_LOOPADDR1 = $ - stos_src2_inner_loop1
+STOS_SRC2_INNER_LOOPADDR2 = $ - stos_src2_inner_loop2
+STOS_SRC2_DST_SEGWRAP_OFF = $ - stos_src2_dst_segwrap_off + 2
+STOS_SRC2_DST_PAGE_OFF1 = $ - stos_src2_dst_page_off1 + 2
+STOS_SRC2_DST_PAGE_OFF2 = $ - stos_src2_dst_page_off2 + 2
+STOS_SRC2_INCDEC = $ - stos_src2_dst_page_off1
 STOS_SRC2_YEXT = $ - stos_src2_yExt + 2
 STOS_SRC2_SRC_SWING_BYTES = $ - stos_src2_src_swing_bytes + 2
 STOS_SRC2_SRC_YUPDATE = $ - stos_src2_src_yupdate
@@ -148,6 +215,10 @@ bltstos 	PROC	NEAR
 	mov	es:[di - STOS_SRC1_XEXT_4],cx
 	test	ax,ax
 	jns	@F
+	or	es:[di - STOS_SRC1_INCDEC],cl	;change to DEC (42h | 8 == 4Ah)
+	or	cl,20H
+	or	es:[di - STOS_SRC1_ADDSUB_1],cl	;change to SUB (03->2BH)
+	or	es:[di - STOS_SRC1_ADDSUB_2],cl	;change to SUB (03->2BH)
 	neg	ax
         add     es:[di - STOS_SRC1_XEXT_2],ax
 	add	es:[di - STOS_SRC1_XEXT_4],ax
@@ -163,6 +234,9 @@ bltstos 	PROC	NEAR
 	push	bx				;save address of src_page value
 	mov	ax,src_page
 	mov	es:[bx],ax
+	mov	es:[di - STOS_SRC1_SRC_PAGE_OFF1],bx
+	mov	es:[di - STOS_SRC1_SRC_PAGE_OFF2],bx
+
 	lea	bx,[di - STOS_SRC1_DST_PAGE]
 	push	bx				;save address of dst_page value
 	mov	ax,dst_page
@@ -171,6 +245,8 @@ bltstos 	PROC	NEAR
 	push	bx				;save inner loop address
 
 	push	es:[di - STOS_SRC1_OUTER_LOOPADDR - 2] ; save stack frame size
+	lea	bx,[dst_seg_wrap]
+	mov	es:[di - STOS_SRC1_DST_SEGWRAP_OFF],bx
 
 	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
 	je	@F				; if a pattern is used
@@ -183,20 +259,32 @@ bltstos 	PROC	NEAR
 	lea	si,stos_src2_template
 	rep	movs byte ptr es:[di], cs:[si]
 
+	lea	bx,[dst_seg_wrap]
+	mov	es:[di - STOS_SRC2_DST_SEGWRAP_OFF],bx
         pop     es:[di - STOS_SRC2_CLEAR_STACK] ;recover stack frame size
 
 	pop	ax				;recover inner loop start addr
-	lea	bx,[di - STOS_SRC2_INNER_LOOPADDR]
+	mov	dx,ax
+	lea	bx,[di - STOS_SRC2_INNER_LOOPADDR1]
 	sub	ax,bx
 	mov	es:[bx - 1],al			;fixup inner loop -- loop @B
+	lea	bx,[di - STOS_SRC2_INNER_LOOPADDR2]
+	sub	dx,bx
+	mov	es:[bx - 1],dl			;fixup inner loop -- jnz @B
 
+	or	word ptr [dst_xExt_bytes],0
+	jns	@F
+	or	byte ptr es:[di - STOS_SRC2_INCDEC],8	;change to DEC
+@@:
 	lea	ax,word ptr yExt
 	mov	es:[di - STOS_SRC2_YEXT],ax
         mov     bx,vert_dir
 	mov	ax,src_swing_bytes
+        mov     cx,dst_swing_bytes
 	mov	es:[di - STOS_SRC2_SRC_SWING_BYTES],ax
-        mov     ax,dst_swing_bytes
-        mov     es:[di - STOS_SRC2_DST_SWING_BYTES],ax
+        mov     es:[di - STOS_SRC2_DST_SWING_BYTES],cx
+	test	word ptr [device_flags],DEVFLAG_SCAN_X_SEG
+	jnz	@F
 	mov	ax,src_width_bytes
 	mov	cx,dst_width_bytes
 	or	bx,bx
@@ -209,6 +297,8 @@ bltstos 	PROC	NEAR
 	pop	ax
 	mov	es:[di - STOS_SRC2_DST_YUPDATE - 3],ax	;fixup dst_page change
 	mov	es:[di - STOS_SRC2_DST_YUPDATE - 1],bl
+	mov	es:[di - STOS_SRC2_DST_PAGE_OFF1],ax
+	mov	es:[di - STOS_SRC2_DST_PAGE_OFF2],ax
 	pop	ax
 	mov	es:[di - STOS_SRC2_SRC_YUPDATE - 3],ax	;fixup src_page change
 	mov	es:[di - STOS_SRC2_SRC_YUPDATE - 1],bl
