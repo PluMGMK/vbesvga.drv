@@ -699,20 +699,6 @@ dispatch_src_to_screen:
 	test	word ptr device_flags,DEVFLAG_SRC_SCREEN
 	je	dispatch_memory_to_screen
 
-	cmp	byte ptr Rop[2],11001100B	; scr to scr but no 216
-	jne	dispatch_true_rop3		; but we will still use
-	cmp	word ptr background_mode,OPAQUE ; latches to do a srccopy
-	jne	dispatch_mode_xpar		; if opaque mode and
-	mov	al,byte ptr SrcxOrg		; nibble aligned.
-	mov	ah,byte ptr DestxOrg
-	and	ax,0303H
-        cmp     al,ah
-	jne	dispatch_true_rop3
-	call	bltstos_srccopy
-        jmp     short   bitblt_hardcode_done
-
-dispatch_true_rop3:
-dispatch_mode_xpar:
 	call	bltstos 			;compiling screen_to_screen blt
 	jmp	short	bitblt_dispatch_done	;code which is still quite fast
 

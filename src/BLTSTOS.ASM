@@ -41,7 +41,7 @@ stos_src1_outer_loop:
 	mov	dx,01234H		;0FFH will become the src_page
 stos_src1_src_page:			;set the correct src page (also sets
 
-	call	far_set_both_pages	;the dst page, but that doesn't matter)
+	call	far_set_bank_select	;the dst page, but that doesn't matter)
 	mov	cx,01234H		;01234H will become xExt
 stos_src1_xExt_1:
 
@@ -60,7 +60,7 @@ stos_src1_xExt_2:			;01234H will become xExt + 8
 	mov	dx,01234H		;0FFH will become the dst_page
 stos_src1_dst_page:
 
-	call	far_set_both_pages	;Set BOTH src and dst page to dst_page
+	call	far_set_bank_select	;Set BOTH src and dst page to dst_page
 	mov	cx,01234H		;01234H will become xExt
 stos_src1_xExt_3:
 
@@ -134,19 +134,16 @@ STOS_SRC2_DST_CMP = $ - stos_src2_dst_cmp
 PUBLIC	bltstos
 bltstos 	PROC	NEAR
 
-;	test	byte ptr local_board_flags,BOARD_FLAG_SPLITBANK
-;	jz	@F
-;	call	bltstos_splitbank		;we can use splitbank adressing
-;	ret
-;
-;@@:	call	bltstos_prep
 	call	bltstos_prep
 
 	mov	cx,STOS_SRC1_SIZE		;move first template on and
 	lea	si,stos_src1_template		; do all the fixups
 	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,xExt
-	mov	es:[di - STOS_SRC1_XEXT_1],ax
+	mov	ax,src_xExt_bytes
+	test	ax,ax
+	jns	@F
+	neg	ax
+@@:	mov	es:[di - STOS_SRC1_XEXT_1],ax
 	mov	es:[di - STOS_SRC1_XEXT_3],ax
 	add	ax,8
         mov     es:[di - STOS_SRC1_XEXT_2],ax
@@ -168,6 +165,8 @@ bltstos 	PROC	NEAR
 	lea	bx,[di - STOS_SRC1_INNER_LOOPADDR]
 	push	bx				;save inner loop address
 
+	push	es:[di - STOS_SRC1_OUTER_LOOPADDR - 2] ; save stack frame size
+
 	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
 	je	@F				; if a pattern is used
 	call	compile_color_pattern_fetch
@@ -179,10 +178,7 @@ bltstos 	PROC	NEAR
 	lea	si,stos_src2_template
 	rep	movs byte ptr es:[di], cs:[si]
 
-        mov     ax,xExt
-        add     ax,ax
-        add     ax,10H
-        mov     es:[di - STOS_SRC2_CLEAR_STACK],ax
+        pop     es:[di - STOS_SRC2_CLEAR_STACK] ;recover stack frame size
 
 	pop	ax				;recover inner loop start addr
 	lea	bx,[di - STOS_SRC2_INNER_LOOPADDR]
