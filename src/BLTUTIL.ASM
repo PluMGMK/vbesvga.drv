@@ -87,6 +87,25 @@ blt_clip	ENDP			;
 PUBLIC	blt_set_directions
 blt_set_directions	PROC	NEAR
 
+	;We need to fixup the xOrg(s) to account for the correct bitness
+	xor	cx,cx
+	mov	bx,device_flags
+	test	bx,DEVFLAG_SRC_COLOR
+	jz	@F
+	mov	cl,[si].bmBitsPixel
+	shr	cx,3	; convert bits to bytes
+	mov	ax,SrcxOrg
+	mul	cx
+	mov	SrcxOrg,ax
+@@:
+	test	bx,DEVFLAG_DST_COLOR
+	jz	@F
+	mov	cl,es:[di].bmBitsPixel
+	shr	cx,3	; convert bits to bytes
+	mov	ax,DestxOrg
+	mul	cx
+	mov	DestxOrg,ax
+@@:
 	mov	word ptr vert_dir,0
 	mov	word ptr horz_dir,0
         mov     dx,es:[di].bmWidthBytes
@@ -158,22 +177,10 @@ blt_set_directions	ENDP		;
 PUBLIC  set_memory_address
 set_memory_address      PROC    NEAR
 
-	mov	cl,[si].bmBitsPixel
-	cmp	cl,1				;if the bitmap is mono
+	cmp	[si].bmBitsPixel,1		;if the bitmap is mono
 	jne	@f				; then divide the x coord
         shr     bx,3                            ; by 8 to get the byte offset
-	jmp	set_memory_address_getseg
-@@:
-	xor	ch,ch
-	shr	cx,3				;convert bits to bytes
-	cmp	cl,1				;if only one byte, then
-	jbe	set_memory_address_getseg	; no multiplication needed
-	xchg	ax,bx
-	mul	cx
-	xchg	bx,ax
-
-set_memory_address_getseg:
-	mov     cx,word ptr [si + 2].bmBits     ;first segment of bitmap in cx
+@@:     mov     cx,word ptr [si + 2].bmBits     ;first segment of bitmap in cx
 
 	push	ax
 	mov	ax,[si].bmHeight		;if bitmap is not >= 64K, the

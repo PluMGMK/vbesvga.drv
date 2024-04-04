@@ -238,6 +238,7 @@ bltstos_prep	PROC	NEAR
 	mov	bx,SrcxOrg
 	mul	word ptr src_width_bytes
 	add	ax,bx
+	adc	dx,0
 	mov	src_blt_offset,ax
 	mov	src_page,dx
 
@@ -245,6 +246,7 @@ bltstos_prep	PROC	NEAR
 	mov	bx,DestxOrg
 	mul	word ptr dst_width_bytes
 	add	ax,bx
+	adc	dx,0
 	mov	dst_blt_offset,ax
 	mov	dst_page,dx
         ret
