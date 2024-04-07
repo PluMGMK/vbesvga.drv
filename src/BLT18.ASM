@@ -42,15 +42,33 @@ blt18	PROC	NEAR
 
 	call	blt_mtoc_prep
 
-@@:	test	rop_flags,SOURCE_PRESENT	;If there is no src
-	je	@F				; then move on
-	call	compile_mtoc_src1		;else do it
+	;there is no need to check SOURCE_PRESENT because bitblt_dispatch only
+	; calls blt18 if that is already the case.
+	call	compile_mtoc_src1
+
+	;determine how many bytes per colour to process
+	mov	ax,[dst_xExt_bytes]
+	cwd
+	div	word ptr [inner_loop_count]
+	mov	cx,ax
+	mov	si,dx	;if we've done this right, DX (remainder) is zero!
+blt18_colour_byte_loop:
+	push	cx
+	call	compile_mtoc_src2
+	inc	si
+	push	si
 
 @@:	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
 	je	@F				; if a pattern is used
 	call	compile_color_pattern_fetch
 
 @@:	call	compile_rop			;now do the rop
+	call	compile_mtoc_wrap
+
+	pop	si
+	pop	cx
+	loop	blt18_colour_byte_loop
+
 	call	compile_mtoc_loop
 	call	compile_outer_loop
 	call	compile_src_memory_yupdate
@@ -113,26 +131,11 @@ mtoc_src1_inner_loop:
 mtoc_src1_fix0:
 	rol	bl,04H			;04H becomes (SrcxOrg & 07H)
 mtoc_src1_fix1:
-	rol	bl,1
-	sbb	ax,ax
-	cwd
-	and	ax,1234h	 	;1234h will become (fgcolor xor bgcolor)
-mtoc_src1_fix2:
-	and	dx,1234h		;ditto
-mtoc_src1_fix2a:
-	xor	ax,1234h		;1234h will become fgcolor
-mtoc_src1_fix3:
-	xor	dx,1234h		;ditto
-mtoc_src1_fix3a:
 
 MTOC_SRC1_LEN = $ - mtoc_src1_template
 MTOC_SRC1_INNER_LOOP = $ - mtoc_src1_inner_loop + 2
 MTOC_SRC1_FIXUP0 = $ - mtoc_src1_fix0 + 1
 MTOC_SRC1_FIXUP1 = $ - mtoc_src1_fix1 + 1
-MTOC_SRC1_FIXUP2 = $ - mtoc_src1_fix2 + 2
-MTOC_SRC1_FIXUP2A = $ - mtoc_src1_fix2a + 2
-MTOC_SRC1_FIXUP3 = $ - mtoc_src1_fix3 + 2
-MTOC_SRC1_FIXUP3A = $ - mtoc_src1_fix3a + 2
 MTOC_SRC1_ADDR_SAVE = $ - mtoc_src1_fix1
 
 PUBLIC	compile_mtoc_src1
@@ -149,26 +152,59 @@ compile_mtoc_src1	PROC	NEAR
 	mov	al,1
 	rol	al,cl
 	mov	es:[di - MTOC_SRC1_FIXUP0],al	;fixup left edge pre-roll
-
-	mov	ax,fgcolour.lo			;fixup the standard mono
-	mov	dx,fgcolour.hi
-	mov	es:[di - MTOC_SRC1_FIXUP3],ax
-	mov	es:[di - MTOC_SRC1_FIXUP3A],dx
-	xor	ax,bgcolour.lo
-	xor	dx,bgcolour.hi
-	mov	es:[di - MTOC_SRC1_FIXUP2],ax
-	mov	es:[di - MTOC_SRC1_FIXUP2A],dx
 	lea	ax,[di - MTOC_SRC1_ADDR_SAVE]	;save looping address for
 	mov	any_jmp_address,ax		; later
 	ret
 
 compile_mtoc_src1	ENDP			;
 
+;
+;	compile_mtoc_src2
+;
+;	Entry:
+;	SI = N == which byte of colour we're dealing with
+;
+;	This routine places code on the stack to set AL to the Nth byte of
+;	fg or bg colour, based on the lowest bit of BL (which in turn was
+;	loaded in mtoc_src1 above).
+;
+
+mtoc_src2_template:
+	rol	bl,1
+	sbb	al,al			;this instruction preserves CF!
+	rcr	bl,1			;send it back into BL for the time being
+	and	al,0FFH 		;0FFH will become (fgcolor xor bgcolor)
+mtoc_src2_fix2:
+	xor	al,0FFH 		;0FFH will become fgcolor
+mtoc_src2_fix3:
+
+MTOC_SRC2_LEN = $ - mtoc_src2_template
+MTOC_SRC2_FIXUP2 = $ - mtoc_src2_fix2 + 1
+MTOC_SRC2_FIXUP3 = $ - mtoc_src2_fix3 + 1
+
+PUBLIC	compile_mtoc_src2
+compile_mtoc_src2	PROC	NEAR
+
+	mov	cx,MTOC_SRC2_LEN
+	mov	ax,si				;save N
+	lea	si,mtoc_src2_template
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	si,ax				;restore N
+
+	mov	al,fgcolour[si]			;fixup the standard mono
+	mov	ah,bgcolour[si]
+	xor	ah,al
+	mov	es:[di - MTOC_SRC2_FIXUP2],ah
+	mov	es:[di - MTOC_SRC2_FIXUP3],al
+	ret
+
+compile_mtoc_src2	ENDP			;
+
 
 
 
 ;
-;	compile_mtoc_loop
+;	compile_mtoc_wrap
 ;
 
 mtoc_wrap_template:
@@ -186,26 +222,11 @@ MTOC_WRAP_FIXUP1 = $ - mtoc_wrap_fix1
 MTOC_WRAP_FIXUP2 = $ - mtoc_wrap_fix2
 MTOC_WRAP_LEN = $ - mtoc_wrap_template
 
-mtoc_loop_template:
-	dec	cx
-	je	@F
-        rol     bh,1
-	jnc	mtoc_loop_template	 ;this jnc addr will get a fixup
-mtoc_loop_fix1:
-        lodsb
-	mov	bl,al
-	jmp	short mtoc_loop_template ;this jmp addr will get a fixup
-mtoc_loop_fix2:
-@@:
+PUBLIC	compile_mtoc_wrap
+compile_mtoc_wrap	PROC	NEAR
 
-MTOC_LOOP_FIXUP1 = $ - mtoc_loop_fix1
-MTOC_LOOP_FIXUP2 = $ - mtoc_loop_fix2
-MTOC_LOOP_LEN = $ - mtoc_loop_template
-
-PUBLIC	compile_mtoc_loop
-compile_mtoc_loop	PROC	NEAR
-
-	call	compile_colour_stos
+	; this needs to be done here anyway
+	call	compile_color_stosb
 
 	;check if we wrap around the end of a segment
 	test	word ptr [device_flags],DEVFLAG_DST_SCAN_X_SEG
@@ -220,17 +241,53 @@ compile_mtoc_loop	PROC	NEAR
 	mov	es:[di - MTOC_WRAP_FIXUP1 - 2],ax
 	mov	es:[di - MTOC_WRAP_FIXUP2 - 2],ax
 
-@@:	mov	cx,MTOC_LOOP_LEN
+@@:	ret
+
+compile_mtoc_wrap       ENDP
+
+;
+;	compile_mtoc_loop
+;
+
+mtoc_loop_template:
+	dec	cx
+	je	mtoc_loop_done
+	rol	bl,1			;flush the LSB for real this time
+        rol     bh,1
+	jnc	@F			;may or may not get a fixup
+mtoc_loop_fix1:
+        lodsb
+	mov	bl,al
+@@:	jmp	blt18			;this "jmp near" addr will get a fixup
+mtoc_loop_fix2:
+mtoc_loop_done:
+
+MTOC_LOOP_FIXUP1 = $ - mtoc_loop_fix1
+MTOC_LOOP_FIXUP2 = $ - mtoc_loop_fix2
+MTOC_LOOP_LEN = $ - mtoc_loop_template
+
+PUBLIC	compile_mtoc_loop
+compile_mtoc_loop	PROC	NEAR
+
+	mov	cx,MTOC_LOOP_LEN
 	lea	si,mtoc_loop_template
 	rep	movs byte ptr es:[di], cs:[si]
+
 	mov	ax,any_jmp_address
 	lea	bx,[di - MTOC_LOOP_FIXUP1]
 	sub	ax,bx
+	inc	ah
+	jnz	@F
+	test	al,al
+	jns	@F
+	;if it's within 128 bytes, fixup the JNC SHORT instruction
+	; so there's one less jump involved in the code
 	mov	es:[di - MTOC_LOOP_FIXUP1 - 1],al
-	mov	ax,any_jmp_address
+
+@@:	mov	ax,any_jmp_address
 	lea	bx,[di - MTOC_LOOP_FIXUP2]
 	sub	ax,bx
-	mov	es:[di - MTOC_LOOP_FIXUP2 - 1],al
+	mov	es:[di - MTOC_LOOP_FIXUP2 - 2],ax
         ret
 
 compile_mtoc_loop       ENDP
