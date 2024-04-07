@@ -33,7 +33,7 @@ include blt88.inc
 include bltstos.inc
 
 externFP PrestoChangeoSelector	; CS <--> DS conversion (hopefully CS <-> SS)
-EXTRN	unexclude_far:FAR
+EXTRN	unexclude:near
 EXTRN	exclude:near
 EXTRN   PaletteModified:byte
 EXTRN	set_bank_select:near
@@ -138,37 +138,10 @@ bitblt_error:
 	and	al,DEVFLAG_BOTH_SCREEN
 	je	short bitblt_noreg_restore
 
-	call	unexclude_far			; FIXME: doesn't need to be far!
-
-	mov	al,SET_RESET_FOREGROUND or WRITE_MODE_0
-	mov	ah,FUNC_COPY or SEQ_CHAIN_4_MODE
-	call	vga_set_features
-	mov	dx,VGAREG_SQ_ADDR
-	mov	ax,VGAREG_SQ_MAP_MASK or (0FH SHL 8)
-	out	dx,ax
-
-	mov	al,VGAREG_SQ_SPLITBANK		;enable splitbank addressing
-	out	dx,al
-	inc	dx
-	in	al,dx
-	or	al,80H
-	out	dx,al
-
-	dec	dx
-	mov	ax,VGAREG_SQ_SRC_SPLITBANK	;reset the split banks to 0
-	out	dx,ax				;splitbank offsets are added
-	mov	al,VGAREG_SQ_DST_SPLITBANK	; in even if splitbanking is
-	out	dx,ax				; disabled (chip bug! - VRAMII)
-
-	mov	al,VGAREG_SQ_SPLITBANK		;disable splitbank addressing
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,7FH
-	out	dx,al
+	call	unexclude
 
 	mov	dl,global_bank
-	call	set_both_pages
+	SET_BANK
 
 bitblt_noreg_restore:
 	pop	ax

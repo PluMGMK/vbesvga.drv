@@ -1130,7 +1130,6 @@ Draw_Line       endp
 
 Draw_Engine     proc    near
 
-	;int	3
         or      si,si                   ; is the line horizontal ?
         jnz     non_horizontal          ; no
 
@@ -1685,7 +1684,6 @@ dl_Diagonal:
 	je	dl_Diag_1Q_posx
 
 dl_draw_loop:
-	int	3
         call    S1                      ; draw the slice
         call    S1_Move                 ; step to the next slice
 
@@ -1730,7 +1728,6 @@ dl_Diag_1Q_posx:
 	;S1_Move==Bm8_Move_Positive_X
 dl_Q1posx_loop:
 
-	int	3
         call    S1                      ; draw the slice
 
 	;mov	dh,TmpColor
@@ -1771,7 +1768,6 @@ dl_exit:
 
 draw_loop:
 WriteAux <'DrwS1'>
-	int	3
         call    S1                      ; draw the slice
         call    S1_Move                 ; step to the next slice
         call    StyleAdvOrBypass        ; advance style for styled lines
@@ -1804,7 +1800,6 @@ last_err_negative:
 	;-------------------------------------------------------
 do_the_last_scan:
         mov     cx,Cb                   ; the last slice length
-	int	3
         call    S1                      ; draw the slice
 
 all_passes_done:
