@@ -246,7 +246,7 @@ swcursor_exclude_test	PROC	NEAR
 	cmp	ax,exclude_rect_right		; no exclusion needed
 	jg	no_exclude
 
-	add	ax,20H				;if right edge of cursor + 1 <=
+	add	ax,CURSOR_WIDTH			;if right edge of cursor + 1 <=
 	cmp	ax,exclude_rect_left		; left edge of exclude rect
 	jle	no_exclude			; no exclusion needed
 
@@ -256,7 +256,7 @@ exclude_check_y:
 	cmp	ax,exclude_rect_bottom		; no y overlap
 	jg	no_exclude
 
-	add	ax,20H				;if bottom edge of cursor + 1 >
+	add	ax,CURSOR_HEIGHT		;if bottom edge of cursor + 1 >
 	cmp	ax,exclude_rect_top		; top edge of exclude rect
 	jle	no_exclude
 

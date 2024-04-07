@@ -25,12 +25,6 @@ include swcurs.inc
 include cursor.inc
 
 
-SAVE_SQREGS_COUNT	EQU	14
-SAVE_GRREGS_COUNT	EQU	4
-SQ_INDEX        EQU     2AH             ;storage offset in cursor_state array
-GR_INDEX        EQU     2BH             ;storage offset in cursor_state array
-
-
 curs_func	STRUC
 	CURSFUNC_SET		DW	0
         CURSFUNC_MOVE           DW      0
@@ -65,7 +59,7 @@ exclude_rect_top	DW	0
 exclude_rect_bottom	DW	0
 cursor_data		DW	(SIZE cursorShape + 100H) DUP(?)
 cursor_state_lock	DW	0
-cursor_state            DB      30H DUP(0)
+saved_bank_select	DB	0
 work_buf		DB	(256 + SIZE cursorShape) DUP(0)
 cursor_funcs	DW	swcursor_set, swcursor_move, swcursor_check
 		DW	swcursor_off, swcursor_exclude, swcursor_unexclude
@@ -446,19 +440,9 @@ Bit_Double_Cursor	ENDP
 
 ;	cursor_save_state
 ;
-;	This routine saves the cursor state into a static data structure.
-;	and sets up the registers for sequential chain 4 addressing. All
-;	data-munging via the ALU is turned off.
-;	This routine works in conjunction with cursor_restore state.
-;	The equates below are important to both routines.
+;	This routine saves the current bank select byte for restoration later.
 ;	PARMS:
 ;	ds	Data segment
-
-SAVE_SPLITBANK_OFFSET	EQU	11 * 2
-SAVE_SQREGS_COUNT       EQU     14
-SAVE_GRREGS_COUNT	EQU	4
-SAVE_MISCREGS_COUNT	EQU	1
-SAVE_LASTREG_OFFSET	EQU	(SAVE_SQREGS_COUNT + SAVE_GRREGS_COUNT + SAVE_MISCREGS_COUNT) * 2 - 2
 
 PUBLIC  cursor_save_state
 cursor_save_state	PROC	NEAR
@@ -467,204 +451,8 @@ cursor_save_state	PROC	NEAR
 	je	@F
 	jmp	cursor_save_state_0
 
-@@:	push	es
-	mov	ax,ds
-	mov	es,ax
-	cld
-
-	mov	dx,VGAREG_SQ_ADDR		;save the index
-	in	al,dx
-	lea	di,cursor_state
-	mov	es:cursor_state.SQ_INDEX,al
-
-	mov	al,VGAREG_SQ_MAP_MASK
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT (0FH)			;enable all planes for writing
-	or	al,0FH
-	out	dx,al
-
-        dec     dx
-	mov	al,VGAREG_SQ_MODE
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT 0CH			;turn on chain 4 mode
-	or	al,(SEQ_CHAIN_4_MODE SHL 2)
-	out	dx,al
-
-	dec	dx
-	mov	al,VGAREG_SQ_BACKLATCH_0
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-
-	dec	dx
-	mov	al,VGAREG_SQ_BACKLATCH_1
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-
-        dec     dx
-	mov	al,VGAREG_SQ_BACKLATCH_2
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-
-        dec     dx
-	mov	al,VGAREG_SQ_BACKLATCH_3
-        stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-
-	dec	dx
-	mov	al,VGAREG_SQ_MASKED_WRITE_CONTROL
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT 1			;disable masked writes on vrams
-	out	dx,al
-
-	dec	dx
-	mov	al,VGAREG_SQ_BANK_SELECT
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-
-	dec	dx
-	mov	al,VGAREG_SQ_EXTENDED_PAGE
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-
-	dec	dx
-	mov	al,VGAREG_SQ_COMPATIBILITY
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	or	al,20H				;enable sequential chain4 mode
-	out	dx,al
-
-	dec	dx
-	mov	al,VGAREG_SQ_FOREBACK_MODE
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT 0EH			;turn off data-munging options
-	out	dx,al
-
-        dec     dx
-	mov	al,VGAREG_SQ_SPLITBANK
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	or	al,80H				;enable access to splitbanks
-	out	dx,al
-
-	dec	dx
-        mov     al,VGAREG_SQ_SRC_SPLITBANK
-        stosb
-        out     dx,al
-        inc     dx
-        in      al,dx
-        stosb
-	sub	al,al				;clear out src splitbank
-        out     dx,al
-
-        dec     dx
-	mov	al,VGAREG_SQ_DST_SPLITBANK
-	stosb
-        out     dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	sub	al,al				;clear out dst splitbank
-	out	dx,al
-
-	dec	dx				;this is the 14th seq reg saved
-	mov	al,VGAREG_SQ_SPLITBANK		;if you want to save more
-	out	dx,al				; adjust the equates at the
-	inc	dx				; start of this routine
-	in	al,dx
-	and	al,7FH				;disable splitbank addressing
-	out	dx,al
-
-
-;       Now for the Graphics Controller regs
-
-	mov	dx,VGAREG_GR_ADDR		;save the index
-	in	al,dx
-	mov	es:cursor_state.GR_INDEX,al
-
-	mov	al,VGAREG_GR_ENABLE_SET_RESET
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT (0FH)			;disable set reset - all planes
-	out	dx,al
-
-	dec	dx
-	mov	al,VGAREG_GR_FUNCTION
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT (1FH)			;disable ALU ROPS
-	out	dx,al
-
-	dec	dx
-	mov	al,VGAREG_GR_MODE
-	stosb
-	out	dx,al
-	inc	dx
-	in	al,dx
-	stosb
-	and	al,NOT (03H)			;set write mode 0
-	out	dx,al
-
-	dec	dx				;this is the 14th gr reg saved
-	mov	al,VGAREG_GR_BITMASK		;if you want to save more
-	stosb					; adjust the equates at the
-	out	dx,al				; start of this routine
-	inc	dx
-	in	al,dx
-	stosb
-	mov	al,0FFH 			;all bits enabled
-	out	dx,al
-
-	mov	dx,VGAREG_MISC_R
-	in	al,dx
-	stosb
-
-	pop	es
+@@:	mov	al,[bank_select_byte]
+	mov	[saved_bank_select],al
 
 cursor_save_state_0:
         mov     cursor_state_lock,1
@@ -683,33 +471,8 @@ cursor_save_state	ENDP
 PUBLIC	cursor_restore_state
 cursor_restore_state	PROC	NEAR
 
-	lea	si,cursor_state.SAVE_LASTREG_OFFSET
-	std					;restore in reverse order
-
-	mov	dx,VGAREG_MISC_W
-	lodsw					;Yes lodsW -- so si := si - 2
-        out     dx,al
-
-	mov	dx,VGAREG_GR_ADDR
-	mov	cx,SAVE_GRREGS_COUNT
-@@:	lodsw
-	out	dx,ax
-	loop	@B
-	mov	al,cursor_state.GR_INDEX	;restore Sequencer index
-	out	dx,al
-
-        mov     dx,VGAREG_SQ_ADDR
-	mov	ax,word ptr cursor_state.SAVE_SPLITBANK_OFFSET
-	or	ah,80H					;provide access to
-	out	dx,ax					; splitbank regs
-        mov     cx,SAVE_SQREGS_COUNT
-
-@@:	lodsw
-	out	dx,ax
-	loop	@B
-	mov	al,cursor_state.SQ_INDEX	;restore Graphics index
-	out	dx,al
-	cld
+	mov	dl,[saved_bank_select]
+	SET_BANK
 
 	mov	cursor_state_lock,0
         ret
