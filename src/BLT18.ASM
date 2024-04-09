@@ -107,6 +107,7 @@ blt_mtoc_prep	PROC	NEAR
 	mov	ax,DestyOrg		 ; compute the starting address
 	mul	word ptr dst_width_bytes
 	add	ax,DestxOrg		;fixed for bitness in bitblt_prep_final
+	adc	dx,0
         mov     dst_blt_offset,ax
 	mov	dst_page,dx
 	SET_BANK
