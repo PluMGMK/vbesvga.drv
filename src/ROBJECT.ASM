@@ -1188,12 +1188,12 @@ realize_hatch_inner_loop:
 	; If the bit was 1, then [DX:]AX == fg xor bg, otherwise [DX:]AX == 0
 	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
 	; or 0 xor bg == bg, as desired :)
-	xor	ax,[spill_colour_2.lo]
+	xor	ax,[spill_colour_1.lo]
 realize_hatch_first_stos label byte
 	stosw
 realize_hatch_second_word:
 	and	dx,[spill_colour_2.hi]
-	xor	dx,[spill_colour_2.hi]
+	xor	dx,[spill_colour_1.hi]
 	mov	ax,dx
 realize_hatch_second_stos label byte
 	stosw

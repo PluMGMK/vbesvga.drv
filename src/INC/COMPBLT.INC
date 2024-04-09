@@ -16,6 +16,7 @@ EXTRN	compile_rop:NEAR
 EXTRN	compile_edge_mask:NEAR
 EXTRN	compile_inner_loop_start:NEAR
 EXTRN	compile_inner_loop_end:NEAR
+EXTRN	compile_inner_loop_wraps:NEAR
 EXTRN	compile_outer_loop:NEAR
 EXTRN	compile_src_memory_yupdate:NEAR
 EXTRN	compile_src_screen_yupdate:NEAR
