@@ -29,6 +29,7 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
+externW	pxbytes	;in SWCURS.ASM
 
 ;
 ;	blt81
@@ -106,10 +107,10 @@ blt_ctom_prep	PROC	NEAR
 	mov	bx,SrcxOrg
 	mul	word ptr src_width_bytes
 	add	ax,bx
+	adc	dx,0
 	mov	src_blt_offset,ax
 	mov	src_page,dx
-	clc
-	call	set_page
+	SET_BANK
 @@:	ret
 
 blt_ctom_prep	ENDP				;
@@ -129,32 +130,91 @@ blt_ctom_prep	ENDP				;
 ;	AL	initial value for rotating bit counter
 ;
 
-ctom_template:
+ctom_template_setup:
 	mov	ah,0FFH 		;0FFH will become (DestxOrg & 07H)
 ctom_fix:
-@@:	lodsb
+
+CTOM_SETUP_SIZE = $ - ctom_template_setup
+CTOM_FIXUP = $ - ctom_fix + 1
+
+ctom_template_getbyte:
+@@:	mov	al,[si+1234H]		;1234H will become the current index
+ctom_index:
 	sub	al,0FFH 		;0FFH will become bgcolor
 ctom_color:
 	cmp	al,1
-	rcl	ah,1
+	jnc	@F
+ctom_jnc_forward:
+
+CTOM_GETBYTE_SIZE = $ - ctom_template_getbyte
+CTOM_INDEX = $ - ctom_index + 2
+CTOM_COLOR = $ - ctom_color + 1
+CTOM_JNC_FORWARD = $ - ctom_jnc_forward
+
+ctom_template_setbit:
+@@:	rcl	ah,1
+	lea	si,[si+1234H]		;1234H will become pxbytes
+ctom_si_step:
 	jnc	@B
+ctom_jnc_back:
 	mov	al,ah
 
-CTOM_SIZE = $ - ctom_template
-CTOM_FIXUP = $ - ctom_fix + 1
-CTOM_COLOR = $ - ctom_color + 1
+CTOM_SETBIT_SIZE = $ - ctom_template_setbit
+CTOM_SI_STEP = $ - ctom_si_step + 2
+CTOM_JNC_BACK = $ - ctom_jnc_back
 
 PUBLIC	compile_ctom
 compile_ctom	PROC	NEAR
 
 	test	rop_flags,SOURCE_PRESENT
 	je	@F
-	mov	cx,CTOM_SIZE
-	lea	si,ctom_template
+	mov	cx,CTOM_SETUP_SIZE
+	lea	si,ctom_template_setup
 	rep	movs byte ptr es:[di], cs:[si]
 	mov	es:[di - CTOM_FIXUP],al
-	mov	al,byte ptr [colors+1]			;get the bgcolor
+	push	di	;save address to jump back to
+
+	mov	cx,[pxbytes]
+	xor	dx,dx	;initialize index into bgcolour
+ctom_colour_byte_loop:
+	mov	bx,cx
+	mov	cx,CTOM_GETBYTE_SIZE
+	lea	si,ctom_template_getbyte
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	cx,bx
+	mov	si,dx
+	mov	es:[di - CTOM_INDEX],si
+	mov	al,bgcolour[si]
 	mov	es:[di - CTOM_COLOR],al
+	inc	dx
+	loop	ctom_colour_byte_loop
+
+	;At this point, we have DX JNCs to fixup to point at our current
+	; position. In fact, the last JNC is redundant since it would just
+	; jump here anyway: get rid of it!
+	sub	di,2	;size of 286 JNC instruction is always two bytes
+	dec	dx	;count the number of JNCs that remain (may be zero)
+	jz	ctom_forward_jncs_done
+	;Point BX at the most recent JNC (+2 is to comp for the SUB above)
+	lea	bx,[di + 2 - CTOM_GETBYTE_SIZE - CTOM_JNC_FORWARD]
+	mov	cx,dx
+ctom_forward_jncs_loop:
+	mov	ax,di
+	sub	ax,bx
+	mov	es:[bx - 1],al
+	sub	bx,CTOM_GETBYTE_SIZE	;point at the one before that, if any...
+	loop	ctom_forward_jncs_loop
+
+ctom_forward_jncs_done:
+	mov	cx,CTOM_SETBIT_SIZE
+	lea	si,ctom_template_setbit
+	rep	movs byte ptr es:[di], cs:[si]
+	pop	ax			;get back the address to jump back to
+	lea	bx,[di - CTOM_JNC_BACK]
+	sub	ax,bx
+	mov	es:[bx - 1],al
+	inc	dx			;this should still have pxbytes...
+	mov	es:[di - CTOM_SI_STEP],dx
 
 @@:	call	compile_rop
 	ret
@@ -172,22 +232,26 @@ compile_ctom	ENDP
 ;	AX	# of pixels to do in the last edge (between 1 and 8 inclusive)
 ;
 
-ctomle_template:
+ctomle_template_setup:
 	mov	cx,01234H	;01234H becomes ax parm
 ctomle_fix:
-@@:	lodsb
-	sub	al,04H		;04H will become bgcolor
-ctomle_color:
-	cmp	al,1
+
+CTOMLE_SETUP_SIZE = $ - ctomle_template_setup
+CTOMLE_FIXUP = $ - ctomle_fix + 2
+
+ctomle_template_setbit:
 	rcl	ah,1
+	lea	si,[si+1234H]		;1234H will become pxbytes
+ctomle_si_step:
 	loop	@B
+ctomle_loop_back:
 	mov	al,ah
 	rol	al,04		;04H becomes align_rotate_count
 ctomle_rot:
 
-CTOMLE_SIZE = $ - ctomle_template
-CTOMLE_FIXUP = $ - ctomle_fix + 2
-CTOMLE_COLOR = $ - ctomle_color + 1
+CTOMLE_SETBIT_SIZE = $ - ctomle_template_setbit
+CTOMLE_SI_STEP = $ - ctomle_si_step + 2
+CTOMLE_LOOP_BACK = $ - ctomle_loop_back
 CTOMLE_ROT = $ - ctomle_rot + 1
 
 PUBLIC	compile_ctom_last_edge
@@ -195,12 +259,53 @@ compile_ctom_last_edge	PROC	NEAR
 
 	test	rop_flags,SOURCE_PRESENT
 	je	@F
-	mov	cx,CTOMLE_SIZE
-	lea	si,ctomle_template
+	mov	cx,CTOMLE_SETUP_SIZE
+	lea	si,ctomle_template_setup
 	rep	movs byte ptr es:[di], cs:[si]
 	mov	es:[di - CTOMLE_FIXUP],ax
-	mov	al,byte ptr [colors+1]			;get the bgcolor
-	mov	es:[di - CTOMLE_COLOR],al
+	push	di	;save address to jump back to
+
+	mov	cx,[pxbytes]
+	xor	dx,dx	;initialize index into bgcolour
+ctomle_colour_byte_loop:
+	mov	bx,cx
+	mov	cx,CTOM_GETBYTE_SIZE
+	lea	si,ctom_template_getbyte
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	cx,bx
+	mov	si,dx
+	mov	es:[di - CTOM_INDEX],si
+	mov	al,bgcolour[si]
+	mov	es:[di - CTOM_COLOR],al
+	inc	dx
+	loop	ctomle_colour_byte_loop
+
+	;At this point, we have DX JNCs to fixup to point at our current
+	; position. In fact, the last JNC is redundant since it would just
+	; jump here anyway: get rid of it!
+	sub	di,2	;size of 286 JNC instruction is always two bytes
+	dec	dx	;count the number of JNCs that remain (may be zero)
+	jz	ctomle_forward_jncs_done
+	;Point BX at the most recent JNC (+2 is to comp for the SUB above)
+	lea	bx,[di + 2 - CTOM_GETBYTE_SIZE - CTOM_JNC_FORWARD]
+	mov	cx,dx
+ctomle_forward_jncs_loop:
+	mov	ax,di
+	sub	ax,bx
+	mov	es:[bx - 1],al
+	sub	bx,CTOM_GETBYTE_SIZE	;point at the one before that, if any...
+	loop	ctomle_forward_jncs_loop
+
+ctomle_forward_jncs_done:
+	mov	cx,CTOMLE_SETBIT_SIZE
+	lea	si,ctomle_template_setbit
+	rep	movs byte ptr es:[di], cs:[si]
+	pop	ax			;get back the address to loop back to
+	lea	bx,[di - CTOMLE_LOOP_BACK]
+	sub	ax,bx
+	mov	es:[bx - 1],al
+	inc	dx			;this should still have pxbytes...
+	mov	es:[di - CTOMLE_SI_STEP],dx
 	mov	al,align_rotate_count
 	mov	es:[di - CTOMLE_ROT],al
 
