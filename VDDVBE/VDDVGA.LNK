@@ -1,0 +1,7 @@
+vddctl.obj+vddgrab.obj+vddoem.obj+vddstate.obj+vddvga.obj+
+vdddebug.obj+vddint.obj+vddphmem.obj+vddsvc.obj+vddvmmem.obj+
+vddfonts.obj+vddmsg.obj+vddproc.obj+vddtio.obj
+vddvga.386 /NOI /NOD /NOP
+vddvga.map /MAP
+
+vddvga.def

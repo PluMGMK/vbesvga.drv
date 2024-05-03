@@ -1,0 +1,93 @@
+# sample make file for building vdd8514 virtual device for Windows/386
+
+# Needed for international support 
+!IFNDEF LANG 
+RES_DIR=.\messages\usa 
+!ELSE 
+RES_DIR=.\messages\$(LANG) 
+!ENDIF 
+
+# comment this definition out with a "#", if building a non-debugging version
+Debug=-DDEBUG
+Version=-DVGA8514 -DVGA31 
+
+MASMOBJ=masm5 -p -w2 -Mx $(Version) $(Debug) -I..\include 
+MASMLST=masm5 -l -p -w2 -Mx $(Version) $(Debug) -I..\include 
+
+.asm.obj:
+        $(MASMOBJ) $*;
+
+.asm.lst:
+        $(MASMLST) $*;
+
+all:    vdd8514.386
+
+vddctl.obj vddctl.lst: vddctl.asm ..\include\pageswap.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\debug.inc ..\include\opttest.inc \
+	 ..\include\vdd.inc ..\include\vmm.inc
+
+vdddebug.obj vdddebug.lst: vdddebug.asm ..\include\debug.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\vkd.inc ..\include\vkdpaste.inc \
+	 ..\include\vdd.inc ..\include\vmm.inc
+
+vddfonts.obj vddfonts.lst: vddfonts.asm vddphmem.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\debug.inc ..\include\vdd2.inc \
+	 ..\include\vdd.inc ..\include\opttest.inc ..\include\vmm.inc
+
+vddgrab.obj vddgrab.lst: vddgrab.asm vddvmmem.inc vddphmem.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\debug.inc ..\include\vdd.inc \
+	 ..\include\opttest.inc ..\include\vmm.inc
+
+vddint.obj vddint.lst: vddint.asm vdddef.inc ..\include\vmdavga.inc \
+	 ..\include\debug.inc ..\include\vdd.inc ..\include\opttest.inc \
+	 ..\include\vmm.inc
+
+vddoem.obj vddoem.lst: vddoem.asm vdddef.inc ..\include\vmdavga.inc \
+	 ..\include\debug.inc ..\include\opttest.inc ..\include\vmm.inc
+
+vddphmem.obj vddphmem.lst: vddphmem.asm vddphmem.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\debug.inc ..\include\opttest.inc \
+	 ..\include\vmm.inc
+
+vddproc.obj vddproc.lst: vddproc.asm ..\include\vddgrb.inc \
+	 ..\include\shell.inc ..\include\shellfsc.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\debug.inc ..\include\opttest.inc \
+	 ..\include\vdd.inc ..\include\vmm.inc
+
+vddstate.obj vddstate.lst: vddstate.asm vdddef.inc ..\include\vmdavga.inc \
+	 ..\include\debug.inc ..\include\opttest.inc ..\include\vmm.inc
+
+vddsvc.obj vddsvc.lst: vddsvc.asm ..\include\shell.inc ..\include\shellfsc.inc \
+	 vdddef.inc ..\include\vmdavga.inc ..\include\debug.inc \
+	 ..\include\vdd.inc ..\include\opttest.inc ..\include\vmm.inc
+
+vddtio.obj vddtio.lst: vddtio.asm vdddef.inc ..\include\vmdavga.inc \
+	 ..\include\debug.inc ..\include\vdd2.inc ..\include\vdd.inc \
+	 ..\include\opttest.inc ..\include\vmm.inc
+
+vddvga.obj vddvga.lst: vddvga.asm vdddef.inc ..\include\vmdavga.inc \
+	 ..\include\debug.inc ..\include\opttest.inc ..\include\vmm.inc
+
+vddvmmem.obj vddvmmem.lst: vddvmmem.asm vddvmmem.inc vddphmem.inc vdddef.inc \
+	 ..\include\vmdavga.inc ..\include\debug.inc ..\include\vdd2.inc \
+	 ..\include\vdd.inc ..\include\opttest.inc ..\include\vmm.inc
+
+
+vddmsg.obj vddmsg.lst: $(RES_DIR)\vddmsg.asm \
+	 ..\include\vmm.inc
+        $(MASMOBJ) $(RES_DIR)\$*, $*.obj;
+        $(MASMLST) $(RES_DIR)\$*, $*.lst;
+
+OBJS =  vddmsg.obj \
+        vddctl.obj vddgrab.obj vddoem.obj vddstate.obj vddvga.obj \
+        vdddebug.obj vddint.obj vddphmem.obj vddsvc.obj vddvmmem.obj \
+        vddfonts.obj vddmsg.obj vddproc.obj vddtio.obj 
+
+vdd8514.386: iclean vdd8514.def $(OBJS)
+        link386 @vdd8514.lnk
+        addhdr vdd8514.386
+        mapsym32 vdd8514
+
+iclean: 
+        del vddmsg.* 
+
