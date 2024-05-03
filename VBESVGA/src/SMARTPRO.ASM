@@ -1324,7 +1324,11 @@ special_case_non_clip_tables	label	word
 	dw	CodeOFFSET gen_nc
 	dw	CodeOFFSET gen_nc
 	dw	CodeOFFSET gen_nc
+if SPECIAL_CASE_BM_OBWNC eq 1
 	dw	CodeOFFSET bm_obwnc
+else
+	dw	CodeOFFSET gen_nc
+endif
 	dw	CodeOFFSET gen_nc
 	dw	CodeOFFSET gen_nc
 	dw	CodeOFFSET gen_nc
@@ -1358,6 +1362,7 @@ gen_cl	label	word
 	dw	CodeOFFSET gen_cl_n_char
 	dw	CodeOFFSET gen_cl_n_char
 ;
+if SPECIAL_CASE_BM_OBWNC eq 1
 bm_obwnc label word
 	dw	CodeOFFSET bm_obwnc_one_char
 	dw	CodeOFFSET bm_obwnc_two_char
@@ -1367,6 +1372,7 @@ bm_obwnc label word
 	dw	CodeOFFSET gen_nc_n_char
 	dw	CodeOFFSET gen_nc_n_char
 	dw	CodeOFFSET gen_nc_n_char
+endif
 ;
 special386_case_clip_tables	label	word
 	dw	CodeOFFSET gen_cl_386
@@ -1392,7 +1398,11 @@ special386_case_non_clip_tables	label	word
 	dw	CodeOFFSET gen_nc_386
 	dw	CodeOFFSET gen_nc_386
 	dw	CodeOFFSET gen_nc_386
+if SPECIAL_CASE_BM_OBWNC eq 1
 	dw	CodeOFFSET bm_obwnc_386
+else
+	dw	CodeOFFSET gen_nc_386
+endif
 	dw	CodeOFFSET gen_nc_386
 	dw	CodeOFFSET gen_nc_386
 	dw	CodeOFFSET gen_nc_386
@@ -1424,6 +1434,7 @@ gen_cl_386	label	word
 	dw	CodeOFFSET gen386_cl_n_char
 	dw	CodeOFFSET gen386_cl_n_char
 ;
+if SPECIAL_CASE_BM_OBWNC eq 1
 bm_obwnc_386 label word
 	dw	CodeOFFSET bm386_obwnc_one_char
 	dw	CodeOFFSET bm386_obwnc_two_char
@@ -1433,6 +1444,7 @@ bm_obwnc_386 label word
 	dw	CodeOFFSET gen386_nc_n_char
 	dw	CodeOFFSET gen386_nc_n_char
 	dw	CodeOFFSET gen386_nc_n_char
+endif
 ;
 ;
 ;-----------------------------------------------------------------------;
@@ -2026,15 +2038,8 @@ preset_pro_text proc	near
 ;
 	mov	ax,non_clipped_drawing_functions[bx]	; load color routines
 	mov	cx,clipped_drawing_functions[bx]
-	; There were a "mov si,ax" "and mov di,ax" here, and the next label,
-	; "preset_pro_text_lookup_func", skipped over setting SI and DI.
-	; This was fine on the actual V7, because "BitsaPixel" was always 8,
-	; so the values of SI and DI never actually got used in BUILDSTR.ASM.
-	; It's only by using high-colour modes with VBE that this incorrect
-	; code got exposed!
-	; Another note: actually, the check for "BitsaPixel == 8" was itself
-	; incorrect, as it was just checking for a colour map, which should
-	; really be "BitsaPixel != 1"!
+	mov	si,ax					; si | di will not be
+	mov	di,cx					; used by color.
 ;
 	test	bl,MASK_DEVBM			; is this color?
 	errnz	<MASK_DEVBM and 0FF00h>
@@ -2043,7 +2048,6 @@ preset_pro_text proc	near
 	mov	ax,mono_non_clipped_drawing_functions[bx]
 	mov	cx,mono_clipped_drawing_functions[bx]
 ;
-preset_pro_text_lookup_func:
 rtIF	BigFontFlags
 ; 32 bit table lookups
 	mov	si,special386_case_non_clip_tables[bx]
@@ -2054,6 +2058,7 @@ rtELSE
 	mov	di,special_case_clip_tables[bx]
 rtENDIF
 ;
+preset_pro_text_lookup_func:
 	mov	non_clipped_table,si
 	mov	clipped_table,di
 	mov	ss_draw,ax

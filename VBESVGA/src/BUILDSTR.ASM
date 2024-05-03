@@ -2403,9 +2403,7 @@ rtENDIF
  	mov	al,left_clip_mask
  	or	al,al
 	jz	psd_not_clipped 	;No partial first byte
-	int	3
-	mov	bx,ss_pixbytes
-	add	inner_byte_count,bx	;One extra time through the loop
+	inc	inner_byte_count	;One extra time through the loop
 	mov	bx,clipped_table
 	inc	dl			;set OR-mask to 00h
 ;
@@ -2476,13 +2474,20 @@ psd_have_exact_fit:
 	mov	ax,clipped_font_height
 	call	bx			;Invoke drawing routine
 	mov	al,8			;First doesn't cross byte boundary
-	int	3
-	mov	bx,ss_pixbytes
-	sub	inner_byte_count,bx
 	mov	bx,non_clipped_table	;No clipping required
 	mov	ss_clip_mask,0FFh
-	jg	psd_collect_chars	;Flags set by 'sub' above
+	dec	inner_byte_count
+	jg	psd_collect_chars
 	jmp	psd_see_about_last
+;; 	mov	bx,ss_pixbytes
+;; 	test	bx,bx
+;; 	jnz	@F
+;; 	inc	bx			;Mono case...
+;; @@:	sub	inner_byte_count,bx
+;; 	mov	bx,non_clipped_table	;No clipping required
+;; 	mov	ss_clip_mask,0FFh
+;; 	jg	psd_collect_chars	;Flags set by 'sub' above
+;; 	jmp	psd_see_about_last
 ;
 psd_have_more_than_enough:
 	mov	cx,si			;# of source character involved
@@ -2510,13 +2515,20 @@ psd_have_more_than_enough:
  	mov	ax,clipped_font_height
 	call	bx			;Invoke drawing routine
 	mov	al,16			;First crosses byte boundary
-	int	3
-	mov	bx,ss_pixbytes
-	sub	inner_byte_count,bx
 	mov	bx,non_clipped_table	;No clipping required
 	mov	ss_clip_mask,0FFh
-	jle	short psd_see_about_last;Flags set by 'sub' above
+	dec	inner_byte_count
+	jle	short psd_see_about_last
 	jmp	psd_collect_chars
+;; 	mov	bx,ss_pixbytes
+;; 	test	bx,bx
+;; 	jnz	@F
+;; 	inc	bx			;Mono case...
+;; @@:	sub	inner_byte_count,bx
+;; 	mov	bx,non_clipped_table	;No clipping required
+;; 	mov	ss_clip_mask,0FFh
+;; 	jle	short psd_see_about_last;Flags set by 'sub' above
+;; 	jmp	psd_collect_chars
 ;
 psd_unlikely_cases:
 	inc	si
