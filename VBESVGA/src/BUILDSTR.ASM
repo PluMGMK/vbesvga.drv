@@ -2479,15 +2479,6 @@ psd_have_exact_fit:
 	dec	inner_byte_count
 	jg	psd_collect_chars
 	jmp	psd_see_about_last
-;; 	mov	bx,ss_pixbytes
-;; 	test	bx,bx
-;; 	jnz	@F
-;; 	inc	bx			;Mono case...
-;; @@:	sub	inner_byte_count,bx
-;; 	mov	bx,non_clipped_table	;No clipping required
-;; 	mov	ss_clip_mask,0FFh
-;; 	jg	psd_collect_chars	;Flags set by 'sub' above
-;; 	jmp	psd_see_about_last
 ;
 psd_have_more_than_enough:
 	mov	cx,si			;# of source character involved
@@ -2520,15 +2511,6 @@ psd_have_more_than_enough:
 	dec	inner_byte_count
 	jle	short psd_see_about_last
 	jmp	psd_collect_chars
-;; 	mov	bx,ss_pixbytes
-;; 	test	bx,bx
-;; 	jnz	@F
-;; 	inc	bx			;Mono case...
-;; @@:	sub	inner_byte_count,bx
-;; 	mov	bx,non_clipped_table	;No clipping required
-;; 	mov	ss_clip_mask,0FFh
-;; 	jle	short psd_see_about_last;Flags set by 'sub' above
-;; 	jmp	psd_collect_chars
 ;
 psd_unlikely_cases:
 	inc	si
@@ -2547,9 +2529,8 @@ psd_unlikely_cases:
 	add	ch,[bp].fd_width[-6 * size frame_data]
 	cmp	ch,al
 	ja	psd_have_more_than_enough
-	jne	@F
-	jmp	psd_have_exact_fit
-@@:
+	je	psd_have_exact_fit
+;
 	inc	si
 	add	ch,[bp].fd_width[-7 * size frame_data]
 	cmp	ch,al
