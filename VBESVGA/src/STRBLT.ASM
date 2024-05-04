@@ -2016,25 +2016,6 @@ comp_byte_interval proc near
 	cmp	BitsaPixel,1		; mono map?
         je      comp_byte_interval_mono
 
-ifdef VGA256X
-        test    excel,IS_DEVICE
-        jz      @F
-        shiftr  di,2                    ; /4 for byte address
-
-        externNP compute_edge_masks     ; in SPECIALX.BLT
-
-        mov     cx,bx
-        mov     bx,dx
-        inc     cx
-        call    compute_edge_masks      ; call with bx = start X, cx = width
-        mov     ax,bx
-        mov     si,cx
-
-	clc				; Carry clear to show there is something
-	ret
-@@:
-endif; VGA256X
-
         inc     bx
 
 	xor	cx,cx
@@ -2429,30 +2410,6 @@ bitmap_opaque	endp
 ;
 	public	color_bitmap_opaque
 color_bitmap_opaque     proc near
-ifdef VGA256X
-
-externNP        solid_pattern           ; in SPECIALX.BLT
-
-        test    excel,IS_DEVICE         ; is this the device?
-        jz      cobiop_not_device       ; no, continue on...
-
-        mov     dx,bx                   ; dx = height
-        mov     cx,si                   ; cx = inner count
-        mov     bx,ax                   ; bx = masks
-        mov     si,next_scan            ; si = next scan
-        mov     al,bptr colors[1]       ; al = color
-
-        call    solid_pattern
-        ret
-
-cobiop_not_device:
-else
-	test	excel,IS_DEVICE		; bank selection needed?
-	jz	@F			; no, continue on...
-        mov     dl,CurVidSel
-        SET_BANK
-@@:
-endif; VGA256X
 ;;;;;;;;push    si                      ; do not disturb...
 ;;;;;;;;shiftl  si,3                    ; multiply the length by 8
 ;;;;;;;;errnz   SIZE_PATTERN-8

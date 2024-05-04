@@ -166,10 +166,9 @@ cchar4  equ     dword ptr wwidth4 - 4
 ;
 upd_bm	macro	ll
 if DRAW_ADJUST				;;If last logic operation defined
-	sub	di,ss_pixbytes		;;  did a stosb, adjust for it
+	dec	di			;;  did a stosb, adjust for it
 endif
 	add	di,ss_next_scan
-	UpdBank
 	ll
 	endm
 ;
@@ -1954,6 +1953,7 @@ bmopco_loop:
 bmopco_subloop:
 	movs	byte ptr es:[di],ss:[si]; SI is in "colors" on stack
 	test	di,di
+	int	3
 	UpdBank	jnz
 	loop	bmopco_subloop
 	mov	cx,ax			; restore pixel count
@@ -2229,25 +2229,19 @@ endif
 color_output_table_286 label word
         dw      pcolor_transp_output_286
         dw      pcolor_opaque_output_286
-ifdef VGA256X
-        dw      dev_pcolor_transp_output_286
-        dw      dev_pcolor_opaque_output_286
-else
+	;FIXME: These two are for the screen - should they be different?
+	; (wrt updating the banks...)
         dw      pcolor_transp_output_286
         dw      pcolor_opaque_output_286
-endif
 
 	public color_output_table_386
 color_output_table_386 label word
         dw      pcolor_transp_output_386
         dw      pcolor_opaque_output_386
-ifdef VGA256X
-        dw      dev_pcolor_transp_output_386
-        dw      dev_pcolor_opaque_output_386
-else
+	;FIXME: These two are for the screen - should they be different?
+	; (wrt updating the banks...)
         dw      pcolor_transp_output_386
         dw      pcolor_opaque_output_386
-endif
 
 ;-----------------------------------------------------------------------;
 ;
@@ -2587,292 +2581,6 @@ pctou_phase_386 label   word
 pcolor_transp_output_386     endp
 
 
-ifdef VGA256X
-;
-;
-;-----------------------=================================----------------------
-;-----------------------====< color output routines >====----------------------
-;-----------------------=================================----------------------
-
-;-----------------------------------------------------------------------;
-;
-; C O L O R _ O P A Q U E _ O U T P U T
-;
-; Assumed Entry Conditions:
-;	ss:dx ==> physical foreground colour (and dx+4 ==> background)
-;	es:di ==> destination
-;	ds:si ==> font data
-;	   bx holds the character width in bytes
-;	   cl holds the character width in pixels
-;          ch holds the phase
-;	   bp holds the character length
-;
-; Exit Conditions:
-;	BX holds the width in bytes
-;	BP = 0
-;	AX,BX,DX,SI,DI modified
-;
-;-----------------------------------------------------------------------;
-
-        public  dev_color_opaque_output_286
-dev_color_opaque_output_286 proc near
-        errn$ dev_pcolor_opaque_output_286
-dev_color_opaque_output_286 endp
-
-        public  dev_pcolor_opaque_output_286
-dev_pcolor_opaque_output_286 proc near
-
-        push    bx
-	mov	ax,dx
-	GET_BANK
-	push	dx	; save bank on stack
-	mov	dx,ax	; restore frame pointer
-
-        mov     bl,cl
-        mov     cl,ss_clip_mask
-        add     ch,cl
-
-dev_opaque_width_loop_286:
-        pushem  si,di,bp
-
-        SET_WRITE_MAP ch
-
-dev_opaque_loop_286:
-        lodsb
-        shl     al,cl
-        GetColor al
-        mov     es:[di],al
-
-        add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
-	UpdBank
-
-        dec     bp
-        jnz     dev_opaque_loop_286
-
-        popem   si,di,bp
-
-        inc     cl
-        inc     ch
-        test    ch,0011b
-        jnz     dol2_skipinc
-        inc     di
-	UpdBank	jnz
-dol2_skipinc:
-        dec     bl
-        jnz     dev_opaque_width_loop_286
-
-	mov	ax,dx	; save frame pointer
-	pop	dx	; restore bank from stack
-	SET_BANK
-	mov	dx,ax	; restore frame pointer
-        pop     bx
-        ret
-
-dev_pcolor_opaque_output_286     endp
-
-        public  dev_color_opaque_output_386
-dev_color_opaque_output_386 proc near
-        errn$ dev_pcolor_opaque_output_386
-dev_color_opaque_output_386 endp
-
-        public  dev_pcolor_opaque_output_386
-dev_pcolor_opaque_output_386 proc near
-
-        ;int     3
-
-        push    bx
-	mov	ax,dx
-	GET_BANK
-	push	dx	; save bank on stack
-	mov	dx,ax	; restore frame pointer
-
-        mov     bl,cl
-        mov     cl,ss_clip_mask
-        add     ch,cl
-
-dev_opaque_width_loop_386:
-        pushem  si,di,bp
-
-        SET_WRITE_MAP ch
-
-dev_opaque_loop_386:
-	.386
-	lods	bptr [esi]
-; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
-	db	67h
-	nop
-	.8086
-        shl     al,cl
-        GetColor al
-        mov     es:[di],al
-
-        add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
-	UpdBank
-
-        dec     bp
-        jnz     dev_opaque_loop_386
-
-        popem   si,di,bp
-
-        inc     cl
-        inc     ch
-        test    ch,0011b
-        jnz     dol3_skipinc
-        inc     di
-	UpdBank	jnz
-dol3_skipinc:
-        dec     bl
-        jnz     dev_opaque_width_loop_386
-
-	mov	ax,dx	; save frame pointer
-	pop	dx	; restore bank from stack
-	SET_BANK
-	mov	dx,ax	; restore frame pointer
-        pop     bx
-        ret
-
-dev_pcolor_opaque_output_386     endp
-
-;
-;-----------------------------------------------------------------------;
-;
-; T R A N S P _ L O O P _ C O N T R O L
-;
-; Assumed Entry Conditions:
-;	ss:dx ==> physical foreground colour (and dx+4 ==> background)
-;	es:di ==> destination
-;	ds:si ==> font data
-;	   bx holds the character width in bytes
-;	   cl holds the character width in pixels
-;	   bp holds the character length
-;
-; Exit Conditions:
-;	BX holds the width in bytes
-;	BP = 0
-;	AX,BX,DX,SI,DI modified
-;
-;-----------------------------------------------------------------------;
-
-        public  dev_color_transp_output_286
-dev_color_transp_output_286 proc near
-        errn$ dev_pcolor_transp_output_286
-dev_color_transp_output_286 endp
-
-        public  dev_pcolor_transp_output_286
-dev_pcolor_transp_output_286 proc near
-
-        ;int     3
-
-	mov	ax,dx
-	GET_BANK
-        pushem  bx,dx	; save width in bytes & bank on stack
-	mov	dx,ax	; restore frame pointer
-
-        mov     bl,cl
-        mov     cl,ss_clip_mask
-        add     ch,cl
-
-dev_transp_width_loop_286:
-        pushem  si,di,bp
-
-        SET_WRITE_MAP ch
-
-dev_transp_loop_286:
-        lodsb
-        shl     al,cl
-        jns     @f
-        mov     es:[di],dl
-@@:
-        add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
-	UpdBank
-
-        dec     bp
-        jnz     dev_transp_loop_286
-
-        popem   si,di,bp
-
-        inc     cl
-        inc     ch
-        test    ch,0011b
-        jnz     dtl2_skipinc
-        inc     di
-	UpdBank	jnz
-dtl2_skipinc:
-        dec     bl
-        jnz     dev_transp_width_loop
-
-dev_transp_exit_286:
-	mov	ax,dx	; save frame pointer
-	popem   bx,dx	; restore width in bytes & bank from stack
-	SET_BANK
-	mov	dx,ax	; restore frame pointer
-
-        ret
-
-dev_pcolor_transp_output_286     endp
-
-        public  dev_color_transp_output_386
-dev_color_transp_output_386 proc near
-        errn$ dev_pcolor_transp_output_386
-dev_color_transp_output_386 endp
-
-        public  dev_pcolor_transp_output_386
-dev_pcolor_transp_output_386 proc near
-
-	mov	ax,dx
-	GET_BANK
-        pushem  bx,dx	; save width in bytes & bank on stack
-	mov	dx,ax	; restore frame pointer
-
-        mov     bl,cl
-        mov     cl,ss_clip_mask
-        add     ch,cl
-
-dev_transp_width_loop_386:
-        pushem  si,di,bp
-
-        SET_WRITE_MAP ch
-
-dev_transp_loop_386:
-	.386
-	lods	bptr [esi]
-; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
-	db	67h
-	nop
-	.8086
-        shl     al,cl
-        jns     @f
-        mov     es:[di],dl
-@@:
-        add     di,ss_phases  ;;;;ss_next_scan         ; skip to next scan line
-	UpdBank
-
-        dec     bp
-        jnz     dev_transp_loop_386
-
-        popem   si,di,bp
-
-        inc     cl
-        inc     ch
-        test    ch,0011b
-        jnz     dtl3_skipinc
-        inc     di
-	UpdBank	jnz
-dtl3_skipinc:
-        dec     bl
-        jnz     dev_transp_width_loop
-
-dev_transp_exit_386:
-	mov	ax,dx	; save frame pointer
-	popem   bx,dx	; restore width in bytes & bank from stack
-	SET_BANK
-	mov	dx,ax	; restore frame pointer
-
-        ret
-
-dev_pcolor_transp_output_386     endp
-
-endif; VGA256X
 
 ;
 ; TTTThats All folks !!!!
