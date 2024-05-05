@@ -124,6 +124,13 @@ VDD_Int_10_Stub PROC NEAR    ;don't use BeginProc/EndProc to avoid any
 				;preamble stuff!
 	or	ah, ah			    ;Q: Mode setting?
 	je	SHORT VIS_mode		    ;	Y: notify VDD and reflect
+	cmp	eax,4F02h		    ; Q: Mode setting (VBE)?
+	;This kinda sucks: we had to use EAX in the above instruction since it's
+	; being assembled in a 32-bit segment but will be run in a 16-bit one.
+	; That means we've two bytes gone begging, so we have to move the
+	; pointer back by two to overwrite them...
+	org	$-2
+	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	ah,05h			    ;Q: Page changeing?
 	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	ah, 11h 		    ;Q: Mode setting(via char set chg)?
@@ -1172,7 +1179,11 @@ VI10_skip_font_clr:
 ;   so we check for font change explicitly and set the save ram flag.
 VI10_ChkSvRam:
         mov     ax,[ebp.Client_AX]
-        cmp     ah,11h
+	cmp	ah,4Fh
+	jne	SHORT @F
+	bt	[ebp.Client_BX],15	    ; Q: Save RAM during mode set?
+	jc	SHORT VI10_SetSvRAMBit	    ;   Y: Remember RAM saved
+@@:     cmp     ah,11h
 	je	SHORT VI10_SetSvRAMBit
 	or	al, al				; Q: Save RAM during mode set?
 	js	SHORT VI10_SetSvRAMBit		;   Y: flag RAM save
