@@ -162,9 +162,7 @@ hBIOSdata	dw 0
 ; hPMstack	dw 0
 NUM_PMINT_HDLS	equ ($ - PMIntHandles) SHR 1
 
-public	PMIntStack
 PMIntEntry	FARPOINTER <?,?>
-PMIntStack	FARPOINTER <PM_STACK_LEN,?>
 
 ; Real-Mode buffer for palette entries (if needed)
 RMPaletteSel	dw 0
@@ -193,35 +191,6 @@ sEnd	Data
 
 .286
 
-;---------------------------------Macro---------------------------------;
-; SWITCH_STACK
-;
-; swaps the current stack pointer with the one in Data:PMIntStack
-;
-; usage
-;
-;     SWITCH_STACK
-;
-; Entry:
-;       DS      = Data
-; Returns:
-;	SS:SP exchanged with DS:[PMIntStack]
-; Error Returns:
-;	none
-; Registers Destroyed:
-;	none
-; Registers Preserved:
-;	AX,BX,CX,DX,SI,DI,BP,DS,ES,FLAGS
-; History:
-;	see Git
-;-----------------------------------------------------------------------;
-SWITCH_STACK	macro
-	push	[PMIntStack.sel]
-	push	ss
-	pop	[PMIntStack.sel]
-	pop	ss
-	xchg	sp,[PMIntStack.off]
-	endm
 
 ;---------------------------------Macro---------------------------------;
 ; CALL_PMINT
@@ -247,25 +216,16 @@ SWITCH_STACK	macro
 ;	see Git
 ;-----------------------------------------------------------------------;
 CALL_PMINT	macro
-	SWITCH_STACK
+	; we need to save and restore the stack pointer since the spec
+	; seems to leave undefined whether the PM interface should return
+	; with an IRET or a RETF - i.e. the stack may or may not have
+	; flags on it after PMIntEntry returns...
+	push	bp
+	mov	bp,sp
 	pushf
 	call	[PMIntEntry]
-	; There's a lot of waffle in the VBE spec about making sure the
-	; beginning of the segment is the bottom of the stack, about PM
-	; code using the stack for local variables, some business I don't
-	; get about "clearing SP to zero", etc.
-	; I suspect the *real* issue is that the spec doesn't indicate
-	; whether the PM code should return by RETF or IRET, so switching
-	; stacks is the most foolproof way to be agnostic to that.
-	; The upshot of it is, we restore the top of the stack here so that
-	; it's ready for the next call, no matter whether the PM code left
-	; the flags there or not!
-	; UPDATE SEVERAL WEEKS LATER:
-	; Actually, rethinking this, I think the emphasis on the 16-bit
-	; stack in the spec is aimed at *32-bit OS* developers, so none of
-	; it even applies here. I'll probably pull it all out at some point...
-	mov	sp,PM_STACK_LEN
-	SWITCH_STACK
+	mov	sp,bp
+	pop	bp
 	endm
 
 sBegin  Code
@@ -669,14 +629,7 @@ endif
 	; get the initialization function and call it
 	mov	ax,es:[bp.PMInitialize]
 	mov	[PMIntEntry.off],ax
-	SWITCH_STACK
-	; The VxD should place a UD at this entry point so it can intercept
-	; and do its own setup work, so it can keep track of the graphics
-	; card state. (We "could" issue a sequence of calls here to make
-	; things easier, but then that wouldn't help with other DPMI clients
-	; which may also try to use the VESA Protected-Mode interface!)
 	call	[PMIntEntry]
-	SWITCH_STACK
 	; now it's been initialized, the actual entry point is usable!
 	mov	ax,es:[bp.EntryPoint]
 	mov	[PMIntEntry.off],ax
@@ -1081,6 +1034,7 @@ FindMode_attrsOK:
 ModeFound:
 	; if we used the PM interface, then we're done here
 	cmp	[PMIntEntry.sel],0
+	mov	di,ax		; save our return code
 	jnz	FindMode_done
 
 	test	ax,ax		; returning success?
@@ -1346,9 +1300,7 @@ set_dacsize	ENDP
 ; Registers Destroyed:
 ;	AX,BX,FLAGS
 ; Calls:
-;	PMIntEntry
-;	- OR -
-;	DoInt10h
+;	int 10h
 ; History:
 ;	See Git
 ;-----------------------------------------------------------------------;
@@ -1364,13 +1316,10 @@ endif
 	mov	bx,[Vmode]
 
 common_vesafun:
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	CALL_PMINT
-	ret
-
-@@:
-	call	DoInt10h
+	; there's no point in messing around with VM86 redirects or PMIDs here
+	; since this is a really simple operation that doesn't use any data
+	; segments - and anyway, this way it's easier for the VxD to trap it!
+	int	10h
 	ret
 setmode	endp
 

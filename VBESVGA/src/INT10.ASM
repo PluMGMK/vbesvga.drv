@@ -22,7 +22,6 @@ externFP	AllocCSToDSAlias	; change a CS selector to DS
 externFP	FreeSelector		; free the selector
 
 sBegin  	Data
-externD		PMIntStack
 
 public	int10h_es,int10h_ds
 int10h_es	dw ?
@@ -149,9 +148,6 @@ SetupInt10h	proc near
 	assumes	es,Data
 
 	mov	[Int10Stack.sel],dx
-	; share it with the Protected-Mode Interface code
-	; (these should never be used at the same time, so reentrancy is OK)
-	mov	[PMIntStack.sel],ax
 
 	mov	ax,__WinFlags
 	test	al,WF_PMODE	;are we in protect mode?
