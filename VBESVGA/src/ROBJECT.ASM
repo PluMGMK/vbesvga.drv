@@ -69,9 +69,7 @@ assumes cs,Code
         public  realize_pattern
 	public	pattern_copy_numwords
 	public	oem_brush_size
-ifdef	DEBUG_PREVIEW_BRUSH
-	externW	MemoryWidth
-endif
+	externW	pxbytes			;in SWCURS.ASM
         externNP dither                 ;Brush dithering code
 	externNP ColorDither
         externNP rgb_to_ipc             ;Logical to physical color conv
@@ -430,89 +428,6 @@ realize_brush_xrot_done:
         call    rotate_brush_y          ; Perform Y rotation
 ;
 realize_brush_done:
-ifdef	DEBUG_PREVIEW_BRUSH
-	; Rudimentary preview of the brush we just created:
-	; paint it in the upper-left corner of the screen
-	; and do an int3 so we can look at it.
-	mov	es,[_cstods]
-	assumes	es,Data
-
-        lds     si,lp_out_obj           ; --> back to start of oem_brush_def
-	mov	cx,[oem_brush_size]
-	sub	cx,size oem_brush_com
-	; now CX = size in bytes of the colour portion of the brush
-	; divide by eight to get the size of a single line
-	shr	cx,3
-	errnz	SIZE_PATTERN-8
-	mov	bl,SIZE_PATTERN	; BL = number of lines
-	shr	cx,1	; Change from bytes to words
-
-	; back up the bank selection
-	mov	dl,[bank_select_byte]
-	push	dx
-
-	; point ES:DI at top-left of screen
-	mov	es,[ScreenSelector]
-	assumes	es,nothing
-	xor	di,di
-	xor	dl,dl
-	SET_BANK
-
-	; fill in line-by-line
-@@:
-	push	di
-	push	cx
-	rep	movsw
-	pop	cx
-	pop	di
-	add	di,[MemoryWidth]
-	dec	bl
-	jnz	@B
-	; solid brushes seem OK, so only show non-solid ones
-        cmp     [si].oem_brush_style,BS_SOLID
-	je	@F
-	int	3	; show the colour brush
-@@:
-
-	; now do the mono part, which DS:SI already points to
-	xor	di,di
-	; set CX to the bytes per pixel
-	; need to SHL 1 to convert words back to bytes
-	; then SHR 3 to divide by SIZE_PATTERN again to get single pixel
-	; Net: we SHR 2
-	shr	cx,2
-	; use BX to count pixels: BH for lines, BL for pixels per line
-	mov	bh,SIZE_PATTERN
-preview_mono_lineloop:
-	mov	bl,SIZE_PATTERN
-	push	di
-	lodsb
-	mov	ah,al
-@@:
-	rcl	ah,1	; move the next bit into CF
-	sbb	al,al	; AL becomes FF if the bit was 1, or 00 otherwise
-	push	cx
-	rep	stosb	; store AL as many times as needed to make a full pixel
-	pop	cx
-	dec	bl	; next pixel
-	jnz	@B
-
-	pop	di
-	add	di,[MemoryWidth]
-	dec	bh
-	jnz	preview_mono_lineloop
-
-	; solid brushes seem OK, so only show non-solid ones
-        cmp     [si-SIZE_PATTERN].oem_brush_style,BS_SOLID
-	je	@F
-	int	3	; show the mono brush
-@@:
-
-	; restore bank selection
-	pop	dx
-	SET_BANK
-
-endif
         ret
 
 realize_brush   endp
@@ -982,16 +897,13 @@ realize_pattern proc near
 ;
 ; COLOR ==> COLOR  (just copy pels to brush)
 ;
-	mov	cx,[oem_brush_size]
-	sub	cx,size oem_brush_com
-	shr	cx,3			; divide by SIZE_PATTERN==8
+	mov	cx,[pxbytes]
 	dec	cx			; counteract the "dec dx" above
 	sub	dx,cx
 	mov	ah,SIZE_PATTERN 	; no of scans to move
 	push	di
 
 pattern_copy_colour_loop:
-        ;mov     cx,SIZE_PATTERN         ; Set # bytes to move
 	db	0B9h			; == mov cx,
 pattern_copy_numwords	dw SIZE_PATTERN SHL 1	; 16 words = 8*32 bits
         rep     movsw                   ; Move word by word

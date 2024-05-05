@@ -34,6 +34,7 @@ assumes ss,Nothing
 
 extrn	roptable:byte
 extrn	oem_brush_size:word	; in ROBJECT.ASM
+extrn	pxbytes:word		; in SWCURS.ASM
 
 ;
 ;	compile_mono_pattern_fetch
@@ -90,20 +91,38 @@ compile_mono_pattern_fetch   ENDP
 ;		0 modulo 64 in the case of a color pattern
 ;
 
+; commented-out version only works if pxbytes is a power of two
+; TODO: Make this a modal function?
+;color_pattern_fetch_template:
+;	and	bp,01234H             ;1234 becomes negative pattern row size
+;cpfta:	or	bp,ss:[01234H]	      ;1234 becomes pattern column counter addr
+;cpft:	mov	dh,[bp + 01234H]      ;01234H will become address of pattern
+;cpft0:	inc	word ptr ss:[01234H]  ;1234 becomes pattern column counter addr
+;cpft1:	and	word ptr ss:[01234H],5678H ;1234 becomes pat col counter addr
+;cpft2:				      ; and 5678 will become pattern row size -1
 color_pattern_fetch_template:
-	and	bp,01234H             ;1234 becomes negative pattern row size
-cpfta:	or	bp,ss:[01234H]	      ;1234 becomes pattern column counter addr
+	push	bp
+	add	bp,ss:[01234H]	      ;1234 becomes pattern column counter addr
 cpft:	mov	dh,[bp + 01234H]      ;01234H will become address of pattern
 cpft0:	inc	word ptr ss:[01234H]  ;1234 becomes pattern column counter addr
-cpft1:	and	word ptr ss:[01234H],5678H ;1234 becomes pat col counter addr
+cpft1:	jns	cpft2
+	mov	word ptr ss:[01234H],5678H ;1234 becomes pat col counter addr
 cpft2:				      ; and 5678 will become pattern row size -1
+	cmp	word ptr ss:[01234H],5678H ;1234 becomes pat col counter addr
+cpft3:				      ; and 5678 will become pattern row size -1
+	jbe	cpft4
+	mov	word ptr ss:[01234H],5678H ;1234 becomes pat col counter addr
+cpft4:				      ; and 5678 will become zero
+	pop	bp
 
 CPFT_SIZE = $ - color_pattern_fetch_template
-CPFTA_OFFSET = $ - cpfta
+;CPFTA_OFFSET  = $ - cpfta
 CPFT_OFFSET  = $ - cpft
 CPFT0_OFFSET = $ - cpft0
 CPFT1_OFFSET = $ - cpft1
 CPFT2_OFFSET = $ - cpft2
+CPFT3_OFFSET = $ - cpft3
+CPFT4_OFFSET = $ - cpft4
 
 PUBLIC	compile_color_pattern_fetch
 compile_color_pattern_fetch	PROC	NEAR
@@ -121,16 +140,18 @@ compile_color_pattern_fetch	PROC	NEAR
 	mov	es:[di - CPFT_OFFSET - 2],bx
 	mov	es:[di - CPFT1_OFFSET - 2],bx
 	mov	es:[di - CPFT2_OFFSET - 4],bx
+	mov	es:[di - CPFT3_OFFSET - 4],bx
+	mov	es:[di - CPFT4_OFFSET - 4],bx
 
 	; fixup the pattern size
-	mov	dx,[oem_brush_size]
-	sub	dx,size oem_brush_com		;just the colour pattern size
+	mov	dx,[pxbytes]
 	errnz	SIZE_PATTERN-8
-	shr	dx,3				;divide by eight to get one row
+	shl	dx,3				;multiply by eight to get a row
 	dec	dx				;column counter mask
 	mov	es:[di - CPFT2_OFFSET - 2],dx
-	not	dx				;row counter mask
-	mov	es:[di - CPFTA_OFFSET - 2],dx
+	mov	es:[di - CPFT3_OFFSET - 2],dx
+	xor	dx,dx
+	mov	es:[di - CPFT4_OFFSET - 2],dx
 	ret
 
 compile_color_pattern_fetch	ENDP
@@ -153,10 +174,31 @@ compile_color_pattern_fetch	ENDP
 ;		0 modulo 64 in the case of a color pattern
 ;
 
+; commented-out version only works if pxbytes is a power of two
+; TODO: Make this a modal function?
+;pattern_yupdate_template:
+;	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
+;pyud0:	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
+;pyud1:	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
+;					     ; for start of next line. 5678H
+;					     ; becomes a 0000H. I want to force
+;					     ; use of the long form of the
+;					     ; instruction so that the code is
+;					     ; not assembler dependent.
+;
+;PYUD_SIZE = $ - pattern_yupdate_template
+;PYUD_OFFSET = $ - pattern_yupdate_template
+;PYUD_PATSIZE_OFFSET = $ - pyud0 + 2
+;PYUD_PATMASK_OFFSET = $ - pyud1 + 2
+;I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
 pattern_yupdate_template:
 	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
-pyud0:	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
-pyud1:	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
+pyud0:	jnc	pyud1
+	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
+pyud1:	cmp	bp,5678H	; 5678h becomes row counter mask (row size * 7)
+pyud2:	jbe	@F
+	xor	bp,bp
+@@:	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
 					     ; for start of next line. 5678H
 					     ; becomes a 0000H. I want to force
 					     ; use of the long form of the
@@ -167,6 +209,7 @@ PYUD_SIZE = $ - pattern_yupdate_template
 PYUD_OFFSET = $ - pattern_yupdate_template
 PYUD_PATSIZE_OFFSET = $ - pyud0 + 2
 PYUD_PATMASK_OFFSET = $ - pyud1 + 2
+PYUD_PATMASK_OFFSET2 = $ - pyud2 + 2
 I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
 
 PUBLIC	compile_pattern_yupdate
@@ -188,7 +231,7 @@ compile_pattern_yupdate PROC	NEAR
 	mov	es:[di - PYUD_PATSIZE_OFFSET],dx
 	sub	ax,dx				;full size of pattern minus size
 	mov	es:[di - PYUD_PATMASK_OFFSET],ax; of one row = correct mask so
-						; that the row counter wraps
+	mov	es:[di - PYUD_PATMASK_OFFSET2],ax; that the row counter wraps
 	or	word ptr dst_swing_bytes,0	;if the y direction is y-
 	jns	@F				; then change inc bp to dec bp
 	mov	word ptr es:[di - PYUD_OFFSET],I_SUB_BP_I

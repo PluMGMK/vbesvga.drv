@@ -27,6 +27,7 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
+externW	pxbytes			; in SWCURS.ASM
 externW	oem_brush_size		; in ROBJECT.ASM
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 
@@ -474,10 +475,7 @@ pattern_rotate  PROC    NEAR
         mov     bx,(SIZE_PATTERN SHL 8) OR SIZE_PATTERN
 	je	pattern_rotate_mono
 
-	mov	bx,[oem_brush_size]
-	sub	bx,size oem_brush_com
-	shr	bx,6			;divide by 64==SIZE_PATTERN**2
-	errnz	SIZE_PATTERN-8
+	mov	bx,[pxbytes]
 	mul	bx			;multiply both AH and AL by bpp number
 	mov	cl,al
 	shl	bx,3			;get back to full row size
