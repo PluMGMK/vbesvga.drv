@@ -41,6 +41,9 @@ GEN_COLOR	equ	1		;Generate code for a color driver
 ;	colors in memory.  The color consists of four bytes (dword),
 ;	one byte for the color and one byte for some flag bits which
 ;	can be used to accelerate various graphics operations.
+;
+;	This is the case when we use a palette. Otherwise we simply have
+;	up to four bytes of colour data, padded with zeros :)
 
 phys_color	struc
 pcol_Clr	db	?		;8 bit color
@@ -51,7 +54,7 @@ phys_color	ends
 
 
 ;	Definitions for the pcol_fb byte of the physical color
-;	(only valid when pcol_idc:COL_IS_INDEX == 1 - see below)
+;	(only valid when pcol_idc == FFh)
 ;
 ;	Some of these definitions have limitations as to when they
 ;	are valid.  They are as follows:
@@ -72,24 +75,6 @@ GREY_SCALE	equ	00000100b	;  Indicates a real grey scale brush
 SOLID_BRUSH	equ	00001000b	;  Indicates a solid color brush
 ;WORD_BRUSH	equ	00010000b	;  Indicates a WORD repeating brush
 
-
-;	Definitions for the pcol_idc byte of the physical colour
-;
-;	Note that if the colour is an eight-bit palette index, then pcol_idc is
-;	always 0FFh; in this case, only COL_IS_PHYS and COL_IS_INDEX are valid,
-;	and the other bits should be ignored.
-;
-;	On the other hand, if COL_IS_INDEX is 1 but COL_ROT_MASK bits are all
-;	zero, that means the colour is not a palette index, but must be rotated
-;	exactly one byte to the left before writing to memory
-
-
-COL_IS_PHYS	equ	10000000b	;  Set the MSB to indicate physical
-COL_IS_INDEX	equ	01000000b	;  If NOT set, then not using a palette
-COL_ROT_MASK	equ	00111000b	;  How many bits to rotate left (< 8)
-COL_ROT_SHIFT	equ	3		;  LSB index of COL_ROT_MASK
-; MONO_BIT, ONES_OR_ZEROS and GREY_SCALE as above (TODO: rearrange?)
-COL_ACCEL_MASK	equ	MONO_BIT OR ONES_OR_ZEROS OR GREY_SCALE
 
 	errnz	<(size phys_color) - 4> ;Must be a double word
 

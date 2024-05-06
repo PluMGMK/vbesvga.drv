@@ -245,7 +245,7 @@ ifdef PALETTES
 endif
 
         externFP LineSeg_check_stack
-        externFP unpack_physclr_far
+        externFP ipc_to_rgb_far
 
 ifdef PALETTES
         externFP TranslateBrush         ;'on-the-fly' translation of brush
@@ -746,10 +746,10 @@ load_bg_color:
         mov     BackMode,dl                 ; save it
 	mov	ax,byte ptr es:[di].bkColor.lo
 	mov	dx,word ptr es:[di].bkColor.hi
-	call	unpack_physclr_far	    ; TODO: possible w/o far call?
 	test	DeviceFlags,TYPE_IS_BYTEMAP
 	jnz	short ld_bg_color2
-	shr	bh,1			    ; expand 1 to 32 bits
+	call	ipc_to_rgb_far		    ; get accelerators in DH
+	shr	dh,1			    ; expand 1 to 32 bits
 	errnz	MONO_BIT-00000001B
 	sbb	ax,ax
 	cwd

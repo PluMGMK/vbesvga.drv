@@ -211,6 +211,7 @@ sBegin Code
 ;
 	extrn	_cstods:word		; our data segment
         externB ??BigFontFlags
+	externW	pxbytes
 ;
 ; At this point,
 ;    AL contains the RED intensity that we're going to use.
@@ -312,6 +313,7 @@ EndItNow:
 	mov	si, DataOFFSET PhysicalIndexTable
 	or	ax, [bx+si]		    ; preserve exact match flag!!
 	mov	dx, 0ff00h
+	mov	ch, ah			    ; preserve accels to return ZF/CF
 	jmp	RGB2IPC_Done
 
 NoPalette:
@@ -319,9 +321,9 @@ NoPalette:
 	; Store the out colour in SI:DI
 	xor	si,si
 	mov	di,si
-	; And keep the accelerator bits in CH: start by marking as physical,
-	; and also assume all ones or zeros, until we find out otherwise!
-	mov	ch,COL_IS_PHYS OR ONES_OR_ZEROS
+	; And keep the accelerator bits in CH:
+	; initially assume all ones or zeros, until we find out otherwise!
+	mov	ch,ONES_OR_ZEROS
 
 	; do red:
 	mov	al,bl
@@ -375,28 +377,14 @@ NoPalette:
 	mov	dx,si
 	mov	ax,di
 
-	; What if the device's bitmasks give us colour data in DH?
-	xor	cl,cl
-@@:
-	test	dh,dh
-	jz	@F
-	; note that this isn't exactly a rotation: zero always gets "rotated"
-	; into the MSB of DX (since we're shifting) and then we always discard
-	; what gets "rotated" out of the LSB of AX. There is no other way to
-	; handle this, as we cannot store more than 24 bits of RGB colour data!
-	shr	dx,1
-	rcr	ax,1
-	inc	cl
-	jmp	@B	; go back and check if we've cleared DH yet
-
-@@:
-	; set the rotation requirement
-	shl	cl,COL_ROT_SHIFT
-	or	ch,cl
-	; finally stick the accelerator flags in DH where they belong!
-	mov	dh,ch
-
 RGB2IPC_Done:
+	; use flags to return the accelerators
+	xor	ch,ONES_OR_ZEROS
+	test	ch,ONES_OR_ZEROS	; ZF:=ONES_OR_ZEROS
+	rcr	ch,1			; CF:=MONO_BIT
+	; now to get the accelerators back, the caller can do:
+	; setz	<reg>
+	; rcl	<reg>,1
 cEnd
 
 ; Take a colour component (R/G/B) in AL, and OR it into SI:DI shifted left by CL
@@ -464,29 +452,34 @@ colour_contribution	endp
 ;    DL contains the BLUE intensity.
 ;    DH contains the accelerator flags.
 ;
+public	ipc_to_rgb_far
+ipc_to_rgb_far	proc far
+	call ipc_to_rgb
+	retf
+ipc_to_rgb_far	endp
+;
 cProc	ipc_to_rgb, <NEAR, PUBLIC>, <ds, si, di, cx, bx>
 ;
 cBegin
 	assumes	ds,nothing
 	WriteAux <'ipc-to_rgb'>
 
-	call	unpack_physclr
-	jc	@F		; can't do the next check if it's an index...
-
-	test	bh,ONES_OR_ZEROS
-	jnz	@@ret_accel	; DL:AH:AL are already set, just set DH = accel
-
-@@:
 	mov	ds,cs:_cstods
 	assumes	ds,Data
 
 	; check again for system palette colour
-	jnc	@F		; NC --> not a palette index
+	; usually, DH==FFh indicates palette index, but if we have four bytes
+	; per pixel, it instead encodes actual colour data.
+	cmp	[pxbytes],4
+	je	@F
+	cmp	dh,0FFh
+	jne	@F
 
 ; the color value we want to return is in Palette (the VGA simulated
 ; colors).  so convert the index to the 20 entry table of TRIPLES and
 ; get the color.
 
+	mov	bh,ah			; save the accel flags
 	xor	ah,ah
 	mov	si,ax
 	cmp	si,10
@@ -503,7 +496,10 @@ lower_end:
 	jmp	short @@ret_accel
 
 non_sys_colour:
-	; return the physical colour unaltered (match old ColorInfo behaviour)
+	; Return the index unaltered (match old ColorInfo behaviour).
+	; The purpose appears to be to allow GDI clients to setup custom colours
+	; in the VGA palette and make brushes / pens with them, without GDI
+	; needing to know their true values. Strange, but OK...
 	mov	ah,bh			; get the accelerators back into AH
 	xor	dx,dx
 	mov	bh,-1			; set up FFh "index" sig to put in DH
@@ -514,6 +510,11 @@ non_sys_colour:
 	mov	si,dx
 	mov	di,ax
 
+	; firstly, is it all zero?
+	mov	bh,ONES_OR_ZEROS	; MONO_BIT set to zero
+	or	ax,dx
+	jz	@@ret_accel
+
 	; extract blue:
 	mov	cl,blue_shl
 	call	ext_colour_contribution
@@ -522,6 +523,7 @@ non_sys_colour:
 	jz	@F
 	call	rest_colour_8bit
 @@:	mov	dl,al
+	mov	bh,al	; track whether or not it's all ones
 
 	; extract green:
 	mov	cl,green_shl
@@ -531,6 +533,7 @@ non_sys_colour:
 	jz	@F
 	call	rest_colour_8bit
 @@:	mov	bl,al	; can't use AH since it gets destroyed below
+	and	bh,al	; track whether or not it's all ones
 
 	; extract red:
 	mov	cl,red_shl
@@ -541,87 +544,31 @@ non_sys_colour:
 	call	rest_colour_8bit
 @@:	; nothing, AL is already red! :)
 	mov	ah,bl	; but we have to restore green from BL!
+	and	bh,al	; track whether or not it's all ones
+
+	inc	bh	; if it's all ones, this sets ZF
+	mov	bh,ONES_OR_ZEROS OR MONO_BIT
+	jz	@@ret_accel
+
+	; no shortcuts, need to determine MONO_BIT here
+	; do a straight sum on the colours to determine the mono bit
+	mov	bl,al
+	xor	bh,bh
+	add	bl,ah
+	adc	bh,0
+	add	bl,dl
+	adc	bh,0
+	cmp	bx,BW_THRESHOLD
+
+	mov	bh,0
+	jb	@@ret_accel
+	; OK, it's white!
+	or	bh,MONO_BIT
 
 @@ret_accel:
 	mov	dh,bh
 	assumes	ds,nothing
 cEnd
-
-; Take a physical colour in DX:AX (including both data and accelerators) and
-; return the *actual actual* physical representation in DX:AX, and accelerators
-; in BH;	CF is set on failure, i.e. if it's a real palette index
-public	unpack_physclr
-unpack_physclr	proc near
-	; if it's an index, we don't touch it.
-	test	dh,COL_IS_INDEX
-	jz	@F
-	; make sure it really is an index, not one we need to rotate one byte!
-	test	dh,COL_ROT_MASK
-	jz	@F
-	; in this case, accelerators are in AH, not DH
-	mov	bh,ah
-	stc
-	ret
-
-@@:
-	; get the accelerators
-	mov	bh,dh
-	and	bh,COL_ACCEL_MASK
-
-	; all ones/zeros?
-	test	bh,ONES_OR_ZEROS
-	jz	@F
-	shr	dh,1		; get MONO_BIT into carry
-	sbb	ax,ax		; AX = -1 if CF, 0 otherwise
-	cwd			; DX = -1 if AX negative, 0 otherwise
-	clc
-	ret
-
-@@:
-	; check if rotation is needed
-	test	dh,COL_IS_INDEX	; rotate exactly one byte?
-	jnz	unpack_rotbyte
-	test	dh,COL_ROT_MASK	; rotate by x number of bits?
-	jnz	unpack_rotbits
-
-	; no rotation needed! :)
-	xor	dh,dh
-	clc
-	ret
-
-unpack_rotbyte:
-	; just shuffle the bytes in the registers
-	mov	dh,dl
-	mov	dl,ah
-	mov	ah,al
-	xor	al,al
-	clc
-	ret
-
-unpack_rotbits:
-	push	cx
-	; get number of bits to rotate
-	xor	cx,cx
-	xchg	cl,dh
-	and	cl,COL_ROT_MASK
-	shr	cl,COL_ROT_SHIFT
-
-@@:	; perform the rotation
-	shl	ax,1
-	rcl	dx,1
-	loop	@B
-
-	pop	cx
-	clc
-	ret
-unpack_physclr	endp
-
-; TODO: Is there a less-call-intensive way of making this code available?
-public	unpack_physclr_far
-unpack_physclr_far	proc far
-	call	unpack_physclr
-	ret
-unpack_physclr_far	endp
 
 ; Inverse operation of colour_contribution above: extract a colour component
 ; from bits CL-(CL+7) of SI:DI and put it in AL (clearing AH).
@@ -677,14 +624,18 @@ ext_colour_contribution	proc near
 ext_colour_contribution	endp
 
 ; Restore a colour component in AL to its full eight bits, by left-shifting CL
-; bits; assumes accelerator bits (particularly MONO_BIT) are in BH.
+; bits; rounds up if result >= 80h
 rest_colour_8bit	proc near
-	; need to shift left; use MONO_BIT to decide value of LSBs
-	mov	dh,bh
-	and	dh,MONO_BIT
-	add	al,dh	;round up if necessary
+	; need to shift left; use resulting sign bit to decide value of LSBs
+	inc	cl	;shift one too far to get the sign bit into CF
 	shl	al,cl
-	sub	al,dh	;bring it back down to fill the LSBs with ones or zeros
+	jnc	@F
+	shr	al,cl	;go back
+	inc	al	;add one to round up
+	shl	al,cl	;shift again
+	dec	al	;fill all the LSBs with ones
+@@:	ror	al,1	;if we jumped to here, MSB will get zero by default
+	dec	cl
 	ret
 rest_colour_8bit	endp
 

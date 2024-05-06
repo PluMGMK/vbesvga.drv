@@ -225,7 +225,7 @@ assumes cs,Code
 					; TRUE	= 386 protected mode
 	externW	ColourFormat_CS
 	externW	MemoryWidth
-	externNP unpack_physclr	; in RGB2IPC.ASM
+	externNP ipc_to_rgb	; in RGB2IPC.ASM
 
 ;--------------------------Exported-Routine-----------------------------;
 ; Strblt
@@ -694,13 +694,13 @@ get_mode proc	near
 	; Get text color info
 	mov	ax,[si].TextColor.lo
 	mov	dx,[si].TextColor.hi
-	call	unpack_physclr
 	cmp	cl,1			   ; is this a mono case?
 	jnz	@F			   ; no, use the color
 	; For the mono case, just set/clear the LSB...
-	and	bh,1
+	call	ipc_to_rgb		   ; get accelerators in DH
+	and	dh,1
 	errnz	MONO_BIT-00000001B
-	mov	al,bh
+	mov	al,dh
 	cbw
 	cwd
 @@:
@@ -710,13 +710,13 @@ get_mode proc	near
 	; Get background color info
 	mov	ax,[si].bkColor.lo
 	mov	dx,[si].bkColor.hi
-	call	unpack_physclr
 	cmp	cl,1			   ; is this a mono case?
 	jnz	@F			   ; no, use the color
 	; For the mono case, just set/clear the LSB...
-	and	bh,1
+	call	ipc_to_rgb		   ; get accelerators in DH
+	and	dh,1
 	errnz	MONO_BIT-00000001B
-	mov	al,bh
+	mov	al,dh
 	cbw
 	cwd
 @@:

@@ -62,7 +62,7 @@ externW _cstods
 externW	pattern_copy_numwords		; in ROBJECT.ASM
 externW	oem_brush_size			; in ROBJECT.ASM
 externW	compile_colour_stos_table	; in COMPBLT.ASM
-externNP unpack_physclr			; in RGB2IPC.ASM
+externNP ipc_to_rgb			; in RGB2IPC.ASM
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
@@ -207,16 +207,25 @@ bitblt_prep_rop_etal	PROC	NEAR
 	les	di,lpDrawMode			;these may not be needed but
 	mov	ax,es:[di].bkColor.lo		; putting them on the stack
 	mov	dx,es:[di].bkColor.hi		; now can save a lot of hassle
-	call	unpack_physclr			; and segment reloads later
-	mov	bl,bh				; if they are needed
-	mov	[bgcolour.lo],ax
-	mov	[bgcolour.hi],dx
+	mov	[bgcolour.lo],ax		; and segment reloads later
+	mov	[bgcolour.hi],dx		; if they are needed
+	call	ipc_to_rgb			;get accels in DH
+	mov	bl,dh
+	cmp	bl,0FFh				;just an index?
+	jne	@F
+	mov	bl,ah				;then accels are in AH
+@@:
 	mov	ax,es:[di].TextColor.lo
 	mov	dx,es:[di].TextColor.hi
-	call	unpack_physclr
-	mov	[mono_bits],bx
 	mov	[fgcolour.lo],ax
 	mov	[fgcolour.hi],dx
+	call	ipc_to_rgb			;get accels in DH
+	mov	bh,dh
+	cmp	bh,0FFh				;just an index?
+	jne	@F
+	mov	bh,ah				;then accels are in AH
+@@:
+	mov	[mono_bits],bx
 	mov	word ptr background_mode,OPAQUE
 	mov	ax,es:[di].bkMode
 	cmp	ax,3

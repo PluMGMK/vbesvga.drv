@@ -53,6 +53,7 @@ MONO_BIT		equ	00000001b
 	.xlist
 	include	cmacros.inc
 	include	gdidefs.inc
+	include display.inc
 	include	lines.inc
 	include	macros.mac
 	.list
@@ -60,7 +61,6 @@ MONO_BIT		equ	00000001b
 	externA		__NEXTSEG	; offset to next segment
 
 	externFP	sum_RGB_alt_far		; in ROBJECT.ASM
-	externFP	unpack_physclr_far	; in RGB2IPC.ASM
 
 
 sBegin Data
@@ -907,9 +907,12 @@ create_color_table proc	near
 	mov	dx,ax			; DH:=green, DL:=blue
 	lodsw				; AH:=alpha, AL:=red
 	xchg	dh,ah			; AH:=green - now we're ready to call:
+	xor	bh,bh
 	call	sum_RGB_alt_far
-	call	unpack_physclr_far
-	test	bl,bl			; colour or mono?
+	rcl	bh,1			; get accels in BH
+	jnz	nooz			; (as documented in rgb_to_ipc comments)
+	or	bh,ONES_OR_ZEROS
+nooz:	test	bl,bl			; colour or mono?
 	jz	cct_mono
 
 	; store the four-byte physical representation

@@ -73,7 +73,6 @@ assumes cs,Code
         externNP dither                 ;Brush dithering code
 	externNP ColorDither
         externNP rgb_to_ipc             ;Logical to physical color conv
-        externNP unpack_physclr         ;physical color conv, step two
         externA  BW_THRESHOLD           ;Where black becomes white
 	externW _cstods
 	externW	ColourFormat_CS		;in VESAFNS.ASM
@@ -304,10 +303,12 @@ realize_pen     proc near
 realize_pen_10:
         xchg    ax,cx                   ; Set pen type into CX
         lea     si,[si].lopnColor       ; --> RGB color
+	xor	ch,ch
         call    sum_RGB_colors          ; Sum up the color
-	call	unpack_physclr		; Extract the accelerators
         errnz   oem_pen_accel-oem_pen_style-1
-	mov	ch,bh			; Store accels with the style
+	rcl	ch,1			; Store accels with the style
+	jnz	realize_pen_20		; (rcl/jnz as per rgb_to_ipc comments)
+	or	ch,ONES_OR_ZEROS
 ;
 realize_pen_20:
         errnz   oem_pen_pcol            ; Must be first field
@@ -529,8 +530,8 @@ sum_RGB_colors  proc    near
 
 sum_RGB_colors_alt proc near
 
-        test    dh,dh                   ;is it already physical???
-	jnz	sum_RGB_colors_exit
+        cmp     dh,0ffh                 ;is it already an index???
+	je	sum_RGB_colors_exit
 
 	cCall	rgb_to_ipc		;otherwise convert it to an index
 ;
@@ -611,6 +612,7 @@ realize_solid   proc    near
 ;
 @@:
 	xor	dh,dh			 ; flush for 2nd 'jmp @f'
+	xor	ch,ch			 ; flush for accelerators from sum_RGB
 ;
 ; quick check for a black brush
 ;
@@ -633,20 +635,15 @@ realize_solid   proc    near
 ; the sum is (R+B)/4 + G/2						     ;
 ;----------------------------------------------------------------------------;
 
-	push	ax
-	push	dx			;save blue
 	mov	bl	,al
 	sub	bh	,bh
-	sub	dh	,dh
-	add	bx	,dx		;R+B
+	add	bl	,dl		;R+B
+	adc	bh	,0
 	shr	bx	,1		;(R+B)/2
-	mov	al	,ah
-	sub	ah	,ah
-	add	bx	,ax
+	add	bl	,ah
+	adc	bh	,0
 	shr	bx	,1		; G/2 + (R + B) / 4
 	mov	bw_sum	,bx		;save it
-	pop	dx			;restore back the blue
-	pop	ax
 
 ;----------------------------------------------------------------------------;
 ; now call the color matcher routine to get the nearest color index and the  ;
@@ -661,19 +658,24 @@ realize_solid   proc    near
 	; - AH = accelerator flags
 	; - DH = FFh
 	; *IF WE DON'T HAVE A PALETTE*
-	; - DL:AH:AL = physical colour
-	; - DH = accelerator and other flags != FFh
-	push	bx
-	call	unpack_physclr
-	mov	brush_accel,bh
-	pop	bx
-	jc	RSUsePalette
+	; - DH:DL:AH:AL = physical colour
+	; - ZF = ONES_OR_ZEROS
+	; - CF = MONO_BIT
+	rcl	ch,1
+	jnz	@F
+	or	ch,ONES_OR_ZEROS
+@@:	; usually, DH==FFh indicates palette index, but if we have four bytes
+	; per pixel, it instead encodes actual colour data.
+	cmp	[pxbytes],4
+	je	@F
+	cmp	dh,0FFh
+	je	RSUsePalette
 
-	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
+@@:	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
 FillSolidPlane:
 	; if "somehow" we have 1-byte colours without a
 	; palette, the same code path will work for them too:
-	cmp	[oem_brush_size],SIZE oem_brush_def
+	cmp	[pxbytes],1
 	je	RSSetPlanesLoop_8bit
 
 	; Now we have the *actual* physical colour representation in DX:AX
@@ -750,7 +752,6 @@ do_mono_brush:
 ;
 	xor	si,si			;clear GREY indicators
 	mov	dx,bw_sum		;get color value for mono plane
-	; FIXME: Need to update dither to work with multi-byte colours!
 	call	dither			;do the pattern
 	or	si,si			;test for solid or bad dithers
 	jz	set_up_return		;neither solid nor bad dither
@@ -1044,14 +1045,12 @@ realize_hatch_actual:
 
 	lea	si,[si].lbBkColor	; Compute background color
         call    sum_RGB_colors
-	call	unpack_physclr
 	; spill_colour_1 := ACTUAL physical representation of BG colour
 	mov	[spill_colour_1.lo],ax
 	mov	[spill_colour_1.hi],dx
 
         sub     si,lbBkColor-lbColor    ; Compute foreground color
         call    sum_RGB_colors
-	call	unpack_physclr
 	xor	ax,[spill_colour_1.lo]
 	xor	dx,[spill_colour_1.hi]
 

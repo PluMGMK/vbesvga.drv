@@ -45,12 +45,9 @@
 sBegin	Code
 assumes cs,Code
 
-REFACTORED_IPC2RGB	equ 1
-if	REFACTORED_IPC2RGB
-	; FIXME: asymmetry; why don't we just include rgb_to_ipc and ipc_to_rgb?
+	externW	pxbytes
 	externNP ipc_to_rgb
-endif
-	externNP sum_RGB_colors_alt
+	externNP rgb_to_ipc
 
 page
 
@@ -79,7 +76,8 @@ page
 ; Registers Destroyed:
 ;	AX,BX,CX,DX,FLAGS
 ; Calls:
-;	sum_RGB_colors_alt
+;	rgb_to_ipc
+;	ipc_to_rgb
 ; History:
 ;	Mon 16-Feb-1987 18:09:09 -by-  Walt Moore [waltm]
 ;	Created.
@@ -113,46 +111,65 @@ WriteAux <'ClrInf'>
 	; and RGB of closest matching index in DX:AX
 
 CIReturnPhysicalColour:
-	; int	3
 	les	di,lpPColour		;now ES:DI points to PCOLOR data Struc
 	mov	ax,off_ColorIn		; Get passed RGB into DX:AX
 
-	or	dh,dh			;is this already a physical color?
-        errnz   COL_IS_PHYS-10000000b	;ensure COL_IS_PHYS is actually sign bit
-	js	CIWritePhysicalColorIndex
+	; usually, DH==FFh indicates palette index, but if we have four bytes
+	; per pixel, it instead encodes actual colour data.
+	cmp	[pxbytes],4
+	je	@F
+
+	cmp	dh,0FFh			;is this already a palette index?
+	je	CIWritePhysicalColorIndex
 
 %out GDI bug.;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
         cmp     dh,01h
         je      CIWritePhysicalColorIndex
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-	;Convert RGB to nearest matching index
-	call	sum_RGB_colors_alt
+@@:	;Convert RGB to nearest matching index
+	call	rgb_to_ipc
 
 ;-------------------------------------------------------------------
-;dx:ax contains our physical color as follows:
+;if using a palette, dx:ax contains our physical color as follows:
 ;  dh = ffh
 ;  dl = 00h
 ;  ah = color accelerators: ExxxxxZM where:E = Exact Match Bit (1=exact)
 ;					   Z = All Ones or Zeros bit (1=yes)
 ;                                          M = Mono bit (1=white)
-;  al = physical index (4 lsb's)
+;  al = physical index
 ;
 ;See rgb2ipc.asm for details about physical color.
 ;-------------------------------------------------------------------
+	rcl	ch,1			;save mono flag
 	mov	bx,ds			;save ds.
 	lds	si,lpDevice			
 	cmp	byte ptr [si].bmBitsPixel,1     ;Is DC monochrome?
 	mov	ds,bx			;restore ds.
 	jne	short CIWritePhysicalColorIndex ;No.
-	; TODO: Change this to DH? Maybe choose reg based on palette use?
-	shr	ah,1			;Put mono bit into carry.
-	sbb	al,al			;al=0 if mono=0, al=255 if mono=1  
+
+	shr	ch,1			;Put mono bit into carry.
+	sbb	al,al			;al=0 if mono=0, al=255 if mono=1
+	cmp	[pxbytes],4
+	je	CIMono32
+
+	cmp	dh,0FFh			;palette index?
+	jne	CIMono32
+
 	shl	ah,2			;Put Exact bit into carry.
 	mov	ah,al			;ZM = 11 (white) or 00 (black)
 	rcr	ah,1			;create E bit from carry.
 	and	ah,10000001b		;create the M bit. clear extraneous bits.
 	or	ah,2			;set Z bit. ZM = 11 (white) or 10 (black)
+	jmp	CIWritePhysicalColorIndex
+CIMono32:
+	cbw
+	cwd
+	;if we got here because pxbytes==4, ZF will still be set
+	;otherwise, make sure DH==0, to avoid confusing any other code that
+	; might think this is an index if it's white...
+	je	CIWritePhysicalColorIndex
+	xor	dh,dh
 
 CIWritePhysicalColorIndex:
 	stosw				; save data in Pcolor
@@ -160,7 +177,6 @@ CIWritePhysicalColorIndex:
         stosw
 	xchg	ax,dx
 
-if	REFACTORED_IPC2RGB
 	; now the physical colour is safely stashed in memory, convert the
 	; registers back to the logical one, to fulfil this function's contract
 CIReturnRGBColour:
@@ -170,56 +186,6 @@ CIReturnRGBColour:
 	cmp	dh,0FFh
 	je	CI_really_exit
 	; otherwise, we zero DH because we don't need the accelerators for this.
-else
-	; if it's not an index, just return
-	test	dh,COL_IS_INDEX
-	jz	CIExit
-	; If COL_IS_INDEX is 1, we also need to check COL_ROT_MASK (since it
-	; could just be indicating that the colour needs to rotate one byte...)
-	test	dh,COL_ROT_MASK
-	jz	CIExit
-
-; the color value we want to return is in Palette (the VGA simulated
-; colors).  so convert the index to the 20 entry table of TRIPLES and
-; get the color.
-
-	xor	bh,bh
-	cmp	bx,245
-	jl	lower_end
-	sub	bx,236			; shift upper-256 indices to upper-20
-
-lower_end:
-	mov	ax,bx
-	shl	bx,1
-	add	bx,ax			; index into a TRIPLEs table
-	mov	ax,word ptr Palette[bx+0]
-	mov	dx,word ptr Palette[bx+2]
-	jmp	short CIExit
-
-CIReturnRGBColour:
-	; Here DX:BX holds our physical colour with (hopefully) all accel bits
-	test	dh,COL_IS_INDEX
-	jz	CI_really_exit
-	; If COL_IS_INDEX is 1, we also need to check COL_ROT_MASK (since it
-	; could just be indicating that the colour needs to rotate one byte...)
-	test	dh,COL_ROT_MASK
-	jz	CI_really_exit
-
-	cmp	bl	,10
-	jb	CIReturnSystemClr
-	cmp	bl	,245
-	ja	CIReturnSystemClr
-
-	mov	ax	,bx
-	mov	dx	,0FF00H
-	jmp	CI_really_exit
-
-CIReturnSystemClr:
-        sub     bh      ,bh
-	shiftl	bx,2
-	mov	ax,word ptr adPalette[bx+0]
-	mov	dx,word ptr adPalette[bx+2]
-endif	; REFACTORED_IPC2RGB
 
 CIExit:
 ;   At this time:
@@ -230,7 +196,6 @@ CIExit:
 	xor dh,dh			; make sure it is an RGB flag
 
 CI_really_exit:
-	; int	3
 	cEnd
 
 
