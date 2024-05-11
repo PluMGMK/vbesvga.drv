@@ -3,7 +3,7 @@
 ;	DATE:	9/1/90
 ;	AUTHOR: Jim Keller
 ;
-;	This module contains routines that deal with mono to color blts.
+;	This module contains routines that deal with screen to screen blts.
 ;
 
 SRCFILE_BLTSTOS equ	1
@@ -156,6 +156,13 @@ stos_src2_inner_loop2:
 
 	pop	ds			;restore ds,si to point to the src
 	pop	si			; on the screen
+	dec	word ptr ss:[01234H]	;01234H will become ptr to #passes
+stos_src2_passes:
+	jne	stos_src2_dst_yupdate	;jump to the end where we loop back
+	;reset the number of passes:	01234H becomes pointer to #passes,
+	;				05678H becomes the actual number
+	mov	word ptr ss:[01234H],05678H
+stos_src2_passes_reset:
 	dec	word ptr ss:[01234H]	;01234H will become ptr to yExt
 stos_src2_yExt:
 
@@ -191,6 +198,9 @@ STOS_SRC2_DST_SEGWRAP_OFF = $ - stos_src2_dst_segwrap_off + 2
 STOS_SRC2_DST_PAGE_OFF1 = $ - stos_src2_dst_page_off1 + 2
 STOS_SRC2_DST_PAGE_OFF2 = $ - stos_src2_dst_page_off2 + 2
 STOS_SRC2_INCDEC = $ - stos_src2_dst_page_off1
+STOS_SRC2_PASSES_PTR1 = $ - stos_src2_passes + 2
+STOS_SRC2_PASSES_PTR2 = $ - stos_src2_passes_reset + 4
+STOS_SRC2_PASSES_VAL = $ - stos_src2_passes_reset + 2
 STOS_SRC2_YEXT = $ - stos_src2_yExt + 2
 STOS_SRC2_SRC_SWING_BYTES = $ - stos_src2_src_swing_bytes + 2
 STOS_SRC2_SRC_YUPDATE = $ - stos_src2_src_yupdate
@@ -209,7 +219,32 @@ bltstos 	PROC	NEAR
 	mov	cx,STOS_SRC1_SIZE		;move first template on and
 	lea	si,stos_src1_template		; do all the fixups
 	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,src_xExt_bytes
+
+	;here, SP = BitBlt - 4 (bltstos --> bitblt_dispatch --> BitBlt);
+	;in the compiled code, SP will be BitBlt - 8:
+	; compiled code (far return frame = 4 bytes) -->
+	; bitblt_execute (stored BP + near return frame) -->
+	; BitBlt
+	mov	word ptr [bltstos_passes],1
+	mov	cx,src_xExt_bytes
+	mov	bx,cx
+	test	bx,bx
+	jns	@F
+	neg	bx
+@@:	;so we need to check if the current SP, minus four, leaves enough space,
+	; including eight guard bytes either end (so 20 bytes altogether)
+	lea	ax,[bx+14h]
+	cmp	sp,ax
+	ja	@F
+
+	;halve the number of bytes per pass and double the number of passes
+	sar	cx,1
+	shr	bx,1
+	shl	word ptr [bltstos_passes],1
+	jmp	@B	;go back and check if it'll fit now
+
+@@:	
+	mov	ax,cx
 	mov	cx,8				;eight guard bytes either end
         mov     es:[di - STOS_SRC1_XEXT_2],cx
 	mov	es:[di - STOS_SRC1_XEXT_4],cx
@@ -224,11 +259,11 @@ bltstos 	PROC	NEAR
 	add	es:[di - STOS_SRC1_XEXT_4],ax
 @@:	mov	es:[di - STOS_SRC1_XEXT_1],ax
 	mov	es:[di - STOS_SRC1_XEXT_3],ax
+	add	ax,10h	;eight guard bytes either end
 
-	add	ax,10h				;eight guard bytes either end
 	lea	bx,[di - STOS_SRC1_OUTER_LOOPADDR]
-	push	bx				;save outer loop addr
 	mov	es:[bx - 2],ax
+	push	bx				;save outer loop addr
 
 	lea	bx,[di - STOS_SRC1_SRC_PAGE]
 	push	bx				;save address of src_page value
@@ -262,6 +297,12 @@ bltstos 	PROC	NEAR
 	lea	bx,[dst_seg_wrap]
 	mov	es:[di - STOS_SRC2_DST_SEGWRAP_OFF],bx
         pop     es:[di - STOS_SRC2_CLEAR_STACK] ;recover stack frame size
+
+	lea	bx,[bltstos_passes]
+	mov	es:[di - STOS_SRC2_PASSES_PTR1],bx
+	mov	es:[di - STOS_SRC2_PASSES_PTR2],bx
+	mov	ax,ss:[bx]
+	mov	es:[di - STOS_SRC2_PASSES_VAL],ax
 
 	pop	ax				;recover inner loop start addr
 	mov	dx,ax
@@ -342,300 +383,6 @@ bltstos_prep	PROC	NEAR
         ret
 
 bltstos_prep	ENDP				;
-
-;
-;	bltstos_srccopy
-;
-;	This routine handles source to dest copies where the source and
-;	destination are equal modulo 4 and the bgmode is OPAQUE.
-;
-
-PUBLIC	bltstos_srccopy
-bltstos_srccopy PROC	NEAR
-
-	call	bltstos_srccopy_prep
-
-	lds	si,dword ptr src_blt_offset
-	les	di,dword ptr dst_blt_offset
-        mov     bh,last_edge_mask
-	mov	bl,first_edge_mask
-	mov	word ptr first_edge_mask_count,0
-	or	bl,bl
-	je	source_aligned_copy_loop
-	mov	word ptr first_edge_mask_count,1
-
-source_aligned_copy_loop:
-	dec	word ptr yExt
-	js	source_aligned_copy_done
-	call	source_copy_one_scanline
-
-	mov	ax,dst_swing_bytes	;for screen aligned source copy
-	add	si,ax
-	add	di,ax
-	or	ax,ax
-	mov	ax,dst_width_bytes
-	js	sa_copy_up
-
-	cmp	si,ax			;src and dst are the same -- screen
-	jae	@F			; so OK to cmp si to dst_width_bytes
-	inc	word ptr src_bank
-	mov	dx,src_bank
-	clc
-	SET_BANK	; call	set_banko
-
-@@:	cmp	di,ax
-	jae	@F
-	inc	word ptr dst_bank
-	mov	dx,dst_bank
-	stc
-	SET_BANK	; call	set_banko
-@@:	jmp	short	source_aligned_copy_loop
-
-sa_copy_up:
-	neg	ax
-	cmp	si,ax
-	jb	@F
-	dec	word ptr src_bank
-	mov	dx,src_bank
-	clc
-	SET_BANK	; call	set_banko
-
-@@:	cmp	di,ax
-	jb	@F
-	dec	word ptr dst_bank
-	mov	dx,dst_bank
-	stc
-        SET_BANK	; call    set_banko
-@@:	jmp	short	source_aligned_copy_loop
-
-source_aligned_copy_done:
-	ret
-
-bltstos_srccopy 	ENDP			;
-
-
-
-;
-;   source_copy_one_scanline
-;
-;   This routine blits one scanline where source and destination are equal
-;   modulo 4.
-;
-;   PARMS:
-;   4 plane mode
-;   write mode 1
-;   direction flag cleared or set as appropriate
-;   BL          -       left edge mask
-;   BH		-	right edge mask
-;   CX		-	number of full nibbles
-;   DS:SI       -       ptr to src
-;   ES:DI	-	ptr to dest
-;
-
-source_copy_one_scanline     proc    near
-
-	mov	dx	,VGAREG_SQ_ADDR
-	mov	al	,VGAREG_SQ_MAP_MASK
-	out	dx	,al
-	inc	dx
-
-        mov     al      ,bl             ;set the left edge mask
-        out     dx      ,al
-	mov	cx,first_edge_mask_count	;this is either 0 or 1
-	rep	movsb			;move the left edge bytes
-
-	mov	al	,0FH		;set mask for full nibble moves
-        out     dx      ,al
-	mov	cx,	nibble_count
-	rep	movsb			;move all four byte "nibbles"
-
-	mov	al	,bh		;set the right edge mask
-	out	dx	,al
-	movsb				;move the right edge bytes
-	ret
-
-source_copy_one_scanline   ENDP 	;
-
-
-
-;
-;	bltstos_srccopy_prep
-;
-;	This computes src and dst addresses assuming planar mode!!
-
-PUBLIC	bltstos_srccopy_prep
-bltstos_srccopy_prep	PROC	NEAR
-
-        mov     ax,SrcyOrg
-        mov     bx,SrcxOrg
-	mov	dx,src_width_bytes
-	shr	dx,2			;in planar mode, all addresses are
-	mov	src_width_bytes,dx
-	mul	dx
-        shr     bx,2                    ; divided by 4
-	add	ax,bx
-        mov     src_blt_offset,ax
-	mov	src_bank,dx
-	clc
-	SET_BANK	; call	set_banko
-
-        mov     ax,DestyOrg
-        mov     bx,DestxOrg
-	mov	dx,dst_width_bytes
-	shr	dx,2			;in planar mode, all address are
-	mov	dst_width_bytes,dx
-	mul	dx
-        shr     bx,2                    ; divided by 4
-        add     ax,bx
-        mov     dst_blt_offset,ax
-	mov	dst_bank,dx
-	stc
-	SET_BANK	; call	set_banko
-
-	mov	ah,FUNC_COPY or PLANAR_MODE
-	mov	al,WRITE_MODE_1 or SET_RESET_FOREGROUND
-        call    vga_set_features
-
-	cmp	word ptr vert_dir,-1	;for aligned srccopy, I need vert_dir
-	adc	word ptr vert_dir,0	; = 1 for Y+ blts and = -1 for Y- blts
-
-	mov	ax,dst_width_bytes
-	mov	bx,nibble_count
-	cmp	byte ptr first_edge_mask,1
-	sbb	bx,-2
-
-	or	word ptr dst_swing_bytes,0  ;should I make the swing_bytes neg?
-	jns	@F			    ;nah!
-	neg	ax
-
-@@:	std
-	or	word ptr dst_xExt_bytes,0
-	js	@F
-	neg	bx
-	cld
-
-@@:	add	ax,bx
-	mov	dst_swing_bytes,ax
-	mov	src_swing_bytes,ax
-	ret
-
-bltstos_srccopy_prep	ENDP			;
-
-
-
-;
-;	bltstos_splitbank
-;
-;	This routine is a fast non-nibble aligned screen to screen srccopy.
-;	It will only work on a Video 7 board which has split-bank
-;	functionality; at the time that this routine was written, only
-;	the VRAM II could do split banking.
-;	RETURNS:
-
-
-PUBLIC	bltstos_splitbank
-bltstos_splitbank	PROC	NEAR
-
-	call	bltstos_splitbank_prep
-
-	call	compile_inner_loop_start
-	push	di				;save inner_loop_address
-	or	word ptr device_flags, DEVFLAG_MOVSB or DEVFLAG_REP
-	mov	al,I_LODSB
-	stosb
-
-	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
-	je	@F				; if a pattern is used
-	and	word ptr device_flags, NOT DEVFLAG_MOVSB  ; can't do a movsb
-	call	compile_color_pattern_fetch
-@@:	call	compile_rop
-
-	call	compile_color_stosb
-
-	pop	bx
-	call	compile_inner_loop_end
-
-	cmp	word ptr background_mode,OPAQUE
-	jne	bltstos_nomovsb
-	test	word ptr device_flags,DEVFLAG_MOVSB
-	je	bltstos_nomovsb
-	sub	di,2
-	test	word ptr device_flags,DEVFLAG_REP
-	je	@F
-
-public  bltstos_repmovsb
-bltstos_repmovsb:				  ;just for debugging
-	sub	di,2
-	mov	al,I_REP
-	stosb
-@@:	mov	al,I_MOVSB
-	stosb
-
-bltstos_nomovsb:
-
-	call	compile_outer_loop
-
-	call	compile_src_splitbank_yupdate
-	call	compile_dst_splitbank_yupdate
-
-	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
-        je      @F                              ; if a pattern is used
-	call	compile_pattern_yupdate
-
-@@:	call	compile_jmp_back_to_start
-	ret
-
-bltstos_splitbank	ENDP
-
-
-;
-;	bltstos_splitbank_prep
-;
-;
-
-PUBLIC	bltstos_splitbank_prep
-bltstos_splitbank_prep	PROC	NEAR
-
-	mov	dx,VGAREG_SQ_ADDR		;enable splitbank adressing
-        mov     al,VGAREG_SQ_SPLITBANK
-        out     dx,al
-        inc     dx
-        in      al,dx
-        or      al,80H
-        out     dx,al
-
-	mov	ax,SrcyOrg
-	mov	bx,SrcxOrg
-	mov	cx,src_width_bytes
-	shl	cx,4
-	mul	cx
-	shr	ax,4
-	add	ax,bx
-	mov	src_blt_offset,ax
-	mov	src_page,dx
-
-	mov	ax,DestyOrg
-	mov	bx,DestxOrg
-	mov	cx,dst_width_bytes
-	shl	cx,4
-	mul	cx
-	shr	ax,4
-	add	ax,bx
-	or	ax,8000H			;split bank dst flag bit
-	mov	dst_blt_offset,ax
-	mov	dst_page,dx
-
-	mov	dx,VGAREG_SQ_ADDR
-	mov	al,VGAREG_SQ_SRC_SPLITBANK
-	mov	ah,byte ptr src_page
-	out	dx,ax
-
-	mov	al,VGAREG_SQ_DST_SPLITBANK
-	mov	ah,byte ptr dst_page
-	out	dx,ax
-	ret
-
-bltstos_splitbank_prep	ENDP				;
 
 sEnd	Code
 

@@ -31,6 +31,7 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
+externW	pxbytes	; in SWCURS.ASM
 
 ;
 ;	blt18
@@ -47,11 +48,13 @@ blt18	PROC	NEAR
 	call	compile_mtoc_src1
 
 	;determine how many bytes per colour to process
-	mov	ax,[dst_xExt_bytes]
-	cwd
-	div	word ptr [inner_loop_count]
-	mov	cx,ax
-	mov	si,dx	;if we've done this right, DX (remainder) is zero!
+	; mov	ax,[dst_xExt_bytes]
+	; cwd
+	; div	word ptr [inner_loop_count]
+	; mov	cx,ax
+	; mov	si,dx	;if we've done this right, DX (remainder) is zero!
+	mov	cx,[pxbytes]
+	xor	si,si
 blt18_colour_byte_loop:
 	push	cx
 	call	compile_mtoc_src2

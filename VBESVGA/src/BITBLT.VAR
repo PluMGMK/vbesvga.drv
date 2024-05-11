@@ -61,7 +61,7 @@ compile_colour_stos 	EQU	<[bp - 298H]> ;depends on bitness of dest
 pattern_row_counter	EQU	<[bp - 29AH]>
 same_pattern_row_counter  EQU	<[bp - 29CH]>
 src_more_than_1byte	EQU	<[bp - 29EH]>
-nibble_count		EQU	<[bp - 2A0H]>
+bltstos_passes		EQU	<[bp - 2A0H]> ;#passes for screen-to-screen copy
 
 color_xlat_table	EQU	<[bp - 3A0H]>	;for speed, tbl copied to stack
 cblt_code_end           EQU     <[bp - 39EH]>   ;last byte in cblt_code

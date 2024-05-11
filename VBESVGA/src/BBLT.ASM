@@ -537,7 +537,6 @@ zero_alignment:
 	call	get_edge_masks_nibbles		; always the case (think about
 	mov	byte ptr first_edge_mask,bl	; src copy and pattern fills.)
 	mov	byte ptr last_edge_mask,bh
-	mov	nibble_count,cx
 
 bitblt_prep_dst_done:
 	ret

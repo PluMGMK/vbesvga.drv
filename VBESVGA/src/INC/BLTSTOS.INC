@@ -8,6 +8,5 @@
 
 IFNDEF	SRCFILE_BLTSTOS
 EXTRN	bltstos:NEAR
-EXTRN	bltstos_srccopy:NEAR
 ENDIF
 
