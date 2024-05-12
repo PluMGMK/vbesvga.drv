@@ -1579,18 +1579,19 @@ ce1i8p_next_pixel:
 	cmp	bl, 2h			;byte counter >= 2?
 	jnb	@F
 	stosb
-	loop	ce1i8p_next_pixel
+	jmp	short e1i8_partial_doloop
 @@:	stosw
 	ja	@F			;flags are still set by CMP above
-	loop	ce1i8p_next_pixel
+	jmp	short e1i8_partial_doloop
 @@:	mov	ax, dx			;saved by CWD above
 	and	ax, color_xlate[8].hi
 	xor	ax, color_xlate[0].hi
 	cmp	bl, 4h			;byte counter >= 4?
 	jnb	@F
 	stosb
-	loop	ce1i8p_next_pixel
+	jmp	short e1i8_partial_doloop
 @@:	stosw
+e1i8_partial_doloop:
 	loop	ce1i8p_next_pixel
 	dec	si
 	jmp	load_with_seg_check
