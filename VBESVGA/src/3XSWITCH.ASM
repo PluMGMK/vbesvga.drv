@@ -29,8 +29,11 @@
 ;-----------------------------------------------------------------------;
 ;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
 
+incDevice = 1				;Include control for gdidefs.inc
+
 	.xlist
 	include cmacros.inc
+	include gdidefs.inc
 	include macros.mac
 	include	ega.inc
 	.list
@@ -49,6 +52,7 @@ sBegin  Data
 	externB screen_busy
 	externB adPalette
 	externW is_protected
+	externB	info_table_base
 sEnd	Data
 
 createSeg _INIT,InitSeg,word,public,CODE
@@ -111,11 +115,15 @@ WriteAux    <'devtofg'>
         mov     bx,1                    ;attempt to set 8 bit dac mode
         call    far_set_dacsize
 
+	test	[info_table_base.dpRaster],RC_PALETTE
+	jz	@F
+
 	mov	cx,256			; number of entries to program
 	sub	ax,ax			; first index
 	lea	si,adPalette		; get pointer to table
 	call	setramdac		; do it!!!
 
+@@:
 	call	init_hw_regs
 	mov	[enabled_flag],0ffh	; is now enabled.
 ;	 mov	 screen_busy,1

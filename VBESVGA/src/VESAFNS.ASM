@@ -354,6 +354,9 @@ setramdac	PROC	FAR
 	push	es
 	push	di
 
+	; fixup byte order
+	call	switcheroo
+
 	; set ES:DI = DS:SI for VBE function 09
 	mov	di,ds
 	mov	es,di	
@@ -369,6 +372,8 @@ setramdac	PROC	FAR
 	CALL_PMINT
 
 setramdac_exit:
+	; restore original byte order
+	call	switcheroo
 	pop	di
 	pop	es
         ret
@@ -418,6 +423,28 @@ setramdac_exit:
 	jmp	setramdac_exit
 
 setramdac	ENDP
+
+; At least some BIOS implementations expect a big-endian list of colours, i.e.
+; where blue is the LSB, whereas Windows gives red as the LSB (which also agrees
+; with what is written in the RBIL for int 10H AH=4F09H...)
+; This function deals with that - TODO: check if always needed, and if not,
+; create a way to turn it off...
+switcheroo	proc near
+	push	ax
+	push	si
+	push	cx
+
+@@:	mov	al,[si]
+	xchg	al,[si+2]
+	mov	[si],al
+	lea	si,[si+4]
+	loop	@B
+
+	pop	cx
+	pop	si
+	pop	ax
+	ret
+switcheroo	endp
 
 sEnd	PaletteSeg
 

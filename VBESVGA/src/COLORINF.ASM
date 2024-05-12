@@ -103,8 +103,8 @@ cProc	ColorInfo,<FAR,PUBLIC,WIN,PASCAL>,<di,si,es>
 cBegin
 WriteAux <'ClrInf'>
 	cmp	seg_lpPColour,0 	;are wt to return the RGB colour for
-	mov	bx,off_ColorIn		; the indexed passed?
-	mov	dx,seg_ColorIn
+	mov	ax,off_ColorIn		; the indexed passed?
+	mov	dx,seg_ColorIn		; Get passed RGB into DX:AX
 	je	CIReturnRGBColour	;yes! return RGB DX:AX
 
 	;No, return closest matching index at lpPColour
@@ -112,7 +112,6 @@ WriteAux <'ClrInf'>
 
 CIReturnPhysicalColour:
 	les	di,lpPColour		;now ES:DI points to PCOLOR data Struc
-	mov	ax,off_ColorIn		; Get passed RGB into DX:AX
 
 	; usually, DH==FFh indicates palette index, but if we have four bytes
 	; per pixel, it instead encodes actual colour data.
@@ -156,7 +155,7 @@ CIReturnPhysicalColour:
 	cmp	dh,0FFh			;palette index?
 	jne	CIMono32
 
-	shl	ah,2			;Put Exact bit into carry.
+	shl	ah,1			;Put Exact bit into carry.
 	mov	ah,al			;ZM = 11 (white) or 00 (black)
 	rcr	ah,1			;create E bit from carry.
 	and	ah,10000001b		;create the M bit. clear extraneous bits.

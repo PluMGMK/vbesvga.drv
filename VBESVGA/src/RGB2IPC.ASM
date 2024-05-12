@@ -487,12 +487,11 @@ cBegin
 
 	mov	bh,ah			; save the accel flags
 	xor	ah,ah
-	mov	si,ax
-	cmp	si,10
+	cmp	ax,10
 	jl	lower_end
-	cmp	si,245
+	cmp	ax,245
 	jle	non_sys_colour
-	sub	si,236			; shift upper-256 indices to upper-20
+	sub	ax,236			; shift upper-256 indices to upper-20
 
 lower_end:
 	; get us access to Palette
@@ -500,6 +499,7 @@ lower_end:
 	mov	ds,cs:_cstods
 	assumes	ds,Data
 
+	mov	si,ax
 	shl	si,1
 	add	si,ax			; index into a TRIPLEs table
 	mov	ax,word ptr Palette[si+0]
