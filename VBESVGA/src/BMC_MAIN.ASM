@@ -57,12 +57,6 @@ page	,132
 
 	externA		__NEXTSEG	; offset to next segment
 
-sBegin Code
-	externB		red_shr
-	externB		green_shr
-	externB		blue_shr
-sEnd Code
-
 createSeg _DIMAPS,DIMapSeg,word,public,code
 
 sBegin	DIMapSeg
@@ -82,20 +76,6 @@ cBegin
 
 WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	cld
-
-; get the colour conversion parameters in case we need them...
-	mov	ax, seg red_shr
-	mov	ds, ax
-	assumes	ds, Code
-	mov	ax, wptr [red_shr]
-	mov	dx, wptr [green_shr]
-	mov	cx, wptr [blue_shr]
-	mov	local_red_shr,al
-	mov	local_red_shl,ah
-	mov	local_green_shr,dl
-	mov	local_green_shl,dh
-	mov	local_blue_shr,cl
-	mov	local_blue_shl,ch
 
 	lds	si, lp_dest_dev 	; DS:SI points to internal BM struc
 	assumes	ds, nothing

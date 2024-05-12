@@ -61,6 +61,7 @@ MONO_BIT		equ	00000001b
 	externA		__NEXTSEG	; offset to next segment
 
 	externFP	sum_RGB_alt_far		; in ROBJECT.ASM
+	externFP	rgb_to_ipc_seq		; in RGB2IPC.ASM
 
 
 sBegin Data
@@ -817,18 +818,6 @@ eti_24	proc	near
 	jz	eti_24_mono	; Yes
 
 eti_24_color:
-; 24-bit-per-pixel source, XX bytes per pixel (colour) destination
-
-	cmp	local_red_shr, -1	; no colour-conversion data, use palette
-	je	eti_24_palette
-
-	mov	ax, DIMapSegOFFSET copy_e24iX
-	mov	full_byte_proc, ax
-	mov	ax, DIMapSegOFFSET copy_e24iX_partial
-	mov	partial_byte_proc, ax
-	jmp	@F
-
-eti_24_palette:
 ; 24-bit-per-pixel source, one byte per pixel (color) destination
 
 	mov	ax, DIMapSegOFFSET copy_e24i8
@@ -902,35 +891,17 @@ create_color_table proc	near
 	lea	di, color_xlate
 	mov	bl, [total_depth_bytes]	; zero if converting to mono
 
-@@:	; load RGBQUAD into DX:AX
-	lodsw
-	mov	dx,ax			; DH:=green, DL:=blue
-	lodsw				; AH:=alpha, AL:=red
-	xchg	dh,ah			; AH:=green - now we're ready to call:
-	xor	bh,bh
-	call	sum_RGB_alt_far
-	rcl	bh,1			; get accels in BH
-	jnz	nooz			; (as documented in rgb_to_ipc comments)
-	or	bh,ONES_OR_ZEROS
-nooz:	test	bl,bl			; colour or mono?
-	jz	cct_mono
-
-	; store the four-byte physical representation
-	stosw
-	mov	ax,dx
-	stosw
-	loop	@B
-	jmp	cct_done
-
-cct_mono:
-	; all the "i1" code seems to assume two bytes per colour, with MONO_BIT
-	; as the LSB of each - we achieve that by storing BH (accels) twice
-	mov	al,bh
-	stosb
-	stosb
-	loop	@B
-
-cct_done:
+	; BL needs to contain the number of bits we want out, which is 32
+	; for the colour case, or 16 for the mono case, and in the latter
+	; case we set the flag (i.e. the LSB) saying we only want 0 or FFFF
+	test	bl,bl
+	mov	bl,20h	; 32 bits
+	jnz	@F
+	mov	bl,11h	; 16 bits w/ mono flag
+@@:
+	mov	bh,11b	; RGBQUAD --> 4 bytes input, need to swap red and blue
+	call	rgb_to_ipc_seq
+; 
 	pop	di
 	pop	si
         pop     ds
@@ -1831,7 +1802,18 @@ page
 
         ?_pub	copy_e24i8
 copy_e24i8	proc near
-	push	es
+	; check if we have a colour info table.
+	cmp	wptr lpColorInfo[2],0
+	jnz	@F
+
+	; if not, we just have a list of RGBTRIPLEs to deal with
+	mov	bh,10b	; swap red/blue, only three bytes (not four) per pixel
+	mov	bl,[total_depth_bytes]
+	shl	bl,3	; convert back to bits
+	call	rgb_to_ipc_seq
+	ret
+
+@@:	push	es
 
 ce24i8_next_pixel:
 ;
@@ -1917,6 +1899,9 @@ ce24i8_next_pixel_p:
 ;	mov	dl, [si]	; Byte 2 in dl
 ;	inc	si
 ;
+	push	bx
+	mov	bl,[total_depth_bytes]
+
 	call load_with_seg_check	; Byte 0 in al
 	mov	ah,al			; Byte 0 in ah
 	call load_with_seg_check	; Byte 0 in ah, byte 1 in al
@@ -1925,6 +1910,34 @@ ce24i8_next_pixel_p:
 	call load_with_seg_check	; Byte 2 in al
 	mov	dl,al			; Byte 2 in dl
 	pop	ax
+;
+; check if we have a colour info table
+;
+	cmp	wptr lpColorInfo[2],0
+	jnz	ce24i8usetable_p
+
+	; TODO: Add caching here (same as in the DeviceColorMatch case below)
+	xor	dh,dh
+	xchg	al,dl			; swap red/blue
+	call	sum_RGB_alt_far
+	test	bl,4	; storing 32 bits?
+	jz	@F
+	stosw
+	mov	ax,dx
+	jmp	short ce24i8nextword_p
+@@:
+	test	bl,2	; storing (at least) 16 bits?
+	jz	@F
+ce24i8nextword_p:
+	stosw
+	mov	al,dl
+@@:
+	test	bl,1	; storing an odd number of bytes?
+	jz	@F
+	stosb
+@@:	jmp	short ce24i8done_p
+
+ce24i8usetable_p:
 ;
 ; if already done, skip the conversion
 ;
@@ -1960,216 +1973,14 @@ ce24i8skipit_p:
 ; store the color
 ;
         stosb                           ; Save C0
-  
+
+ce24i8done_p:
 	loop	ce24i8_next_pixel_p	; complete all the target pixels
+	pop	bx
 	pop	es
         ret
 
 copy_e24i8_partial	endp
-
-page
-;--------------------------Private-Routine-----------------------------------;
-; copy_e24iX								     ;
-;									     ;
-;   copy external 24 bit RGB to	internal XX bytes per pixel                  ;
-;									     ;
-;   The	source is copied to all	four planes of the destination,	with	     ;
-;   color conversion via the actual RGB	triplet.			     ;
-;									     ;
-;   It is the caller's responsibility to handle all segment crossings.       ;
-;									     ;
-; Entry:								     ;
-;	DS:SI --> source						     ;
-;	ES:DI --> destination						     ;
-;	CX     =  number of destination	bytes to xlate			     ;
-; Returns:								     ;
-;	DS:SI --> next source byte					     ;
-;----------------------------------------------------------------------------;
-
-	assumes	ds, nothing
-	assumes	es, nothing
-
-        ?_pub	copy_e24iX
-copy_e24iX	proc near
-	push	es
-	;int	3
-
-ce24iX_next_pixel:
-;
-; take the RGB & compress it into device format
-;
-        lodsw
-	mov	dl, [si]
-	inc	si
-;
-	xor	dh,dh
-	xchg	dh,al	; put the red value in DH out of the way for now...
-;
-        push    cx
-        push    bx
-	push	si
-	push	di
-;
-	mov	si,di	; SI = beginning of current colour
-	xor	ch,ch
-	mov	cl,total_depth_bytes
-	rep	stosb	; DI = end of current colour, now set to zero
-	xchg	dh,al	; get the red value back
-	xor	bh,bh
-
-	; do red:
-	mov	bl,al		; BH already zero from above
-	mov	di,bx
-	mov	cl,local_red_shr
-	mov	bl,local_red_shl
-	shr	di,cl
-	mov	cl,bl		; BH already zero from above
-	shr	bx,3		; BX = byte offset in colour
-	and	cl,7		; CL = bit offset within SI+BX
-	shl	di,cl
-	or	es:[bx+si],di
-
-	; do green:
-	mov	bl,ah		; BH already zero from above
-	mov	di,bx
-	mov	cl,local_green_shr
-	mov	bl,local_green_shl
-	shr	di,cl
-	mov	cl,bl		; BH already zero from above
-	shr	bx,3		; BX = byte offset in colour
-	and	cl,7		; CL = bit offset within SI+BX
-	shl	di,cl
-	or	es:[bx+si],di
-
-	; do blue:
-	mov	bl,dl		; BH already zero from above
-	mov	di,bx
-	mov	cl,local_blue_shr
-	mov	bl,local_blue_shl
-	shr	di,cl
-	mov	cl,bl		; BH already zero from above
-	shr	bx,3		; BX = byte offset in colour
-	and	cl,7		; CL = bit offset within SI+BX
-	shl	di,cl
-	or	es:[bx+si],di
-;
-	pop	di
-        pop     si
-	pop	bx
-	pop	cx
-  
-	loop	ce24iX_next_pixel	; complete all the target pixels
-	pop	es
-        ret
-
-copy_e24iX	endp
-
-
-page
-;--------------------------Private-Routine-----------------------------------;
-; copy_e24iX_partial								     ;
-;									     ;
-;   copy external 24 bit RGB to	internal one byte per pixel                  ;
-;									     ;
-;   The	source is copied to all	four planes of the destination,	with	     ;
-;   color conversion via the actual RGB	triplet.			     ;
-;									     ;
-;   This code handles crossing the segment boundary.                         ;
-;									     ;
-; Entry:								     ;
-;	DS:SI --> source						     ;
-;	ES:DI --> destination						     ;
-;	CX     =  number of destination	bytes to xlate			     ;
-; Returns:								     ;
-;	DS:SI --> next source byte					     ;
-;----------------------------------------------------------------------------;
-
-	assumes	ds, nothing
-	assumes	es, nothing
-
-        ?_pub	copy_e24iX_partial
-copy_e24iX_partial	proc near
-	push	es
-	;int	3
-
-ce24iX_next_pixel_p:
-;
-; take the RGB & convert it into an index
-;
-;       lodsw			; Byte 0 in al, byte 1 in ah
-;	mov	dl, [si]	; Byte 2 in dl
-;	inc	si
-;
-	call load_with_seg_check	; Byte 0 in al
-	mov	ah,al			; Byte 0 in ah
-	call load_with_seg_check	; Byte 0 in ah, byte 1 in al
-	xchg	al,ah			; Byte 1 in ah, byte 0 in al
-	push	ax
-	call load_with_seg_check	; Byte 2 in al
-	mov	dl,al			; Byte 2 in dl
-	pop	ax
-;
-	xor	dh,dh
-	xchg	dh,al	; put the red value in DH out of the way for now...
-;
-        push    cx
-        push    bx
-	push	si
-;
-	mov	si,di	; SI = beginning of current colour
-	xor	ch,ch
-	mov	cl,total_depth_bytes
-	rep	stosb	; DI = end of current colour, now set to zero
-	xchg	dh,al	; get the red value back
-	xor	bh,bh
-
-	; do red:
-	mov	bl,al		; BH already zero from above
-	mov	di,bx
-	mov	cl,local_red_shr
-	mov	bl,local_red_shl
-	shr	di,cl
-	mov	cl,bl		; BH already zero from above
-	shr	bx,3		; BX = byte offset in colour
-	and	cl,7		; CL = bit offset within SI+BX
-	shl	di,cl
-	or	es:[bx+si],di
-
-	; do green:
-	mov	bl,ah		; BH already zero from above
-	mov	di,bx
-	mov	cl,local_green_shr
-	mov	bl,local_green_shl
-	shr	di,cl
-	mov	cl,bl		; BH already zero from above
-	shr	bx,3		; BX = byte offset in colour
-	and	cl,7		; CL = bit offset within SI+BX
-	shl	di,cl
-	or	es:[bx+si],di
-
-	; do blue:
-	mov	bl,dl		; BH already zero from above
-	mov	di,bx
-	mov	cl,local_blue_shr
-	mov	bl,local_blue_shl
-	shr	di,cl
-	mov	cl,bl		; BH already zero from above
-	shr	bx,3		; BX = byte offset in colour
-	and	cl,7		; CL = bit offset within SI+BX
-	shl	di,cl
-	or	es:[bx+si],di
-	
-;
-        pop     si
-	pop	bx
-	pop	cx
-  
-  
-	loop	ce24iX_next_pixel_p	; complete all the target pixels
-	pop	es
-        ret
-
-copy_e24iX_partial	endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;

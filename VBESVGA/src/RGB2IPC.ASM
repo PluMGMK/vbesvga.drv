@@ -653,7 +653,108 @@ rest_colour_8bit	proc near
 	ret
 rest_colour_8bit	endp
 
+; Sequence functions to help creating colour palettes and/or translating 24-bit
+; bitmaps to/from device format.
+cProc	rgb_to_ipc_seq, <FAR,PUBLIC,NODATA>
+	; local variables as a cache
+	localD	previous_rgb
+	localD	previous_ipc
+cBegin
+	; Call rgb_to_ipc_seq as follows:
+	; * DS:SI -> sequence of RGB colours
+	; * ES:DI -> output sequence of physical colours
+	; * CX = number of colours to process
+	; * BH = input flags (1 = 4 bytes per pixel, 2 = swap red/blue)
+	; * BL = output bits per pixel | flag (LSB indicates monochrome value)
+
+	; initialize "previous" values as -1, to be overwritten immediately
+	mov	ax,-1
+	mov	[previous_rgb].lo,ax
+	mov	[previous_rgb].hi,ax
+	mov	[previous_ipc].lo,ax
+	mov	[previous_ipc].hi,ax
+
+rgb_load_loop:
+	; prepare to load next colour
+	xor	ax,ax
+	cwd
+
+	lodsw
+	mov	dx,ax
+	lodsb
+	shl	ax,8	; get AL into AH, and zero out AL itself
+	test	bh,1
+	jz	@F
+	; load fourth byte into AL if needed
+	lodsb
+@@:	;Now we have:
+	; DL = red (or blue)
+	; DH = green
+	; AH = blue (or red)
+	; AL = 0
+	;We want:
+	; AL = red
+	; AH = green
+	; DL = blue
+	; DH = 0
+	xchg	al,ah	;get blue (or red) in AL
+	xchg	ah,dh	;get green in AH as needed
+	test	bh,2
+	jnz	@F
+	; if we're NOT swapping red and blue, then we DO need to swap AL/DL!
+	xchg	al,dl
+@@:	;Now we're ready to call rgb_to_ipc
+	; but first, let's check the cache...
+	cmp	ax,[previous_rgb].lo
+	jne	@F
+	cmp	dx,[previous_rgb].hi
+	jne	@F
+
+	mov	ax,[previous_ipc].lo
+	mov	dx,[previous_ipc].hi
+	jmp	short store_ipc
+
+@@:
+	;OK, we didn't use the cache, but set it for the next round:
+	mov	[previous_rgb].lo,ax
+	mov	[previous_rgb].hi,dx
+
+	;Convert the colour!
+	call	rgb_to_ipc
+	;Save the MONO_BIT in the MSB of BL, and rotate the mono output flag
+	; out into CF
+	rcr	bl,1
+	jnc	@F
+	rcl	bl,1	; get MONO_BIT back into CF
+	sbb	ax,ax	; convert single bit to word
+	cwd		; and to dword!
+	jmp	short cache_ipc
+@@:
+	shl	bl,1	; restore original BL (which had LSB unset)
+cache_ipc:
+	mov	[previous_ipc].lo,ax
+	mov	[previous_ipc].hi,dx
+store_ipc:
+	test	bl,20h	; storing 32 bits?
+	jz	@F
+	stosw
+	mov	ax,dx
+	jmp	short next_word
+@@:
+	test	bl,10h	; storing (at least) 16 bits?
+	jz	@F
+next_word:
+	stosw
+	mov	al,dl
+@@:
+	test	bl,8	; storing an odd number of bytes?
+	jz	@F
+	stosb
+@@:
+	loop	rgb_load_loop
+
+cEnd
 
 sEnd	Code
-;f
+;
 end
