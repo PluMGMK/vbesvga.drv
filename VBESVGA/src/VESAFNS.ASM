@@ -1061,9 +1061,13 @@ FindMode_attrsOK:
 ModeFound:
 	; if we used the PM interface, then we're done here
 	cmp	[PMIntEntry.sel],0
-	mov	di,ax		; save our return code
-	jnz	FindMode_done
+	jz	@F
+	test	ax,ax		; returning success?
+	jz	FindMode_checksels
+	mov	di,ax		; save return code
+	jmp	FindMode_done
 
+@@:
 	test	ax,ax		; returning success?
 	mov	si,es		; if not, put the DOS buffer in SI
 	jnz	@F
@@ -1095,11 +1099,12 @@ ModeFound:
 	mov	di,ax		; save our return code
 	cCall	GlobalDosFree,<si>
 
+	mov	es,[CodeSel]
+	assumes	es,Code
+
 	test	di,di		; returning success?
 	jnz	FindMode_done
 
-	mov	es,[CodeSel]
-	assumes	es,Code		; on this codepath, we are sure what ES is
 	; Fix up the far pointer
 	mov	dx,[int10h_es]
 	lea	bx,VESAModeStruct
@@ -1122,7 +1127,48 @@ ModeFound:
 	mov	[VESAWinBSeg],ax
 
 	xor	di,di	; all good!
+	jmp	short FindMode_done
+
+public	FindMode_checksels	; for debugging
+FindMode_checksels:
+	; Dodgy PMID implementations may leave us with segments rather than
+	; selectors in some of the essential pointers. Deal with that...
+	.286p			; for LAR instruction
+	mov	ax,[VESAWinASeg]
+	lar	cx,ax
+	jz	@F		; ZF if it's a valid selector
+
+	xor	cx,cx		; want a data segment
+	call	SegToSel
+	mov	[VESAWinASeg],ax
+@@:
+	mov	ax,[VESAWinBSeg]
+	test	ax,ax
+	jz	@F		; if it's zero, we don't care
+	lar	cx,ax
+	jz	@F		; ZF if it's a valid selector
+
+	xor	cx,cx		; want a data segment
+	call	SegToSel
+	mov	[VESAWinBSeg],ax
+@@:
+	mov	ax,[VESABankSwitch.sel]
+	cmp	ax,0C000h	; if it's in C000H, then redirect to PMID seg
+	jne	@F
+	mov	ax,[PMIntEntry.sel]
+	mov	[VESABankSwitch.sel],ax
+@@:
+	lar	cx,ax
+	jz	@F
+
+	; just zero out the bank-switch pointer and fall back to indirect call,
+	; which will be setup below.
+	mov	[VESABankSwitch.sel],0
+
+@@:
+	xor	di,di	; all good!
 FindMode_done:
+	.286
 	test	di,di
 	jnz	@F
 
