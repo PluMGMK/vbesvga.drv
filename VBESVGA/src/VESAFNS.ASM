@@ -168,20 +168,6 @@ PMIntEntry	FARPOINTER <?,?>
 RMPaletteSel	dw 0
 RMPaletteSeg	dw 0
 
-; these are all to help with colour conversion - set to FFh if using palettes
-public	red_shr
-red_shr		db 0FFh	; how far right to shift red byte (8-RFieldSize)
-public	red_shl
-red_shl		db 0FFh	; how far left to shift it before ORing in (RFieldPos)
-public	green_shr
-green_shr	db 0FFh	; how far right to shift green byte (8-GFieldSize)
-public	green_shl
-green_shl	db 0FFh	; how far left to shift it before ORing in (GFieldPos)
-public	blue_shr
-blue_shr	db 0FFh	; how far right to shift blue byte (8-BFieldSize)
-public	blue_shl
-blue_shl	db 0FFh	; how far left to shift it before ORing in (BFieldPos)
-
 ; Scan line length for ease of access in certain parts of the driver...
 public	MemWidth
 MemWidth	dw ?
@@ -306,6 +292,20 @@ VESAMaxPixClock	LONG <?,?>	; in Hz
 VESAModeScratch	db 190 dup (?)
 
 VESA_MODE_LEN	equ $ - VESAModeStruct
+
+; these are all to help with colour conversion - set to FFh if using palettes
+public	red_shr
+red_shr		db 0FFh	; how far right to shift red byte (8-RFieldSize)
+public	red_shl
+red_shl		db 0FFh	; how far left to shift it before ORing in (RFieldPos)
+public	green_shr
+green_shr	db 0FFh	; how far right to shift green byte (8-GFieldSize)
+public	green_shl
+green_shl	db 0FFh	; how far left to shift it before ORing in (GFieldPos)
+public	blue_shr
+blue_shr	db 0FFh	; how far right to shift blue byte (8-BFieldSize)
+public	blue_shl
+blue_shl	db 0FFh	; how far left to shift it before ORing in (BFieldPos)
 
 
 ; Functions to switch bank if the mode doesn't include a pointer
@@ -1107,6 +1107,27 @@ FindMode_done:
 	mov	[pxbytes],ax
 	call	init_modal_realizations
 
+	; while we're at it, set the full colour conversion parameters
+	cmp	[VESAMemModel],VESA_MEM_PACKED
+	; if using a palette, we don't do this.
+	je	@@skipcolourloop
+
+	push	si
+	push	di
+	lea	si,VESARFieldSize
+	lea	di,red_shr
+	mov	cx,3	; three colours to setup
+	cld
+@@colourloop:
+	lods	word ptr es:[si]
+	sub	al,8
+	neg	al	; AL = 8 - FieldSize
+	stosw
+	loop	@@colourloop
+	pop	di
+	pop	si
+
+@@skipcolourloop:
 	; setup a fallback bank-switch function, just in case we somehow got
 	; this far without one...
 	cmp	[VESABankSwitch.sel],0
@@ -1206,26 +1227,6 @@ vesa_gdi_fixup	proc near
 	je	@F
 RC_PALETTE	equ 0000000100000000b	; can do color palette management
 	and	es:[si].dpRaster, NOT RC_PALETTE
-
-	; while we're at it, set the full colour conversion parameters
-	push	es
-	mov	es,[_cstods]
-	assumes	es,Data
-	push	si
-	push	di
-	lea	si,VESARFieldSize
-	lea	di,red_shr
-	mov	cx,3	; three colours to setup
-	cld
-@@colourloop:
-	lodsw
-	sub	al,8
-	neg	al	; AL = 8 - FieldSize
-	stosw
-	loop	@@colourloop
-	pop	di
-	pop	si
-	pop	es
 @@:
 
 	; now set the ColourFormat too

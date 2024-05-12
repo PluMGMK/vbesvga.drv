@@ -191,13 +191,6 @@ PhysicalIndexTable label   byte
 ;
 SystemPaletteColors	equ	20
 ;
-	externB		red_shr
-	externB		red_shl
-	externB		green_shr
-	externB		green_shl
-	externB		blue_shr
-	externB		blue_shl
-
 sEnd Data
 ;
 ;-------------------------==============================-----------------------
@@ -206,12 +199,19 @@ sEnd Data
 ;
 sBegin Code
 	assumes cs, Code
-	assumes ds, Data
+	assumes ds, nothing
 	assumes es, nothing
 ;
 	extrn	_cstods:word		; our data segment
         externB ??BigFontFlags
 	externW	pxbytes
+	externB	red_shr
+	externB	red_shl
+	externB	green_shr
+	externB	green_shl
+	externB	blue_shr
+	externB	blue_shl
+
 ;
 ; At this point,
 ;    AL contains the RED intensity that we're going to use.
@@ -219,7 +219,7 @@ sBegin Code
 ;    DL contains the BLUE intensity that we're going to use.
 ;    DH contains the colour index.
 ;
-cProc	rgb_to_ipc, <NEAR, PUBLIC>, <ds, si, di, cx, bx>
+cProc	rgb_to_ipc, <NEAR, PUBLIC>, <si, di, cx, bx>
 	localW	lMinLo
 	localW	wIndex
 	localB	lMinHi
@@ -228,11 +228,16 @@ cBegin
 	WriteAux <'rgb-to_ipc'>
 
 	mov	bx, ax			; logical colors are in
-	mov	ds,cs:_cstods
         sub     cx, cx                  ; bl: red, bh: green, dl: blue
 
 	cmp	[red_shr],-1
-	jne	NoPalette
+	je	@F
+	jmp	NoPalette
+
+@@:	; We only need the DS for the palette
+	push	ds
+	mov	ds,cs:_cstods
+	assumes	ds,Data
 
 	; PluM: Why is this restricted to system colours?
 	; Is it because other colours could change at a moment's notice?
@@ -314,6 +319,10 @@ EndItNow:
 	or	ax, [bx+si]		    ; preserve exact match flag!!
 	mov	dx, 0ff00h
 	mov	ch, ah			    ; preserve accels to return ZF/CF
+
+	; DS no longer needed since we're done with the palette
+	pop	ds
+	assumes	ds,nothing
 	jmp	RGB2IPC_Done
 
 NoPalette:
@@ -458,14 +467,11 @@ ipc_to_rgb_far	proc far
 	retf
 ipc_to_rgb_far	endp
 ;
-cProc	ipc_to_rgb, <NEAR, PUBLIC>, <ds, si, di, cx, bx>
+cProc	ipc_to_rgb, <NEAR, PUBLIC>, <si, di, cx, bx>
 ;
 cBegin
 	assumes	ds,nothing
 	WriteAux <'ipc-to_rgb'>
-
-	mov	ds,cs:_cstods
-	assumes	ds,Data
 
 	; check again for system palette colour
 	; usually, DH==FFh indicates palette index, but if we have four bytes
@@ -489,10 +495,18 @@ cBegin
 	sub	si,236			; shift upper-256 indices to upper-20
 
 lower_end:
+	; get us access to Palette
+	push	ds
+	mov	ds,cs:_cstods
+	assumes	ds,Data
+
 	shl	si,1
 	add	si,ax			; index into a TRIPLEs table
 	mov	ax,word ptr Palette[si+0]
 	mov	dx,word ptr Palette[si+2]
+
+	pop	ds
+	assumes	ds,nothing
 	jmp	short @@ret_accel
 
 non_sys_colour:
@@ -641,5 +655,5 @@ rest_colour_8bit	endp
 
 
 sEnd	Code
-;
+;f
 end
