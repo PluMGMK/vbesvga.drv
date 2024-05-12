@@ -891,6 +891,25 @@ create_color_table proc	near
 	lea	di, color_xlate
 	mov	bl, [total_depth_bytes]	; zero if converting to mono
 
+	; check if we're using palette translation
+	cmp	[use_palette_trans],0
+	jz	colour_table_nopalette
+
+	; if we do, then the colour table we've been given contains two-byte
+	; indices rather than RGBQUADs, which we simply need to copy
+	test	bl,bl
+	jnz	@F
+	; in the mono case, it's as simple as can be
+	rep	movsw
+	jmp	short colour_table_done
+	; in the colour case, we need to include an upper word for each one...
+@@:	mov	ax,0FF00h	; indicate a palette index in the upper word
+@@:	movsw
+	stosw
+	loop	@B
+	jmp	short colour_table_done
+
+colour_table_nopalette:
 	; BL needs to contain the number of bits we want out, which is 32
 	; for the colour case, or 16 for the mono case, and in the latter
 	; case we set the flag (i.e. the LSB) saying we only want 0 or FFFF
@@ -901,7 +920,7 @@ create_color_table proc	near
 @@:
 	mov	bh,11b	; RGBQUAD --> 4 bytes input, need to swap red and blue
 	call	rgb_to_ipc_seq
-; 
+colour_table_done:
 	pop	di
 	pop	si
         pop     ds

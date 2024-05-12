@@ -46,6 +46,8 @@ page	,132
 ;	Copyright February, 1990  HEADLAND TECHNOLOGY, INC.
 .286
 
+incDevice = 1				;Include control for gdidefs.inc
+
 	.xlist
 	include	cmacros.inc
 	include	macros.mac
@@ -56,6 +58,12 @@ page	,132
 
 
 	externA		__NEXTSEG	; offset to next segment
+
+sBegin	Code
+
+	externB		info_table_base	; in VGA.ASM
+
+sEnd	Code
 
 createSeg _DIMAPS,DIMapSeg,word,public,code
 
@@ -76,6 +84,14 @@ cBegin
 
 WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	cld
+
+	mov	ax, seg info_table_base
+	mov	ds, ax
+	assumes	ds, Code
+	; check if we're supposed to use palette translation
+	mov	ax,[info_table_base.dpRaster]
+	and	ax,RC_PALETTE
+	mov	[use_palette_trans],ah	; RC_PALETTE is in upper byte!
 
 	lds	si, lp_dest_dev 	; DS:SI points to internal BM struc
 	assumes	ds, nothing

@@ -59,3 +59,4 @@ CAN_CROSS_SEG           equ     00010000b
         localV  xlati_1_to_4, 32
 
 	localB	total_depth_bytes
+	localB	use_palette_trans
