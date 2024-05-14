@@ -726,27 +726,9 @@ eti_8_color3:
 ;
 	sub	bx,dx
 	mov	ext_dword_adjust,bx	; dword alignment of source
+	mov	int_move_count, dx
+	mov	int_remaining_pixel_count, 0
 ;
-; calc the color internal move count - bytes, not pels
-;
-	mov	ax,dx
-	shiftr	ax,3			; make it a byte count
-	mov	int_move_count, ax
-;
-; no remaining pixel count on color destination maps
-;
-	shiftl	ax,3
-	sub	dx,ax
-	mov	int_remaining_pixel_count, dx
-	jz	eti_8t8_color
-;
-; calc the remaining pixel count
-;
-	sub	dx,8
-	neg	dx
-	mov	mono_shift_align_count,dx
-;
-eti_8t8_color:
         ret
 
 eti_8	endp
@@ -1711,10 +1693,10 @@ page
 ;--------------------------Private-Routine-----------------------------------;
 ; copy_e8i8								     ;
 ;									     ;
-;   copy external 8 bit	packed pixel to	internal 4 plane		     ;
+;   copy external 8 bit	packed pixel to	internal packed-pixel or direct map  ;
 ;									     ;
-;   The	source is copied to all	four planes of the destination,	with	     ;
-;   color conversion via the passed color table	taking place		     ;
+;   The	source is copied to the destination, with colour conversion	     ;
+;   via the passed color table taking place				     ;
 ;									     ;
 ;   It is the caller's responsibility to handle all segment crossings.       ;
 ;									     ;
@@ -1733,21 +1715,27 @@ page
 copy_e8i8	proc near
 
 	push	bp
+	mov	dh, [total_depth_bytes]
 	lea	bx, color_xlate
 ce8i8_next_byte:
-	mov	dl, 8			; Eight	source bytes per dest byte
-
-ce8i8_next_pixel:
+	mov	dl, dh	; 1-4 destination bytes per source byte
 	mov	bp, bx
 	lodsb
 	xor	ah, ah
-	shl	ax, 1
+	shl	ax, 2	; four bytes per palette entry
 	add	bp, ax
-	mov	al, ss:[bp]
-	stosb
-	dec	dl
-	jne	ce8i8_next_pixel
-
+	xchg	bp, si
+	shr	dl, 1	; check if we've an odd number of bytes
+	jnc	@F
+	movs	byte ptr es:[di], ss:[si]
+@@:	shr	dl, 1	; check if we've an odd number of words
+	jc	@F
+	shr	dl, 1	; check if we've to move a dword
+	jnc	ce8i8_byte_done
+	movs	word ptr es:[di], ss:[si]
+@@:	movs	word ptr es:[di], ss:[si]
+ce8i8_byte_done:
+	xchg	bp, si
 	loop	ce8i8_next_byte
 	pop	bp
 	ret
@@ -1769,7 +1757,6 @@ page
 ;	DS:SI --> source						     ;
 ;	ES:DI --> destination						     ;
 ;	CL     =  number of destination	bits to	accumulate		     ;
-;;;;;;;	BX     =  mask and alignment control				     ;
 ; Returns:								     ;
 ;	DS:SI --> next source byte					     ;
 ;----------------------------------------------------------------------------;
@@ -1788,8 +1775,19 @@ ce8i8p_next_byte:
 	shl	ax, 1
 	mov	bx, dx
 	add	bx, ax
-	mov	al, ss:[bx]
-	stosb
+	xchg	bx, si
+	mov	al, [total_depth_bytes]
+	shr	al, 1	; check if we've an odd number of bytes
+	jnc	@F
+	movs	byte ptr es:[di], ss:[si]
+@@:	shr	al, 1	; check if we've an odd number of words
+	jc	@F
+	shr	al, 1	; check if we've to move a dword
+	jnc	ce8i8p_byte_done
+	movs	word ptr es:[di], ss:[si]
+@@:	movs	word ptr es:[di], ss:[si]
+ce8i8p_byte_done:
+	xchg	bx, si
 	dec	cl
 	jne	ce8i8p_next_byte
 	pop	dx
