@@ -73,6 +73,7 @@ assumes cs,Code
         externNP dither                 ;Brush dithering code
 	externNP ColorDither
         externNP rgb_to_ipc             ;Logical to physical color conv
+        externNP ipc_to_rgb             ; and vice versa
         externA  BW_THRESHOLD           ;Where black becomes white
 	externW _cstods
 	externW	ColourFormat_CS		;in VESAFNS.ASM
@@ -899,6 +900,8 @@ realize_pattern proc near
 ; COLOR ==> COLOR  (just copy pels to brush)
 ;
 	mov	cx,[pxbytes]
+	shl	cx,3			; get the width of the pattern
+	errnz	SIZE_PATTERN-8
 	dec	cx			; counteract the "dec dx" above
 	sub	dx,cx
 	mov	ah,SIZE_PATTERN 	; no of scans to move
@@ -913,14 +916,15 @@ pattern_copy_numwords	dw SIZE_PATTERN SHL 1	; 16 words = 8*32 bits
         jnz     pattern_copy_colour_loop
 
 	pop	si
-	;mov	ax	,my_data_seg
-	;mov	ds	,ax
 	mov	ds	,my_data_seg
 	lea	bx	,abPaletteAccl
 	mov	cl	,SIZE_PATTERN
+	mov	dx	,[pxbytes]
 
 realize_pattern11:
 	mov	ch	,SIZE_PATTERN
+	cmp	dl	,1		;8-bit colour?
+	ja	realize_pattern13	; NO, go convert to mono the hard way...
 
 realize_pattern12:
 	lods	BYTE PTR es:[si]
@@ -930,6 +934,25 @@ realize_pattern12:
 	dec	ch
 	jne	realize_pattern12
 	mov	al	,ah
+	stosb
+	loop	realize_pattern11
+        jmp     realize_pattern_done
+
+realize_pattern13:
+	mov	bl	,dl	;stash pxbytes where it won't be stomped
+	mov	ax	,es:[si]
+	mov	dx	,es:[si+2]
+	xchg	si	,ax
+	add	al	,bl	;move onto next pixel
+	adc	ah	,0
+	xchg	si	,ax
+	call	ipc_to_rgb	;get accelerators into DH
+	ror	dh	,1
+	rcl	bh	,1
+	mov	dl	,bl	;get back pxbytes
+	dec	ch
+	jne	realize_pattern13
+	mov	al	,bh
 	stosb
 	loop	realize_pattern11
         jmp     realize_pattern_done
