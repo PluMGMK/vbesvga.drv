@@ -1301,12 +1301,23 @@ ce24i1convertit:
         push    bx
 	push	es
 ;
+	cmp	wptr lpColorInfo[2],0
+	jz	@F
+;
         push    dx
 	push	ax
 	push	wptr lpColorInfo[2]
 	push	wptr lpColorInfo[0]
         call    DeviceColorMatch
+	jmp	ce24i1converted
+@@:
+	xor	dh,dh
+	xchg	al,dl			; swap red/blue
+	call	sum_RGB_alt_far
+	or	ax,dx			; collapse it into one byte for
+	or	al,ah			; the simple zero-check code below
 ;
+ce24i1converted:
         pop     es
 	pop	bx
 	pop	cx
@@ -1386,12 +1397,23 @@ ce24i1pconvertit:
 	push	bx
 	push	es
 
+	cmp	wptr lpColorInfo[2],0
+	jz	@F
+;
 	push	dx
 	push	ax
 	push	wptr lpColorInfo[2]
 	push	wptr lpColorInfo[0]
         call    DeviceColorMatch        ; get the color for this pel
-
+	jmp	ce24i1pconverted
+@@:
+	xor	dh,dh
+	xchg	al,dl			; swap red/blue
+	call	sum_RGB_alt_far
+	or	ax,dx			; collapse it into one byte for
+	or	al,ah			; the simple zero-check code below
+;
+ce24i1pconverted:
         pop     es
         pop     bx
 	pop	cx

@@ -739,11 +739,11 @@ store_ipc:
 	jz	@F
 	stosw
 	mov	ax,dx
-	jmp	short next_word
+	jmp	short store_next_word
 @@:
 	test	bl,10h	; storing (at least) 16 bits?
 	jz	@F
-next_word:
+store_next_word:
 	stosw
 	mov	al,dl
 @@:
@@ -752,6 +752,94 @@ next_word:
 	stosb
 @@:
 	loop	rgb_load_loop
+
+cEnd
+
+cProc	ipc_to_rgb_seq, <FAR,PUBLIC,NODATA>
+	; local variables as a cache
+	localD	previous_rgb
+	localD	previous_ipc
+cBegin
+	; Call ipc_to_rgb_seq as follows:
+	; * DS:SI -> sequence of physical colours
+	; * ES:DI -> output sequence of RGB colours
+	; * CX = number of colours to process
+	; * BH = output flags (1 = 4 bytes per pixel, 2 = swap red/blue)
+	; * BL = input bits per pixel | flag (LSB indicates monochrome value)
+
+	; initialize "previous" values as -1, to be overwritten immediately
+	mov	ax,-1
+	mov	[previous_rgb].lo,ax
+	mov	[previous_rgb].hi,ax
+	mov	[previous_ipc].lo,ax
+	mov	[previous_ipc].hi,ax
+
+ipc_load_loop:
+	; prepare to load next colour
+	xor	ax,ax
+	cwd
+	and	bl,NOT 2; start off with DX:AX not reversed
+
+	test	bl,20h	; loading 32 bits?
+	jz	@F
+	lodsw
+	mov	dx,ax
+	or	bl,2	; mark that DX:AX are backwards
+	jmp	short load_next_word
+@@:
+	test	bl,10h	; loading (at least) 16 bits?
+	jz	@F
+load_next_word:
+	lodsw
+	xchg	ax,dx
+	xor	bl,2	; DX:AX have been reversed
+@@:
+	test	bl,8	; loading an odd number of bytes?
+	jz	@F
+	lodsb
+	xchg	ax,dx
+	xor	bl,2	; DX:AX have been reversed
+@@:
+	test	bl,2
+	jz	@F
+	xchg	ax,dx
+	xor	bl,2	; DX:AX have been reversed
+
+@@:	;Now we're ready to call ipc_to_rgb
+	; but first, let's check the cache...
+	cmp	ax,[previous_ipc].lo
+	jne	@F
+	cmp	dx,[previous_ipc].hi
+	jne	@F
+
+	mov	ax,[previous_rgb].lo
+	mov	dx,[previous_rgb].hi
+	jmp	short store_rgb
+
+@@:
+	;OK, we didn't use the cache, but set it for the next round:
+	mov	[previous_ipc].lo,ax
+	mov	[previous_ipc].hi,dx
+
+	;Convert the colour!
+	call	ipc_to_rgb
+cache_rgb:
+	mov	[previous_rgb].lo,ax
+	mov	[previous_rgb].hi,dx
+store_rgb:
+	test	bh,2	; swapping red/blue?
+	jz	@F
+	xchg	al,dl
+@@:
+	stosw
+	mov	al,dl
+	stosb
+	test	bh,1	; storing four bytes?
+	jz	@F
+	mov	al,dh
+	stosb
+@@:
+	loop	ipc_load_loop
 
 cEnd
 

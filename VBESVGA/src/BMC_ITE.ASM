@@ -61,7 +61,8 @@ MONO_BIT		equ	00000001b
 	include	macros.mac
 	.list
 
-	externA		__NEXTSEG	; offset to next segment
+	externA		__NEXTSEG		; offset to next segment
+	externFP	ipc_to_rgb_seq		; in RGB2IPC.ASM
 
 
 sBegin Data
@@ -1937,6 +1938,18 @@ page
 public	copy_i8e24
 copy_i8e24      proc near
 
+	; check if we have a colour info table.
+	cmp	wptr lpColorInfo[2],0
+	jnz	ci8e24_next_byte
+
+	; if not, we just have to convert back to a list of RGBTRIPLEs
+	mov	bh,10b	; swap red/blue, only three bytes (not four) per pixel
+	mov	bl,[total_depth_bytes]
+	shl	bl,3	; convert back to bits
+	shl	cx,3	; deal with the "8 pixels/byte" concept
+	call	ipc_to_rgb_seq
+	ret
+
 ci8e24_next_byte:
 	mov	dl, 8			;8 pixels/byte
 
@@ -2001,7 +2014,31 @@ page
 copy_i8e24_partial proc	near
 
 ci8e24p_next_pixel:
-	lodsb
+	cmp	wptr lpColorInfo[2],0
+	jnz	@F
+
+	push	es
+	push	cx
+	push	di
+	;stick the RGB colour on the stack
+	sub	sp,4
+	push	ss
+	pop	es
+	mov	di,sp
+	mov	cx,1			;one colour at a time
+	mov	bh,10b	; swap red/blue, only three bytes (not four) per pixel
+	mov	bl,[total_depth_bytes]
+	shl	bl,3	; convert back to bits
+	call	ipc_to_rgb_seq
+	;get it from the stack
+	pop	ax
+	pop	bx
+	pop	di
+	pop	cx
+	pop	es
+	jmp	ci8e24p_check_di
+
+@@:	lodsb
 	xor	ah, ah
 
         push    es
@@ -2012,7 +2049,7 @@ ci8e24p_next_pixel:
 	mov	ax, es:[bx]
 	mov	bl, es:[bx+2]
 	pop	es
-
+ci8e24p_check_di:
 	cmp	di, 0FFFDh
 	jae	ci8e24p_next_sel
 
