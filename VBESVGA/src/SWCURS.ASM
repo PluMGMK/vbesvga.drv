@@ -284,6 +284,7 @@ swcursor_exclude_test	ENDP
 PUBLIC	swcursor_save_screen
 swcursor_save_screen	PROC	NEAR
 
+	cld
 	push	ds
 	push	ds
 
@@ -347,6 +348,7 @@ swcursor_save_screen	ENDP
 PUBLIC	swcursor_restore_screen
 swcursor_restore_screen PROC	NEAR
 
+	cld
 	mov	dx,save_screen_bank
 	call	far_set_bank_select	; oth_pages
 
