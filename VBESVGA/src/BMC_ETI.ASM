@@ -681,6 +681,7 @@ eti_8	proc	near
 
 	mov	ax, DIMapSegOFFSET copy_e8i8
 	mov	bx, DIMapSegOFFSET copy_e8i8_partial
+	mov	num_pels_per_src_byte,1 ; src will give straight xlate
 
 eti_8_have_proc:
 	mov	full_byte_proc, ax
