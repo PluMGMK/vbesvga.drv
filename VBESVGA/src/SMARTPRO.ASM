@@ -2516,8 +2516,6 @@ pcolor_transp_output_386 proc near
 	shl	bx,1
         mov     bx,cs:pctou_phase_386[bx]
 
-        mov     cl,ss_clip_mask
-
 pctou_char_loop_386:
 	.386
 	lods	bptr [esi]
@@ -2526,6 +2524,8 @@ pctou_char_loop_386:
 	nop
 	.8086
 
+	; have to include this in the loop as CX gets overwritten below...
+        mov     cl,ss_clip_mask
         shl     al,cl
         mov     ah,al
         not     ah
