@@ -1260,32 +1260,6 @@ endif
 	endm
 ;
 ;
-;--------------------------------Macro----------------------------------;
-; UpdBank
-;
-;	Advances the bank selection after an addition, if necessary
-;
-;	Assumes:
-;		Addition has just been performed (e.g. "add di,ss_next_scan")
-;		CF set accordingly
-;
-;-----------------------------------------------------------------------;
-;
-UpdBank        macro       ji
-ifnb <ji>
-	ji	@F
-else
-	jnc	@F
-endif
-	push	dx
-	GET_BANK
-	inc	dx
-	SET_BANK
-	pop	dx
-@@:
-	endm
-;
-;
 sBegin	Code
 assumes cs,Code
 ;

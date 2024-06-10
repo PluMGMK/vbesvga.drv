@@ -225,6 +225,7 @@ assumes cs,Code
 					; TRUE	= 386 protected mode
 	externW	ColourFormat_CS
 	externW	MemoryWidth
+	externW	pxbytes
 	externNP ipc_to_rgb	; in RGB2IPC.ASM
 
 ;--------------------------Exported-Routine-----------------------------;
@@ -2410,32 +2411,38 @@ bitmap_opaque	endp
 ;
 	public	color_bitmap_opaque
 color_bitmap_opaque     proc near
-;;;;;;;;push    si                      ; do not disturb...
-;;;;;;;;shiftl  si,3                    ; multiply the length by 8
-;;;;;;;;errnz   SIZE_PATTERN-8
+	push    si                      ; do not disturb...
 ;
-; convert the mask to a bit count
-;
-;;;;;;;;call    convert_mask_to_count
-;;;;;;;;add     si,ax
-;
-	mov	ax,colors		; fetch from the stack
-	mov	al,ah			; ah now holdst the bk color
-	mov	dx,si			; dx holds full length
-	mov	cx,si			; load length
+	mov	cx,si			; load length in bytes
 	jcxz	cobiop_done		; exit if nop
+	mov	dl,CurVidSel		; make sure bank is correct
+	SET_BANK
+	mov	dx,si			; dx holds full length
         sub     dx,next_scan            ; dx holds -(remaining length)
         neg     dx
+	mov	ax,cx			; keep the length in AX
 ;
 cobiop_loop:
-        REPSTOSB                        ; store the new background
+	; copy the physical background colour directly from the stack to the BM
+	mov	cx,pxbytes
+	lea	si,[colors.BACKGROUND]
+cobiop_pixel_loop:
+	movs	byte ptr es:[di],ss:[si]; one byte at a time
+	test	di,di
+	UpdBank	jnz
+	dec	ax
+	loop	cobiop_pixel_loop
+	jnz	cobiop_loop		; if AX is not zero, loop around
+
         add     di,dx                   ; advance to next scan line
-        mov     cx,si                   ; reload length count
+	UpdBank
+        pop     ax			; reload length count
+	push	ax			; and store again for later
 	dec	bx			; check for end of fill
 	jnz	cobiop_loop		; loop if not done...
 ;
 cobiop_done:
-;;;;;;;;pop     si
+	pop     si
 	ret
 
 color_bitmap_opaque	endp
