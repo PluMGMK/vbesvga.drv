@@ -320,11 +320,11 @@ bitblt_prep_pattern	PROC	NEAR
 	test	byte ptr [bx+si].oem_brush_accel,GREY_SCALE
 	je	bitblt_prep_color_pattern
 	test	word ptr device_flags,DEVFLAG_DST_COLOR
-	jne	@F
+	jnz	@F
 	mov	bx,mono_bits
         call    brush_convert_mono_to_mono
 	jmp	short	bitblt_prep_pattern_rotate
-@@:	mov	bx,colors			; FIXME: deal with larger colours!
+@@:	lea	bx,fgcolour
 	call	brush_convert_mono_to_color
         jmp     short   bitblt_prep_pattern_rotate
 

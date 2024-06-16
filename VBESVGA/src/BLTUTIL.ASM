@@ -27,9 +27,10 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
-externW	pxbytes			; in SWCURS.ASM
-externW	oem_brush_size		; in ROBJECT.ASM
-externW	pattern_copy_numwords	; in ROBJECT.ASM
+externW		pxbytes			; in SWCURS.ASM
+externW		oem_brush_size		; in ROBJECT.ASM
+externW		pattern_copy_numwords	; in ROBJECT.ASM
+externNP	colour_expand		; in ROBJECT.ASM
 
 ;
 ;	blt_clip
@@ -340,40 +341,44 @@ brush_convert_mono_to_mono ENDP 		;
 ;	The classic color expansion problem.
 ;
 ;	PARMS:
-;	BH:BL	bgcolor:fgcolor
+;	SS:BX	ptr to fgcolour
+;	SS:BX+4	ptr to bgcolour
 ;	DS:SI	ptr to oem_brush_def structure
 ;	ES:DI	ptr to location to store preped brush
 ;
 ;	RETURNS:
 ;	ES:DI	the memory it points to is filled with the new color portion
 ;		of the brush (NOTE: The entire brush structure is NOT there.
-;		Just sixty-four bytes of color data.)
+;		Just sixty-four pixels' worth of color data.)
 ;
-; FIXME: Best thing to do here might be to refactor realize_hatched (in robject)
-; to allow modal code reuse between this function and that one. Might be better
-; to sort out heap corruption before we start messing with robject again...
 public	brush_convert_mono_to_color
 brush_convert_mono_to_color	   PROC    NEAR
 
 	add	si,[oem_brush_size]
 	sub	si,size oem_brush_com		;point to mono portion
-	mov	cl,SIZE_PATTERN 		;SIZE_PATTERN rows of data
-	xor	bh,bl
 
-brush_convert_mono_to_color0:
-	mov	ch,SIZE_PATTERN 		;SIZE_PATTERN bytes across
-	lodsb					;get first mono byte
-	mov	ah,al				;move into ah
+	push	bp
+	mov	bp,bx
+	; get background colour
+	mov	ax,[bp][4]
+	mov	dx,[bp][6]
+	; XOR with foreground and push on stack
+	mov	bx,[bp][2]
+	xor	bx,dx
+	push	bx
+	mov	bx,[bp][0]
+	xor	bx,ax
+	push	bx
+	; then push the background itself on the stack
+	push	dx
+	push	ax
 
-brush_convert_mono_to_color1:
-        rol     ah,1                            ;get first bit
-	sbb	al,al				;the classic color expansion
-	and	al,bh				; process
-	xor	al,bl
-	stosb
-	dec	ch				;do all pixels in a row
-	jne	brush_convert_mono_to_color1
-	loop	brush_convert_mono_to_color0	;do all the rows
+	; now set the pointer and call the function
+	mov	bp,sp
+	call	colour_expand
+
+	add	sp,8
+	pop	bp
 	ret
 
 brush_convert_mono_to_color	   ENDP 	;

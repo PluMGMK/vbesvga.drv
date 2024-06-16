@@ -198,8 +198,7 @@ cProc   RealizeObject,<FAR,PUBLIC,WIN,PASCAL>,<es,ds,si,di>
 	localW	bw_sum			; Black & white sum for a brush
 	localW	my_data_seg		;copy of data segment selector
 	; extra stuff for hatching on a 286 (and maybe other things)
-	localD	spill_colour_1
-	localD	spill_colour_2
+	localQ	spill_colours
 ;
 cBegin
 WriteAux <'RlzObj'>
@@ -679,7 +678,7 @@ FillSolidPlane:
 	cmp	[pxbytes],1
 	je	RSSetPlanesLoop_8bit
 
-	; Now we have the *actual* physical colour representation in DX:AX
+	; Now we have the physical colour representation in DX:AX
 	mov	cx,SIZE_PATTERN*SIZE_PATTERN
 RSSetPlanesPref	label byte
 	nop	; Can replace this nop (90h) with a rep (F3h)
@@ -1068,18 +1067,18 @@ realize_hatch_actual:
 
 	lea	si,[si].lbBkColor	; Compute background color
         call    sum_RGB_colors
-	; spill_colour_1 := ACTUAL physical representation of BG colour
-	mov	[spill_colour_1.lo],ax
-	mov	[spill_colour_1.hi],dx
+	; spill_colours[0] := physical representation of BG colour
+	mov	[spill_colours.lo][0],ax
+	mov	[spill_colours.hi][0],dx
 
         sub     si,lbBkColor-lbColor    ; Compute foreground color
         call    sum_RGB_colors
-	xor	ax,[spill_colour_1.lo]
-	xor	dx,[spill_colour_1.hi]
+	xor	ax,[spill_colours.lo][0]
+	xor	dx,[spill_colours.hi][0]
 
-	; spill_colour_2 := FG colour XOR BG colour (physical reps of both)
-	mov	[spill_colour_2.lo],ax
-	mov	[spill_colour_2.hi],dx
+	; spill_colours[4] := FG colour XOR BG colour (physical reps of both)
+	mov	[spill_colours.lo][4],ax
+	mov	[spill_colours.hi][4],dx
 
 	pop	cx
 	mov	si,cx			; Compute address of hatch pattern
@@ -1091,7 +1090,7 @@ realize_hatch_actual:
 ;	State of regs:desired regs
 ;	AX - lower word of fg XOR bg:	SI - hatch pattern:
 ;	BX -				DI - color brush:
-;	CX -				DS - input object seg:
+;	CX -				DS - input object seg:our code seg
 ;	DX - upper word of fg XOR bg:	ES - output object seg:
 
 ;
@@ -1102,45 +1101,22 @@ realize_hatch_actual:
 
 	; The colors are the same, so just create a solid plane of the color,
 	; reusing the modal code we have setup for solid brushes!
-	mov	ax,[spill_colour_1.lo]
-	mov	dx,[spill_colour_1.hi]
+	mov	ax,[spill_colours.lo][0]
+	mov	dx,[spill_colours.hi][0]
 	jmp	FillSolidPlane
 
 realize_hatch_17:
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
-
-realize_hatch_outer_loop:
-	mov	ch,SIZE_PATTERN 	; ch = inner loop count
-	lods	bptr cs:[si]		; Get next byte of pattern
-	mov	bh,al
-
-realize_hatch_inner_loop:
-	rol	bh,1
-	sbb	ax,ax			; ffff = fg
-	cwd
-	and	ax,[spill_colour_2.lo]
-	; If the bit was 1, then [DX:]AX == fg xor bg, otherwise [DX:]AX == 0
-	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
-	; or 0 xor bg == bg, as desired :)
-	xor	ax,[spill_colour_1.lo]
-realize_hatch_first_stos label byte
-	stosw
-realize_hatch_second_word:
-	and	dx,[spill_colour_2.hi]
-	xor	dx,[spill_colour_1.hi]
-	mov	ax,dx
-realize_hatch_second_stos label byte
-	stosw
-realize_hatch_second_word_done:
-	dec	ch
-	jnz	realize_hatch_inner_loop
-	loop	realize_hatch_outer_loop
-
+	push	bp
+	mov	bp,cs
+	mov	ds,bp
+	lea	bp,spill_colours
+	call	colour_expand
+	pop	bp
 
 ;       State of regs: desired regs
 ;	AX -				SI - end hatch pattern:color brush
 ;	BX - :abPaletteAccl		DI - mono brush
-;	CX - :SIZE_PATTERN,SIZE_PATTERN DS - input object seg:our data seg
+;	CX - :SIZE_PATTERN,SIZE_PATTERN DS - our code seg:our data seg
 ;	DX -				ES - output object seg
 
 
@@ -1150,10 +1126,7 @@ realize_hatch20:
 
         sub     si,SIZE_PATTERN         ; Restore hatch pointer
 	push	si
-	;lea	si	,[di - SIZE_PATTERN * SIZE_PATTERN]
 	mov	si	,lp_out_obj.off
-	;mov	ax	,my_data_seg
-	;mov	ds	,ax
 	mov	ds	,my_data_seg
 	lea	bx	,abPaletteAccl
 	mov	cl	,SIZE_PATTERN
@@ -1663,6 +1636,80 @@ rby_color:
         ret
 
 rotate_brush_y  endp
+;
+;
+;--------------------------Public-Routine------------------------------;
+; colour_expand
+;
+;   Expand mono pattern to colour (extracted from realize_hatch).
+;
+;   The brush is rotated in Y by the given amount.  This is done
+;   so that areas of the screen can be moved, and by realizing a
+;   new brush with the correct (x,y), a pattern continued correctly
+;   with a previous pattern.
+;
+; Entry:
+;       DS:SI --> mono pattern (8 bytes)
+;	ES:DI --> colour pattern destination (64*bpp bytes)
+;	SS:BP --> physical BG colour
+;	SS:BP+4 > physical FG colour XOR physical BG colour
+; Returns:
+;       None
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP
+; Registers Destroyed:
+;       AX,BX,CX,DX,SI,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+	PUBLIC	colour_expand
+colour_expand	proc near
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+
+realize_hatch_outer_loop:
+	mov	ch,SIZE_PATTERN 	; ch = inner loop count
+	lodsb				; Get next byte of pattern
+	mov	bh,al
+
+realize_hatch_inner_loop:
+	rol	bh,1
+	sbb	ax,ax			; ffff = fg
+	cwd
+	and	ax,[bp.lo][4]
+	; If the bit was 1, then [DX:]AX == fg xor bg, otherwise [DX:]AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	ax,[bp.lo][0]
+realize_hatch_first_stos label byte
+	stosw
+realize_hatch_second_word:
+	and	dx,[bp.hi][4]
+	xor	dx,[bp.hi][0]
+	mov	ax,dx
+realize_hatch_second_stos label byte
+	stosw
+realize_hatch_second_word_done:
+	dec	ch
+	jnz	realize_hatch_inner_loop
+	loop	realize_hatch_outer_loop
+	ret
+colour_expand	endp
+
 ;
 ;
 ;--------------------------Private-Routine------------------------------;
