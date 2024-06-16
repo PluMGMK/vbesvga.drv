@@ -1303,7 +1303,7 @@ rotate_brush_x  proc near
 	sub	cl,SIZE_PATTERN 	; reverse the rotation direction
 	neg	cl
 
-        and     cl,07h                  ;check is work needed?
+        and     cl,SIZE_PATTERN-1       ;check is work needed?
 	jne	rotate_brush_x_done_skip
 	jmp	rotate_brush_x_done
 
@@ -1318,6 +1318,12 @@ rotate_brush_x_done_skip:
         ;save rotate count
         push    cx                      ;save rotate count
         mov     si,SIZE_PATTERN
+
+	;can we use the fast 8-byte rotation code below?
+	cmp	si,[pattern_copy_numwords]
+	;if SI > pattern_copy_numwords, that means the latter is 4,
+	; which means the fast code will work. Otherwise, go slow.
+	jna	rotate_brush_x_slow_loop
 
         ;rotate color brush
 rotate_brush_x_scan_loop:
@@ -1367,9 +1373,53 @@ rbx_save_result:
 
         dec     si
         jnz     rotate_brush_x_scan_loop
+	jmp	rotate_brush_x_mono
 
+rotate_brush_x_slow_loop:
+	; push the pattern line onto the stack one word at a time
+	mov	bx,[pattern_copy_numwords]
+	shl	bx,1
+@@:	push	[bx+di-2]
+	dec	bx
+	dec	bx
+	jnz	@B
+
+	mov	bp,sp
+	xchg	si,bp
+
+	; point at the new beginning of the line
+	mov	ax,cx
+	mul	[pxbytes]
+	add	si,ax
+	; convert to words to decide how much to copy
+	shr	ax,1
+	mov	dx,ax	; save this for later...
+	sub	ax,[pattern_copy_numwords]
+	neg	ax
+
+	; copy from the stack back into the pattern
+	xchg	ax,cx
+	rep	movs word ptr es:[di],ss:[si]
+	xchg	ax,cx
+
+	; then copy what's left over on the other end of the stack buffer
+	mov	si,sp
+	xchg	dx,cx
+	rep	movs word ptr es:[di],ss:[si]
+	xchg	dx,cx
+
+	; prepare the stack for the next round
+	xchg	bp,si
+	mov	bx,[pattern_copy_numwords]
+	shl	bx,1
+	add	sp,bx
+	
+        dec     si
+        jnz     rotate_brush_x_slow_loop
+
+rotate_brush_x_mono:
 ;now we need to rotate the mono mask, note that di
-;already points to it's start!!!
+;already points to its start!!!
         pop     cx
 	push	cx
 
@@ -1381,10 +1431,12 @@ rbx_save_result:
         endm
 
 
-;now we need to rotate the xpar mask, note that di
-;already points to it's start!!!
+;now we need to rotate the transparent mask
 	pop	cx
 
+	; Note SIZE_PATTERN is the size of oem_brush_mono.
+	; So basically we're skipping over the bits in between the
+	; end of oem_brush_mono and the beginning of oem_brush_mask.
 	add	di,oem_brush_mask - oem_brush_mono - SIZE_PATTERN
 	mov	si,di
 
@@ -1450,6 +1502,7 @@ rotate_brush_x  endp
         errnz   SIZE_PATTERN-8
         errnz   oem_brush_clr
 
+	PUBLIC	rotate_brush_y
 rotate_brush_y  proc near
         push    es
         push    ds
@@ -1464,13 +1517,23 @@ rotate_brush_y  proc near
         cld                             ;(INSURANCE)
         xor     ch,ch                   ;(INSURANCE)
 
-        sub     sp,SIZE_PATTERN*SIZE_PATTERN-SIZE_PATTERN
+	push	bp
+	mov	bp,sp
+	mov	ax,(SIZE_PATTERN-1) * 2
+	mul	[pattern_copy_numwords]	;now AX = size of seven pattern lines
+	sub	sp,ax
 
 rby_color:
         mov     dx,di
 
 ;  set up word count of rotated bytes
 
+	mov	bh,bl			; save for later
+	mov	al,bl
+	mul	byte ptr [pxbytes]
+	mov	bl,al
+
+	errnz	SIZE_PATTERN-2*4
         shl     bl,1                    ; bl *= SIZE_PATTERN/2
         shl     bl,1
         mov     cl,bl
@@ -1491,7 +1554,10 @@ rby_color:
         mov     es,ax
         mov     di,dx                   ; es:di => brush
 
-        mov     cl,SIZE_PATTERN*SIZE_PATTERN/2
+	mov	al,SIZE_PATTERN*SIZE_PATTERN/2
+	mul	byte ptr [pxbytes]
+	mov	cl,al
+
         sub     cl,bl
         rep     movsw
 
@@ -1508,8 +1574,6 @@ rby_color:
 ;     callous, callay
 
 	mov	dx,di
-        shr     bl,1
-        shr     bl,1
 
 ;  == copy byte(s) from brush to stack
 
@@ -1521,7 +1585,7 @@ rby_color:
         mov     es,ax
         mov     di,sp
 
-        mov     cl,bl
+        mov     cl,bh
         rep     movsb
 
 ;  == copy byte(s) to front of brush
@@ -1531,7 +1595,7 @@ rby_color:
         mov     di,dx
 
         mov     cl,SIZE_PATTERN
-        sub     cl,bl
+        sub     cl,bh
         rep     movsb
 
 ;  == copy bytes(s) from stack to brush
@@ -1540,13 +1604,16 @@ rby_color:
         mov     ds,ax
         mov     si,sp
 
-        mov     cl,bl
+        mov     cl,bh
         rep     movsb
 
 
 ;  == Twas brillig and the slithey toad did, es:di => end mono brush
 ;     gyre and gymbal in the wabe
 
+	; Note SIZE_PATTERN is the size of oem_brush_mono.
+	; So basically we're skipping over the bits in between the
+	; end of oem_brush_mono and the beginning of oem_brush_mask.
 	add	di	,oem_brush_mask - oem_brush_mono - SIZE_PATTERN
 	mov	dx,di
 
@@ -1560,7 +1627,7 @@ rby_color:
         mov     es,ax
         mov     di,sp
 
-        mov     cl,bl
+        mov     cl,bh
         rep     movsb
 
 ;  == copy byte(s) to front of brush
@@ -1570,7 +1637,7 @@ rby_color:
         mov     di,dx
 
         mov     cl,SIZE_PATTERN
-        sub     cl,bl
+        sub     cl,bh
         rep     movsb
 
 ;  == copy bytes(s) from stack to brush
@@ -1579,13 +1646,14 @@ rby_color:
         mov     ds,ax
         mov     si,sp
 
-        mov     cl,bl
+        mov     cl,bh
         rep     movsb
 
 
 ;  ** restore sanity
 
-        add     sp,SIZE_PATTERN*SIZE_PATTERN-SIZE_PATTERN
+        mov     sp,bp
+	pop	bp
 
         pop     dx
         pop     si
