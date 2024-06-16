@@ -11,7 +11,6 @@
 .286
 ?PLM=1
 ?WIN=1
-THE216	EQU	1
 
 incLogical	= 1			; Include control for gdidefs.inc
 incDrawMode	= 1			; Include control for gdidefs.inc
@@ -43,15 +42,12 @@ rscan_type	STRUC
 
 rsiterate       db      0       ;flag: if non 0 then in a Begin/End loop
 rstype          db      0       ;dev type:0 = screen, 1 = clr mem, 2 mono mem
-rscolor_pattern db      SIZE_PATTERN * SIZE_PATTERN  DUP(?)
+rscolor_pattern db      SIZE_PATTERN * SIZE_PATTERN * 4 DUP(?)
 rsmono_pattern  db      SIZE_PATTERN DUP (?)
 rsstyle         dw      0
 rsaccel         db      0
 rsxpar_mask     db      SIZE_PATTERN DUP(?)
 rsoutput        dw      0       ;rop and bg mode specific output routine
-IF THE216
-rop		dw	0
-ENDIF
 rscan_type      ENDS
 
 
@@ -152,24 +148,6 @@ dw       color_opaque_rop_d
 dw       color_opaque_rop_e
 dw       color_opaque_rop_f
 
-IF	THE216
-sl216_mode_output	LABEL	WORD
-dw	sl216_xpar_rop
-dw      sl216_opaque_rop
-
-PUBLIC	remap_slrop
-remap_slrop	  LABEL   BYTE
-DB	00H, 01H, 04H, 05H, 02H, 03H, 06H, 07H
-DB	08H, 09H, 0CH, 0DH, 0AH, 0BH, 0EH, 0FH
-
-PUBLIC	read_modify_write_needed_sl
-read_modify_write_needed_sl	   LABEL   BYTE
-DB	00H, 20H, 20H, 20H, 20H, 00H, 20H, 20H
-DB	20H, 20H, 00H, 20H, 20H, 20H, 20H, 00H
-
-
-ENDIF
-
 ;--------------------------------------------------------------------------;
 ;
 ; DO_SCANLINES
@@ -199,15 +177,16 @@ cProc   do_scanlines,<FAR,PUBLIC,WIN,PASCAL,NODATA>,<si,di,es,ds>
         parmD   lp_draw_mode            ; --> to a Drawing mode
         parmD   lp_clip_rect            ; --> to a clipping rectange if <> 0
 
+	localB	pixbytes
         localB  current_mono_pattern
         localB  current_xpar_mask
-        localV  current_color_pattern,8
+        localV  current_color_pattern,SIZE_PATTERN*4
         localW  start_of_scan           ;address of start of scanline
         localW  draw_output             ;rop and bg mode specific routine
 	localW	exclude_flag
 cBegin
 	WriteAux  <'Scanline'>
-	int	3
+	;int	3
 	cld				; We are forever doing this
 
         mov     ax      ,DataBASE
@@ -328,8 +307,7 @@ color_main_loop:
 
         mov     exclude_flag ,0
 	cmp	es:[rscan.rstype] ,SCREEN_TYPE
-	je	@F
-	jmp	color_main_loop_noex
+	jne	color_main_loop_noex
 
 @@:
         mov     al,es:[enabled_flag]            ; check for a disabled display
@@ -350,167 +328,6 @@ ifdef EXCLUSION
         pop     es
 endif
 
-IF	THE216
-PUBLIC	the216_start
-the216_start:
-	test	byte ptr es:Video_Board_Flags,BOARD_FLAG_ENABLE_216  ;216?
-	jnz	@F
-	jmp	color_main_loop_noex
-@@:
-	mov	bx,es:[rscan.rop]
-	mov	bl,cs:remap_slrop[bx]	;Oops! hardware rops are backwards
-	test	cs:read_modify_write_needed_sl[bx],20H
-	jz	@F
-        jmp     color_main_loop_noex
-@@:
-	lds	si	,lp_points
-	mov	ax,ds:[si + 6]
-	sub	ax,ds:[si + 4]
-	cmp	ax,24
-	jae	@F
-	jmp	color_main_loop_noex
-@@:
-        mov     bx      ,[si].ycoord              ;use ycoord to determine
-	mov	ax	,bx			  ; which byte of the xpar
-	and	bx	,7
-	mov	cl	,es:[rscan.rsxpar_mask][bx]  ; mask to use and save
-	mov	current_xpar_mask, cl		  ; on the stack
-
-;	copy the pattern row into video memory so extended bg latches
-;	   can be loaded
-
-	push	ax
-
-	mov	dx,VGAREG_SQ_ADDR	;find bank location of hardware cursor
-	mov	al,0FFH 		; which is always the last bank in mem
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,60H
-
-	shr	ax,3
-	mov	dl,al
-	SET_BANK
-
-	push	es
-	pop	ds
-	mov	dx,ScreenSelector
-	mov	es,dx
-	mov	di,07FFFH - 100H - 03FH ;end of memory - 256 - 64
-
-	shiftl	bx	,3
-	mov	ax	,WORD PTR ds:[rscan.rscolor_pattern][bx + 0]
-	stosw
-	mov	ax	,WORD PTR ds:[rscan.rscolor_pattern][bx + 2]
-	stosw
-	mov	ax	,WORD PTR ds:[rscan.rscolor_pattern][bx + 4]
-	stosw
-	mov	ax	,WORD PTR ds:[rscan.rscolor_pattern][bx + 6]
-	stosw
-	mov	al,es:[di - 8]		;loads Xbg latches
-
-	push	ds
-	pop	es			;restore data segment into es
-
-	mov	dx,VGAREG_SQ_ADDR
-        mov     al,VGAREG_SQ_FOREBACK_MODE
-        out     dx,al
-        inc     dx
-        in      al,dx                           ;use the bg latches as
-        or      al,0CH                          ; input A into the ALU
-        out     dx,al
-
-        mov     dx,VGAREG_SQ_ADDR
-        mov     ax,VGAREG_SQ_XALU_CONTROL +  (0C2H SHL 8)
-	out	dx,ax				;enable XALU
-	mov	bx,es:[rscan.rop]
-	mov	bl,cs:remap_slrop[bx]	;Oops! hardware rops are backwards
-
-        mov     al,VGAREG_SQ_XALU
-        mov     ah,0CH                          ;bgrop = 'B' (input B to ALU)
-        shl     bl,4
-        or      ah,bl
-        out     dx,ax                           ;specify the rop being used
-
-	pop	ax
-        les     di,lp_dst_dev
-        assume  es:nothing
-	mov	dx,es:[di].bmWidthBytes
-	shr	dx,3
-	mul	dx
-	les	di,es:[di].bmBits
-	add	di,ax
-	adc	dl,0
-	mov	start_of_scan ,di		; save offset
-	SET_BANK
-
-	lds	si	,lp_points
-        add     si      ,4
-
-public	sl216_main_draw_loop
-sl216_main_draw_loop:
-
-	mov	cx	,[si]			;ax = xstart
-	and	cl,7
-	mov	al,current_xpar_mask		;the current pattern byte
-	rol	al,cl				;rotate the xpar mask
-	xor	cl,7
-	mov	bx,2
-	shl	bx,cl
-	dec	bx				;al holds left edge mask
-
-	mov	cx,[si + 2]
-	dec	cx
-	and	cl,7
-	mov	bh,80H
-	sar	bh,cl				;ah holds right edge mask
-
-	mov	dx,[si]
-	cmp	dx,[si + 2]
-	jae	sl216_main_draw_loop_skip
-
-        shr     dx,3
-	mov	cx,[si + 2]
-	dec	cx
-	shr	cx,3
-	sub	cx,dx
-	je	bpd_prep_combine_edges
-
-	dec	cx
-	jmp	short @F
-
-bpd_prep_combine_edges:
-
-	and	bl,bh
-	sub	bh,bh
-@@:
-	mov	di,start_of_scan
-	mov	dx,[si]
-	add	si,4
-	shr	dx,3
-	add	di,dx
-	call	draw_output
-
-sl216_main_draw_loop_skip:
-	dec	count
-	jne	sl216_main_draw_loop
-
-	mov	dx,VGAREG_SQ_ADDR
-	mov	al,VGAREG_SQ_FOREBACK_MODE
-	out	dx,al
-	inc	dx
-	in	al,dx
-	and	al,NOT 0CH
-	out	dx,al
-
-	dec	dx
-	mov	ax,VGAREG_SQ_XALU_CONTROL + (00H SHL 8)
-	out	dx,ax
-	jmp	do_scanline_color_done
-ENDIF
-
-
-
 color_main_loop_noex:
 	lds	si	,lp_points
         mov     bx      ,[si].ycoord              ;use ycoord to determine
@@ -519,20 +336,34 @@ color_main_loop_noex:
 	mov	cl	,es:[rscan.rsxpar_mask][bx]  ; mask and mono pattern to
 	mov	current_xpar_mask, cl		  ; use. Then place these
 						  ; variables on the stack.
-	shiftl	bx	,3
-	mov	cx	,WORD PTR es:[rscan.rscolor_pattern][bx + 0]
-	mov	WORD PTR [current_color_pattern + 0], cx
-	mov	cx	,WORD PTR es:[rscan.rscolor_pattern][bx + 2]
-	mov	WORD PTR [current_color_pattern + 2], cx
-	mov	cx	,WORD PTR es:[rscan.rscolor_pattern][bx + 4]
-	mov	WORD PTR [current_color_pattern + 4], cx
-	mov	cx	,WORD PTR es:[rscan.rscolor_pattern][bx + 6]
-	mov	WORD PTR [current_color_pattern + 6], cx
+	errnz	SIZE_PATTERN-8
+	; multiply by 32 to index 4*SIZE_PATTERN bytes per pattern line
+	shiftl	bx	,5
+	push	ds
+	mov	dx	,si
 
-        les     di,lp_dst_dev
+	mov	cx	,es
+	mov	si	,ss
+	mov	ds	,cx
+	mov	es	,si
         assume  es:nothing
 
+	lea	di	,current_color_pattern
+	lea	si	,rscan.rscolor_pattern[bx]
+	mov	cx	,SIZE_PATTERN*2		; 16 words = 32 bytes
+	cld
+	rep	movsw
+
+	; restore the pointer to the list of points
+	mov	si	,dx
+	pop	ds
+
+        les     di,lp_dst_dev
         push    es:[di].bmType                  ; save device type
+
+	mov	cl,es:[di.bmBitsPixel]
+	shr	cl	,3	; convert to bytes
+	mov	[pixbytes],cl
 
 	call	bmp_ptr 			; set ES:DI --> scan line
         mov     start_of_scan ,di               ; save offset
@@ -544,8 +375,7 @@ color_main_loop_noex:
         SET_BANK                                ; set bank iff DEVICE
 @@:
 
-        add     si      ,4
-        mov     bx      ,si
+        lea     bx      ,[si+4]
 
 public	color_main_draw_loop
 color_main_draw_loop:
@@ -560,12 +390,18 @@ color_main_draw_loop:
 	rol	dl	,cl			;position corresponding to
 	mov	dh	,current_xpar_mask	;the current pattern byte
 	rol	dh	,cl			;rotate the xpar mask
+
+	mov	di	,start_of_scan
+	mov	cl	,pixbytes
+	xor	ch	,ch
+@@:	add	di	,ax
+
+	loop	@B
+
 	mov	cx	,[bx]			;cx = xend
 	add	bx	,2
 	sub	cx	,ax			;cx = xend - xstart
-	je	color_main_draw_loop_skip
-	mov	di	,start_of_scan
-	add	di	,ax
+	jz	color_main_draw_loop_skip
 	call	draw_output
 
 color_main_draw_loop_skip:
@@ -708,26 +544,6 @@ begin_scanline_color:
 	call	get_fill_data		;returns bx as the background mode
 					;	 ax is the rop # [0-F]
 	jc	begin_scanline_error
-
-IF	THE216
-PUBLIC	the216_begin
-the216_begin:
-	cmp	bl,0
-	je	@F
-        push    ax
-        mov     ax      ,DataBASE
-        mov     es      ,ax
-        pop     ax
-	test	byte ptr Video_Board_Flags,BOARD_FLAG_ENABLE_216  ;216?
-	je	@F
-	and	bx	,1
-	shiftl	bx	,1
-	and	ax,0FH
-	mov	es:[rscan.rop],ax
-	mov	ax	,cs:[sl216_mode_output][bx]
-        mov     es:[rscan.rsoutput] ,ax
-        jmp     short   begin_scanline_done
-ENDIF
 
 @@:
 	shiftl	bx	,4
@@ -928,7 +744,6 @@ get_fill_data	endp
 
 	include monostuf.inc
         include clrstuff.inc
-	include sl216.inc
 	include pattern.inc
 
 ;-----------------------------------------------------------------------;
