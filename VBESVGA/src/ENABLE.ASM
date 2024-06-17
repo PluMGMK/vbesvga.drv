@@ -149,7 +149,6 @@ DW	480, 512, 600, 768
 
 	externW ScreenSelector		; screen selector
         externW ScratchSel              ; the free selector
-        externW ssb_mask                ;Mask for save save screen bitmap bit
 
 sEnd	Data
 
@@ -316,8 +315,6 @@ inquire_gdi_info:
 
 	pop	ds
 	assumes ds,Data
-	mov	bx,ssb_mask
-	and	es:[di].dpRaster[-size GDIINFO],bx
 
 	push	ax
 	mov	ax,__WinFlags			; setup for 3.0 fonts

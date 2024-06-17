@@ -87,9 +87,7 @@ assumes cs,Code
 ; Entry:
 ;	nothing
 ; Returns:
-;	Any bits saved by SaveScreenBitmap in the upper page of EGA
-;	memory have been invalidated by changing flags in
-;	shadow_mem_status.
+;	nothing
 ; Registers Preserved:
 ;	SI,DI,DS,BP
 ; Registers Destroyed:

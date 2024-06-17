@@ -9,11 +9,8 @@
 ; 
 ; Created: 26 June 1987
 ;
-; This module handles disabling of the RC_SAVEBITMAP raster capability
-; if the EGA doesn't have 256Kbytes of display memory.  This operation
-; happens at run time, because the bit will always be set at assembly-
-; time if the SaveScreenBitmap code is present in the driver, though
-; a particular EGA board may not be able to use it.
+; This module handles setting up the INT 10H calling route and setting a few
+; default pointers.
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -37,7 +34,6 @@ incDevice = 1				;allow assembly of needed constants
 sBegin	Data
 
         externW ScreenSelector  ; the selector for display memory
-        externW ssb_mask        ; Mask for save screen bitmap bit
 
 sEnd	Data
 
@@ -85,9 +81,6 @@ page
 cProc	dev_initialization,<FAR,PUBLIC>
 
 cBegin
-;	Video 7 does not allow Save Screen bitmap calls
-	and	ssb_mask,not RC_SAVEBITMAP
-
 	mov	ax,__A000			; get the address of memory
 	mov	ScreenSelector,ax
 
@@ -103,7 +96,7 @@ cBegin
 	test	ax,ax
 	jz	dev_init_exit
 
-	; VESA Protected Mode Interface, if availablem, gets setup later, in
+	; VESA Protected Mode Interface, if available, gets setup later, in
 	; ENABLE.ASM, because we need to allow the user to specify how to check
 	; the structure's integrity...
 

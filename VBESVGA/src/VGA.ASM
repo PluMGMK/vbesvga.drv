@@ -148,7 +148,6 @@ cdw	macro	v1,v2
 	public	physical_enable 	;Enable routine
 	public	physical_disable	;Disable
 
-;	 public  ssb_device		 ;Physical device for SaveScreenBitmap
 	public	physical_device 	;Physical device descriptor
 	public	info_table_base 	;GDIInfo table base address
 
@@ -279,10 +278,6 @@ externB bank_select
 globalW ScreenSelector,0                ;the screen selector
 globalW ScratchSel,0			;have a scratch selector
 
-globalB shadow_mem_status,0             ;Staus flags for unused video ram
-
-globalW ssb_mask,<not RC_SAVEBITMAP>    ;Mask for save screen bitmap bit
-;;;;globalW ssb_mask,<0FFFFh>               ;Mask for save screen bitmap bit
 globalB enabled_flag,0			;Display is enabled if non-zero
 
 NUM_PALETTES	 equ	256		; number of palettes
@@ -462,35 +457,6 @@ SSG		equ	64		;scanlines per segment(fixed up @enable)
 
 physical_device BITMAP <SCRSEL,W,H,WB,P,B,0A0000000H,0,0,IS,SSG,0,0,0>
 
-sEnd
-
-sBegin  Data
-
-;-----------------------------------------------------------------------;
-;	This is the same physical device structure as defined above
-;	except that the number of scan lines has been increased to
-;	encompass shadow memory.  We have to do this for the restore
-;	operation of the SaveScreenBitmap function, because BitBLT
-;	clips the source to the device extents,	meaning that the entire
-;	saved rectangle would be lost.
-;
-;       in the Video7 driver  every scan line is 1024 bytes wide, we will
-;       save the bitmaps in the area from 640 - 1024
-;
-;                                  640                 1024
-;       +---------------------------+-------------------+
-;       |display screen             |Save area          |
-;       |                           |                   |
-;       |                           |                   |
-;       |                           |                   |
-;       |                           |                   |
-;       |                           |                   |
-;   480 +---------------------------+                   |
-;       |                                               |
-;       |                                               |
-;   512 +-----------------------------------------------+
-;
-;-----------------------------------------------------------------------;
 sEnd
 
 sBegin	InitSeg
@@ -737,19 +703,6 @@ physical_enable proc near
 
         mov     enabled_flag,0ffh       ; show enabled
 
-        ; call    hook_int_10h
-
-;       Check for extra video memory.  If present, then one bitmap at a
-;	time can be sent there to speed up saving and restoring.
-
-        xor     cl,cl                   ;Assume we don't have 512K
-	test	ssb_mask,RC_SAVEBITMAP
-	jz	phys_enable_15		;Can't use speed-up
-
-	mov	ax,ScreenSelector	; get the address of memory
-	mov	cl,SHADOW_EXISTS	;We've got it
-phys_enable_15:
-	mov	shadow_mem_status,cl
 ;----------------------------------------------------------------------------;
 ; at this point notify kernel that driver is cable of doing a save/restore   ;
 ; of its state registers and kernel should stop I/O trapping.		     ;
