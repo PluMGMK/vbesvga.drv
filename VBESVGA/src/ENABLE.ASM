@@ -153,11 +153,6 @@ DW	480, 512, 600, 768
 sEnd	Data
 
 
-sBegin	Code
-        externB ??BigFontFlags
-sEnd    Code
-
-
 	externA __NEXTSEG		;WINDOWS runtime segment selector
 
 createSeg _INIT,InitSeg,word,public,CODE
@@ -315,36 +310,6 @@ inquire_gdi_info:
 
 	pop	ds
 	assumes ds,Data
-
-	push	ax
-	mov	ax,__WinFlags			; setup for 3.0 fonts
-        test    ax,WF_PMODE                     ; protected mode?
-        jz      @F
-        test    ax,WF_CPU386+WF_CPU486          ; 386/486 protected mode?
-        jz      @F
-	or	wptr es:[di].dpRaster[-size GDIINFO],RC_BIGFONT ; set the big fonts bit
-;
-; change our code segment based variable to reflect the mode
-;
-	push	es
-;
-	xor	ax,ax
-	push	ax
-	cCall	AllocSelector		; get a free selector
-	mov	bx,_TEXT
-	cCall	PrestoChangeoSelector,<bx,ax>
-	mov	es,ax
-	assumes es,Code
-	mov	byte ptr es:[??BigFontFlags],-1
-
-	push	es
-	cCall	FreeSelector
-;
-        pop     es
-	assumes es,nothing
-;
-@@:
-	pop	ax
 exit_enable:
 
 cEnd
@@ -626,103 +591,6 @@ enable_found_substring:
         ret
 
 enable_find_substring   ENDP
-
-
-COMMENT ~
-
-;
-;	enable_findmode
-;
-;	This routine returns the mode number in string pointed to by ds:si.
-;	Only mode numbers between 66H and 6AH inclusive are recognized (these
-;	are the 256 color modes.) The number returned is the mode number
-;	found. If no mode number exists, then 0 is returned.
-;	PARMS:
-;	ds:si	points	 to string
-;
-;       RETURNS:
-;	cx	Video 7 mode number
-;	bx	Index 0=67, 1=68, 2=69, 3=6A
-
-PUBLIC	enable_findmode
-enable_findmode 	PROC	NEAR
-
-	mov	ax,ds
-	mov	es,ax
-	mov	bx,6			;this will be the mode # index * 2
-
-ef_next_cmp_string:
-        push    si
-	jmp	short ef_st
-
-ef_more_src_string:
-        mov     di,moderes_string[bx]
-        mov     cx,moderes_length[bx]
-	rep	cmpsb
-	je	enable_foundmode
-	inc	si
-ef_st:	cmp	byte ptr [si],0
-	jne	ef_more_src_string
-
-	pop	si
-	sub	bx,2
-	jne	ef_next_cmp_string
-	push	si			;to counteract next instruction
-
-enable_foundmode:
-	pop	si
-	shr	bx,1
-	mov	cx,bx
-	add	cx,67H
-	ret
-
-enable_findmode 	ENDP
-
-
-;
-;	enable_finddpi
-;
-;	This routine returns the desired dpi as an integer in ax. 96 will be
-;	returned if there is no size indicated in the profile string.
-;	PARMS:
-;	ds:si	points	 to string
-;
-;       RETURNS:
-;	ax	Video 7 mode number
-
-PUBLIC	enable_finddpi
-enable_finddpi		PROC	NEAR
-
-	mov	ax,ds
-	mov	es,ax
-	mov	bx,2			;this will be the mode # index * 2
-
-efd_next_cmp_string:
-        push    si
-	jmp	short efd_st
-
-efd_more_src_string:
-	mov	di,dpires_string[bx]
-	mov	cx,dpires_length[bx]
-	rep	cmpsb
-	je	enable_founddpi
-	inc	si
-efd_st: cmp	byte ptr [si],0
-	jne	efd_more_src_string
-
-	pop	si
-	sub	bx,2
-	jne	efd_next_cmp_string
-	push	si			;to counteract next instruction
-
-enable_founddpi:
-	pop	si
-	mov	ax,dpires_number[bx]
-	ret
-
-enable_finddpi		ENDP
-
-~	;end COMMENT
 
 
 ;****************************************************************

@@ -219,6 +219,7 @@ assumes cs,Code
 
 externW		_cstods		; in CURSOR.ASM
 externW		pxbytes		; in SWCURS.ASM
+externB		??BigFontFlags
 
 ; From INT10.ASM
 externFP	DoInt10h
@@ -1174,6 +1175,17 @@ FindMode_done:
 
 	; while we're here with a code segment alias,
 	; setup modal functions / data for brush realization
+	mov	ax,__WinFlags			; setup for 3.0 fonts
+        test    ax,WF_PMODE                     ; protected mode?
+        jz      @@bffisset
+        test    ax,WF_CPU386+WF_CPU486          ; 386/486 protected mode?
+        jz      @@bffisset
+;
+; change our code segment based variable to reflect the mode
+;
+	mov	byte ptr es:[??BigFontFlags],-1
+
+@@bffisset:
 	mov	al,[VESABPP]
 	shr	al,3	; bits to bytes
 	cbw
@@ -1298,10 +1310,13 @@ vesa_gdi_fixup	proc near
 	; we only support palettes for packed-pixel modes
 	cmp	[VESAMemModel],VESA_MEM_PACKED
 	je	@F
-RC_PALETTE	equ 0000000100000000b	; can do color palette management
 	and	es:[si].dpRaster, NOT RC_PALETTE
 @@:
-
+	; set the big font flag as appropriate
+	cmp	[??BigFontFlags],0
+	jz	@F
+	or	wptr es:[si].dpRaster,RC_BIGFONT ; set the big fonts bit
+@@:
 	; now set the ColourFormat too
 	pop	ds
 	assumes	ds,Data
