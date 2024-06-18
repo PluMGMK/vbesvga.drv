@@ -77,6 +77,7 @@ assumes cs,Code
         externA  BW_THRESHOLD           ;Where black becomes white
 	externW _cstods
 	externW	ColourFormat_CS		;in VESAFNS.ASM
+	externB	??BigFontFlags
 ;
 ; The following are the definitions for the hatch patterns. They are defined
 ; by each individual driver based on its resolution.
@@ -107,6 +108,10 @@ realize_sizes   label   word
 oem_pen_size	dw      SIZE oem_pen_def
 oem_brush_size	dw      SIZE oem_brush_def4
 oem_font_size	dw      0
+;
+; pointer to modal implementation of colour_expand function
+	PUBLIC	colour_expand
+colour_expand	dw offset clr4_expand_286
 ;
         errnz   OBJ_PEN-1
         errnz   OBJ_BRUSH-OBJ_PEN-1
@@ -1110,7 +1115,7 @@ realize_hatch_17:
 	mov	bp,cs
 	mov	ds,bp
 	lea	bp,spill_colours
-	call	colour_expand
+	call	[colour_expand]
 	pop	bp
 
 ;       State of regs: desired regs
@@ -1372,13 +1377,13 @@ rotate_brush_x_slow_loop:
 
 	; copy from the stack back into the pattern
 	xchg	ax,cx
-	rep	movs word ptr es:[di],ss:[si]
+	rep	movs word ptr es:[di],word ptr ss:[si]
 	xchg	ax,cx
 
 	; then copy what's left over on the other end of the stack buffer
 	mov	si,sp
 	xchg	dx,cx
-	rep	movs word ptr es:[di],ss:[si]
+	rep	movs word ptr es:[di],word ptr ss:[si]
 	xchg	dx,cx
 
 	; prepare the stack for the next round
@@ -1677,16 +1682,70 @@ rotate_brush_y  endp
         assumes ds,nothing
         assumes es,nothing
 
-	PUBLIC	colour_expand
-colour_expand	proc near
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+clr1_expand	proc near
+	; get the colours into register
+	mov	dl,byte ptr [bp.lo][0]
+	mov	dh,byte ptr [bp.lo][4]
 
-realize_hatch_outer_loop:
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+clr1_expand_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
 	mov	bh,al
 
-realize_hatch_inner_loop:
+clr1_expand_inner_loop:
+	rol	bh,1
+	sbb	al,al			; ff = fg
+	and	al,dh
+	; If the bit was 1, then AX == fg xor bg, otherwise AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	al,dl
+	stosb
+	dec	ch
+	jnz	clr1_expand_inner_loop
+	loop	clr1_expand_outer_loop
+	ret
+clr1_expand	endp
+
+clr2_expand	proc near
+	push	bp
+	; get the colours into registers
+	mov	dx,[bp.lo][0]
+	mov	bp,[bp.lo][4]
+
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+clr2_expand_outer_loop:
+	mov	ch,SIZE_PATTERN 	; ch = inner loop count
+	lodsb				; Get next byte of pattern
+	mov	bh,al
+
+clr2_expand_inner_loop:
+	rol	bh,1
+	sbb	ax,ax			; ffff = fg
+	and	ax,bp
+	; If the bit was 1, then AX == fg xor bg, otherwise AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	ax,dx
+	stosw
+	dec	ch
+	jnz	clr2_expand_inner_loop
+	loop	clr2_expand_outer_loop
+
+	pop	bp
+	ret
+clr2_expand	endp
+
+clr3_expand_286	proc near
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+
+clr3_expand_286_outer_loop:
+	mov	ch,SIZE_PATTERN 	; ch = inner loop count
+	lodsb				; Get next byte of pattern
+	mov	bh,al
+
+clr3_expand_286_inner_loop:
 	rol	bh,1
 	sbb	ax,ax			; ffff = fg
 	cwd
@@ -1695,20 +1754,118 @@ realize_hatch_inner_loop:
 	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
 	; or 0 xor bg == bg, as desired :)
 	xor	ax,[bp.lo][0]
-realize_hatch_first_stos label byte
 	stosw
-realize_hatch_second_word:
+	and	dl,byte ptr [bp.hi][4]
+	xor	dl,byte ptr [bp.hi][0]
+	mov	al,dl
+	stosb
+	dec	ch
+	jnz	clr3_expand_286_inner_loop
+	loop	clr3_expand_286_outer_loop
+	ret
+clr3_expand_286	endp
+
+clr3_expand_386	proc near
+	.386
+	push	bp
+	; get the colours into registers - exchange to ensure we don't
+	; accidentally stomp the upper halves of any 32-bit regs!
+	xchg	edx,[bp][0]
+	xchg	ebp,[bp][4]
+
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+clr3_expand_386_outer_loop:
+	mov	ch,SIZE_PATTERN 	; ch = inner loop count
+	lodsb				; Get next byte of pattern
+	mov	bh,al
+
+clr3_expand_386_inner_loop:
+	rol	bh,1
+	sbb	eax,eax			; ffffffff = fg
+	and	eax,ebp
+	; If the bit was 1, then AX == fg xor bg, otherwise AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	eax,edx
+	stosw
+	sar	eax,10h
+	stosb
+	dec	ch
+	jnz	clr3_expand_386_inner_loop
+	loop	clr3_expand_386_outer_loop
+
+	; get back the registers we stuffed in the colour slots
+	pop	bx
+	xchg	ebp,ss:[bx][4]
+	; now we have our proper frame pointer back in BP
+	xchg	edx,[bp][0]
+	ret
+	.8086
+clr3_expand_386	endp
+
+clr4_expand_286	proc near
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+
+clr4_expand_286_outer_loop:
+	mov	ch,SIZE_PATTERN 	; ch = inner loop count
+	lodsb				; Get next byte of pattern
+	mov	bh,al
+
+clr4_expand_286_inner_loop:
+	rol	bh,1
+	sbb	ax,ax			; ffff = fg
+	cwd
+	and	ax,[bp.lo][4]
+	; If the bit was 1, then [DX:]AX == fg xor bg, otherwise [DX:]AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	ax,[bp.lo][0]
+	stosw
 	and	dx,[bp.hi][4]
 	xor	dx,[bp.hi][0]
 	mov	ax,dx
-realize_hatch_second_stos label byte
 	stosw
-realize_hatch_second_word_done:
 	dec	ch
-	jnz	realize_hatch_inner_loop
-	loop	realize_hatch_outer_loop
+	jnz	clr4_expand_286_inner_loop
+	loop	clr4_expand_286_outer_loop
 	ret
-colour_expand	endp
+clr4_expand_286	endp
+
+clr4_expand_386	proc near
+	.386
+	push	bp
+	; get the colours into registers - exchange to ensure we don't
+	; accidentally stomp the upper halves of any 32-bit regs!
+	xchg	edx,[bp][0]
+	xchg	ebp,[bp][4]
+
+	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+clr4_expand_386_outer_loop:
+	mov	ch,SIZE_PATTERN 	; ch = inner loop count
+	lodsb				; Get next byte of pattern
+	mov	bh,al
+
+clr4_expand_386_inner_loop:
+	rol	bh,1
+	sbb	eax,eax			; ffffffff = fg
+	and	eax,ebp
+	; If the bit was 1, then AX == fg xor bg, otherwise AX == 0
+	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
+	; or 0 xor bg == bg, as desired :)
+	xor	eax,edx
+	stosd
+	dec	ch
+	jnz	clr4_expand_386_inner_loop
+	loop	clr4_expand_386_outer_loop
+
+	; get back the registers we stuffed in the colour slots
+	pop	bx
+	xchg	ebp,ss:[bx][4]
+	; now we have our proper frame pointer back in BP
+	xchg	edx,[bp][0]
+	ret
+	.8086
+clr4_expand_386	endp
 
 ;
 ;
@@ -1834,9 +1991,32 @@ assumes cs,InitSeg
 ; History:
 ;	see Git
 ;--------------------------------------------------------------------------;
+colour_expand_table	label word
+	dw	offset	clr1_expand
+	dw	offset	clr2_expand
+	dw	offset	clr3_expand_286
+	dw	offset	clr4_expand_286
+	dw	offset	clr1_expand
+	dw	offset	clr2_expand
+	dw	offset	clr3_expand_386
+	dw	offset	clr4_expand_386
+
 public	init_modal_realizations
 init_modal_realizations	proc near
 	assumes	es,Code
+
+	; set the correct modal colour expansion function
+	push	bx
+	mov	bh,[??BigFontFlags]
+	and	bh,8
+	mov	bl,al
+	dec	bl	; select the correct function for our pxbytes setting
+	shl	bl,1	; convert index to pointer offset
+	or	bl,bh	; select the second half of colour_expand_table if ??BFF
+	xor	bh,bh	; make BX a proper index
+	mov	bx,colour_expand_table[bx]
+	mov	[colour_expand],bx
+	pop	bx
 
 	dec	al
 	jnz	@F
@@ -1844,20 +2024,6 @@ init_modal_realizations	proc near
 	mov	[pattern_copy_numwords],SIZE_PATTERN SHR 1	; 4 words
 	mov	[oem_brush_size],size oem_brush_def
 
-	; only need to store one byte at a time for hatched brush
-	dec	[realize_hatch_first_stos]
-	push	di
-	push	cx
-remove_second_word:
-	lea	di,[realize_hatch_second_word]
-	lea	cx,[realize_hatch_second_word_done]
-	sub	cx,di
-	cld
-	mov	al,90h	; blank out the sequence with nops
-	rep	stosb
-
-	pop	cx
-	pop	di
 	ret
 
 @@:
@@ -1878,7 +2044,10 @@ remove_second_word:
 
 	mov	[oem_brush_size],size oem_brush_def2
 	mov	[pattern_copy_numwords],SIZE_PATTERN	; 8 words = 8*16 bits
-	jmp	remove_second_word	; shared code with 8-bit case
+
+	pop	cx
+	pop	di
+	ret
 
 @@:
 	dec	al
@@ -1886,7 +2055,6 @@ remove_second_word:
 
 	; three bytes, meaning the second stosw needs to become a stosb
 	dec	[RSSetPlanesStos]
-	dec	[realize_hatch_second_stos]
 	mov	[pattern_copy_numwords],SIZE_PATTERN+(SIZE_PATTERN SHR 1)
 	mov	[oem_brush_size],size oem_brush_def3
 	ret

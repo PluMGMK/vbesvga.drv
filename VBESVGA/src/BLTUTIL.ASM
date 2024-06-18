@@ -27,10 +27,10 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
-externW		pxbytes			; in SWCURS.ASM
-externW		oem_brush_size		; in ROBJECT.ASM
-externW		pattern_copy_numwords	; in ROBJECT.ASM
-externNP	colour_expand		; in ROBJECT.ASM
+externW	pxbytes			; in SWCURS.ASM
+externW	oem_brush_size		; in ROBJECT.ASM
+externW	pattern_copy_numwords	; in ROBJECT.ASM
+externW	colour_expand		; in ROBJECT.ASM (function pointer)
 
 ;
 ;	blt_clip
@@ -375,7 +375,7 @@ brush_convert_mono_to_color	   PROC    NEAR
 
 	; now set the pointer and call the function
 	mov	bp,sp
-	call	colour_expand
+	call	[colour_expand]
 
 	add	sp,8
 	pop	bp

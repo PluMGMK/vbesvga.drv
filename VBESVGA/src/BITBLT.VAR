@@ -42,7 +42,6 @@ last_edge_mask		EQU	<[bp - 36H]> ;used in DST_IS_MONO blts
 align_rotate_count	EQU	<[bp - 38H]> ;used in MONO/COLOR to MONO blts
 bgcolour		EQU	<[bp - 3CH]> ;physical background colour
 fgcolour		EQU	<[bp - 40H]> ;physical foreground colour
-colors			EQU	<[bp - 40H]> ;bgcolor:fgcolor = hidword:lodword
 mono_bits		EQU	<[bp - 42H]> ;bgmonobit:fgmonobit = hibyte:lobyte
 pattern_offset		EQU	<[bp - 44H]> ;used in blts with patterns
 rop_offset		EQU	<[bp - 46H]> ;offset of ropcode in roptable
