@@ -108,14 +108,16 @@ realize_sizes   label   word
 oem_pen_size	dw      SIZE oem_pen_def
 oem_brush_size	dw      SIZE oem_brush_def4
 oem_font_size	dw      0
-;
-; pointer to modal implementation of colour_expand function
-	PUBLIC	colour_expand
-colour_expand	dw offset clr4_expand_286
-;
         errnz   OBJ_PEN-1
         errnz   OBJ_BRUSH-OBJ_PEN-1
         errnz   OBJ_FONT-OBJ_BRUSH-1
+;
+;
+; pointers to modal function implementations
+	PUBLIC	colour_expand
+	PUBLIC	fill_solid_plane
+colour_expand		dw offset clr4_expand_286
+fill_solid_plane	dw offset fill_solid4_286
 ;
 ;
 ;--------------------------Exported-Routine-----------------------------;
@@ -677,30 +679,11 @@ realize_solid   proc    near
 	je	RSUsePalette
 
 @@:	or	brush_accel,SOLID_BRUSH	; no dithering, so set the solid bit
-FillSolidPlane:
-	; if "somehow" we have 1-byte colours without a
-	; palette, the same code path will work for them too:
-	cmp	[pxbytes],1
-	je	RSSetPlanesLoop_8bit
-
 	; Now we have the physical colour representation in DX:AX
-	mov	cx,SIZE_PATTERN*SIZE_PATTERN
-RSSetPlanesPref	label byte
-	nop	; Can replace this nop (90h) with a rep (F3h)
-@@:	stosw
-RSSetPlanesXchg:
-	xchg	ax,dx
-RSSetPlanesStos	label byte
-	stosw	; Can decrement this stosw (ABh) to a stosb (AAh)
-	xchg	ax,dx
-	loop	@B
-RSSetPlanesDone:
+	call	[fill_solid_plane]
 
 	; move onto the mono piece
-	test	brush_accel,SOLID_BRUSH
-	jnz	do_mono_brush		;JAK
-	; This may be a hatched brush with identical fg and bg colours:
-	jmp	realize_hatch20
+	jmp	do_mono_brush		;JAK
 
 RSUsePalette:
 	and	ah,not SOLID_BRUSH	; to be set later
@@ -712,15 +695,9 @@ RSUsePalette:
 ;
 ; create a solid color brush
 ;
-RSSetPlanesLoop_8bit:
 	mov	dh,ah
-	mov	cx, SIZE_PATTERN * SIZE_PATTERN / 2
-	mov	ah,al
-	rep	stosw
-	test	brush_accel,SOLID_BRUSH
-	jnz	do_mono_brush		;JAK
-	; This may be a hatched brush with identical fg and bg colours:
-	jmp	realize_hatch20
+	call	[fill_solid_plane]
+	jmp	do_mono_brush		;JAK
 
 ;
 ; create a solid white brush (& mono brush portion too)
@@ -1108,7 +1085,8 @@ realize_hatch_actual:
 	; reusing the modal code we have setup for solid brushes!
 	mov	ax,[spill_colours.lo][0]
 	mov	dx,[spill_colours.hi][0]
-	jmp	FillSolidPlane
+	call	[fill_solid_plane]
+	jmp	realize_hatch20
 
 realize_hatch_17:
 	push	bp
@@ -1412,10 +1390,9 @@ rotate_brush_x_mono:
 ;now we need to rotate the transparent mask
 	pop	cx
 
-	; Note SIZE_PATTERN is the size of oem_brush_mono.
-	; So basically we're skipping over the bits in between the
-	; end of oem_brush_mono and the beginning of oem_brush_mask.
-	add	di,oem_brush_mask - oem_brush_mono - SIZE_PATTERN
+	; Skip over the bits in between the end of oem_brush_mono
+	; and the beginning of oem_brush_mask.
+	add	di,oem_brush_mask - size oem_brush_mono
 	mov	si,di
 
 	rept	SIZE_PATTERN
@@ -1644,14 +1621,91 @@ rotate_brush_y  endp
 ;
 ;
 ;--------------------------Public-Routine------------------------------;
+; fill_solid_plane
+;
+;   Fill a colour pattern with a solid plane of colour
+;
+; Entry:
+;       DX:AX	= physical colour
+;	ES:DI --> colour pattern destination (64*bpp bytes)
+; Returns:
+;       None
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP,BX,DX,SI
+; Registers Destroyed:
+;       AX,CX,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+fill_solid1	proc near
+	mov	cx, SIZE_PATTERN * SIZE_PATTERN / 2
+	mov	ah,al
+	rep	stosw
+	ret
+fill_solid1	endp
+
+fill_solid2	proc near
+	mov	cx, SIZE_PATTERN * SIZE_PATTERN
+	rep	stosw
+	ret
+fill_solid2	endp
+
+fill_solid3	proc near
+	mov	cx, SIZE_PATTERN * SIZE_PATTERN
+@@:	stosw
+	xchg	al,dl
+	stosb
+	xchg	al,dl
+	loop	@B
+	ret
+fill_solid3	endp
+
+fill_solid4_286	proc near
+	mov	cx, SIZE_PATTERN * SIZE_PATTERN
+@@:	stosw
+	xchg	ax,dx
+	stosw
+	xchg	ax,dx
+	loop	@B
+	ret
+fill_solid4_286	endp
+
+fill_solid4_386	proc near
+	.386
+	ror	eax,10h
+	xchg	ax,dx	; stash the upper half of EAX in DX
+	ror	eax,10h
+
+	mov	cx, SIZE_PATTERN * SIZE_PATTERN
+	rep	stosd
+
+	ror	eax,10h
+	xchg	ax,dx	; restore the upper half of EAX from DX
+	ror	eax,10h
+	.8086
+	ret
+fill_solid4_386	endp
+;
+;
+;--------------------------Public-Routine------------------------------;
 ; colour_expand
 ;
 ;   Expand mono pattern to colour (extracted from realize_hatch).
-;
-;   The brush is rotated in Y by the given amount.  This is done
-;   so that areas of the screen can be moved, and by realizing a
-;   new brush with the correct (x,y), a pattern continued correctly
-;   with a previous pattern.
 ;
 ; Entry:
 ;       DS:SI --> mono pattern (8 bytes)
@@ -2000,12 +2054,26 @@ colour_expand_table	label word
 	dw	offset	clr2_expand
 	dw	offset	clr3_expand_386
 	dw	offset	clr4_expand_386
+fill_solid_table	label word
+	dw	offset	fill_solid1
+	dw	offset	fill_solid2
+	dw	offset	fill_solid3
+	dw	offset	fill_solid4_286
+	dw	offset	fill_solid1
+	dw	offset	fill_solid2
+	dw	offset	fill_solid3
+	dw	offset	fill_solid4_386
+brush_size_table	label word
+	dw	size	oem_brush_def
+	dw	size	oem_brush_def2
+	dw	size	oem_brush_def3
+	dw	size	oem_brush_def4
 
 public	init_modal_realizations
 init_modal_realizations	proc near
 	assumes	es,Code
 
-	; set the correct modal colour expansion function
+	; get indices for the correct modal functions
 	push	bx
 	mov	bh,[??BigFontFlags]
 	and	bh,8
@@ -2014,56 +2082,27 @@ init_modal_realizations	proc near
 	shl	bl,1	; convert index to pointer offset
 	or	bl,bh	; select the second half of colour_expand_table if ??BFF
 	xor	bh,bh	; make BX a proper index
-	mov	bx,colour_expand_table[bx]
-	mov	[colour_expand],bx
+
+	; multiply pxbytes by SIZE_PATTERN/2 to get the
+	; number of words in a pattern scanline
+	xor	ah,ah
+	shl	ax,1
+	shl	ax,1
+	errnz	SIZE_PATTERN-2*4
+	mov	[pattern_copy_numwords],ax
+
+	; set the correct modal functions
+	mov	ax,colour_expand_table[bx]
+	mov	[colour_expand],ax
+	mov	ax,fill_solid_table[bx]
+	mov	[fill_solid_plane],ax
+
+	; oem_brush size is independent of 286/386
+	and	bx,NOT 8
+	mov	ax,brush_size_table[bx]
+	mov	[oem_brush_size],ax
+
 	pop	bx
-
-	dec	al
-	jnz	@F
-
-	mov	[pattern_copy_numwords],SIZE_PATTERN SHR 1	; 4 words
-	mov	[oem_brush_size],size oem_brush_def
-
-	ret
-
-@@:
-	dec	al
-	jnz	@F
-
-	; two bytes, allowing a major simplification of the above code
-	mov	[RSSetPlanesPref],0F3h	; make a simple "rep stosw"
-	push	di
-	push	cx
-
-	lea	di,[RSSetPlanesXchg]
-	lea	cx,[RSSetPlanesDone]
-	sub	cx,di
-	cld
-	mov	al,90h	; blank out the sequence with nops
-	rep	stosb
-
-	mov	[oem_brush_size],size oem_brush_def2
-	mov	[pattern_copy_numwords],SIZE_PATTERN	; 8 words = 8*16 bits
-
-	pop	cx
-	pop	di
-	ret
-
-@@:
-	dec	al
-	jnz	@F
-
-	; three bytes, meaning the second stosw needs to become a stosb
-	dec	[RSSetPlanesStos]
-	mov	[pattern_copy_numwords],SIZE_PATTERN+(SIZE_PATTERN SHR 1)
-	mov	[oem_brush_size],size oem_brush_def3
-	ret
-
-@@:
-	dec	al
-	; no jnz because there shouldn't be any case where AL >= 5
-
-	; the code above should work without issue
 	ret
 init_modal_realizations	endp
 
