@@ -1041,6 +1041,7 @@ realize_hatch   proc near
 realize_hatch_actual:
 	push	ds
 	push	cx
+	push	bp
 
 	; A lot of spillage here! It is impossible to keep this many 32-bit
 	; colours in registers on a 286. Once we're happy this works, we should
@@ -1049,18 +1050,15 @@ realize_hatch_actual:
 
 	lea	si,[si].lbBkColor	; Compute background color
         call    sum_RGB_colors
-	; spill_colours[0] := physical representation of BG colour
-	mov	[spill_colours.lo][0],ax
-	mov	[spill_colours.hi][0],dx
+	; push it on the stack for colour_expand below
+	push	dx
+	push	ax
 
         sub     si,lbBkColor-lbColor    ; Compute foreground color
         call    sum_RGB_colors
-	xor	ax,[spill_colours.lo][0]
-	xor	dx,[spill_colours.hi][0]
-
-	; spill_colours[4] := FG colour XOR BG colour (physical reps of both)
-	mov	[spill_colours.lo][4],ax
-	mov	[spill_colours.hi][4],dx
+	; push it on the stack for colour_expand below
+	push	dx
+	push	ax
 
 	pop	cx
 	mov	si,cx			; Compute address of hatch pattern
@@ -1070,30 +1068,19 @@ realize_hatch_actual:
 
 
 ;	State of regs:desired regs
-;	AX - lower word of fg XOR bg:	SI - hatch pattern:
+;	AX -				SI - hatch pattern:
 ;	BX -				DI - color brush:
 ;	CX -				DS - input object seg:our code seg
-;	DX - upper word of fg XOR bg:	ES - output object seg:
+;	DX -				ES - output object seg:
 
 ;
 ;	MOVE THE COLOR HATCH portion of the brush
 
-	or	dx,ax			; see if colors are the same (XOR == 0)
-	jnz	realize_hatch_17
-
-	; The colors are the same, so just create a solid plane of the color,
-	; reusing the modal code we have setup for solid brushes!
-	mov	ax,[spill_colours.lo][0]
-	mov	dx,[spill_colours.hi][0]
-	call	[fill_solid_plane]
-	jmp	realize_hatch20
-
-realize_hatch_17:
-	push	bp
 	mov	bp,cs
 	mov	ds,bp
-	lea	bp,spill_colours
+	mov	bp,sp
 	call	[colour_expand]
+	lea	sp,[bp+8]	; pop the colours off the stack
 	pop	bp
 
 ;       State of regs: desired regs
@@ -1710,8 +1697,8 @@ fill_solid4_386	endp
 ; Entry:
 ;       DS:SI --> mono pattern (8 bytes)
 ;	ES:DI --> colour pattern destination (64*bpp bytes)
-;	SS:BP --> physical BG colour
-;	SS:BP+4 > physical FG colour XOR physical BG colour
+;	SS:BP --> physical FG colour
+;	SS:BP+4 > physical BG colour
 ; Returns:
 ;       None
 ; Error Returns:
@@ -1738,10 +1725,17 @@ fill_solid4_386	endp
 
 clr1_expand	proc near
 	; get the colours into register
-	mov	dl,byte ptr [bp.lo][0]
-	mov	dh,byte ptr [bp.lo][4]
+	mov	dh,byte ptr [bp.lo][0]
+	mov	dl,byte ptr [bp.lo][4]
+	; produce the fg XOR bg intermediate
+	xor	dh,dl
+	jnz	@F
 
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+	; if the XOR is zero, then just fill the solid plane
+	mov	al,dl
+	jmp	fill_solid1
+
+@@:	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 clr1_expand_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
@@ -1765,10 +1759,18 @@ clr1_expand	endp
 clr2_expand	proc near
 	push	bp
 	; get the colours into registers
-	mov	dx,[bp.lo][0]
-	mov	bp,[bp.lo][4]
+	mov	dx,[bp.lo][4]
+	mov	bp,[bp.lo][0]
+	; produce the fg XOR bg intermediate
+	xor	bp,dx
+	jnz	@F
 
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+	; if the XOR is zero, then just fill the solid plane
+	pop	bp
+	mov	ax,dx
+	jmp	fill_solid2
+
+@@:	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 clr2_expand_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
@@ -1792,8 +1794,23 @@ clr2_expand_inner_loop:
 clr2_expand	endp
 
 clr3_expand_286	proc near
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+	; produce the fg XOR bg intermediate and keep it on the stack
+	mov	ax,[bp.lo][4]
+	mov	dx,[bp.hi][4]
+	xor	[bp.lo][0],ax
+	xor	[bp.hi][0],dx
 
+	; if the XOR is zero, then just fill the solid plane
+	mov	cx,[bp.lo][0]
+	or	cx,[bp.hi][0]
+	jnz	@F
+
+	; restore the input colour on the stack
+	mov	[bp.lo][0],ax
+	mov	[bp.hi][0],dx
+	jmp	fill_solid3
+
+@@:	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 clr3_expand_286_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
@@ -1803,19 +1820,25 @@ clr3_expand_286_inner_loop:
 	rol	bh,1
 	sbb	ax,ax			; ffff = fg
 	cwd
-	and	ax,[bp.lo][4]
+	and	ax,[bp.lo][0]
 	; If the bit was 1, then [DX:]AX == fg xor bg, otherwise [DX:]AX == 0
 	; When we XOR it with the bg, we get either (fg xor bg) xor bg == fg
 	; or 0 xor bg == bg, as desired :)
-	xor	ax,[bp.lo][0]
+	xor	ax,[bp.lo][4]
 	stosw
-	and	dl,byte ptr [bp.hi][4]
-	xor	dl,byte ptr [bp.hi][0]
+	and	dl,byte ptr [bp.hi][0]
+	xor	dl,byte ptr [bp.hi][4]
 	mov	al,dl
 	stosb
 	dec	ch
 	jnz	clr3_expand_286_inner_loop
 	loop	clr3_expand_286_outer_loop
+
+	; restore the input colour on the stack
+	mov	ax,[bp.lo][4]
+	mov	dx,[bp.hi][4]
+	xor	[bp.lo][0],ax
+	xor	[bp.hi][0],dx
 	ret
 clr3_expand_286	endp
 
@@ -1824,10 +1847,19 @@ clr3_expand_386	proc near
 	push	bp
 	; get the colours into registers - exchange to ensure we don't
 	; accidentally stomp the upper halves of any 32-bit regs!
-	xchg	edx,[bp][0]
-	xchg	ebp,[bp][4]
+	xchg	edx,[bp][4]
+	xchg	ebp,[bp][0]
+	; produce the fg XOR bg intermediate and keep it on the stack
+	xor	ebp,edx
+	jnz	@F
 
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+	; if the XOR is zero, then just fill the solid plane
+	mov	ax,dx
+	sar	dx,10h
+	call	fill_solid3
+	jmp	clr3_expand_386_done
+
+@@:	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 clr3_expand_386_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
@@ -1848,18 +1880,35 @@ clr3_expand_386_inner_loop:
 	jnz	clr3_expand_386_inner_loop
 	loop	clr3_expand_386_outer_loop
 
+clr3_expand_386_done:
 	; get back the registers we stuffed in the colour slots
+	xor	ebp,edx
 	pop	bx
-	xchg	ebp,ss:[bx][4]
+	xchg	ebp,ss:[bx][0]
 	; now we have our proper frame pointer back in BP
-	xchg	edx,[bp][0]
+	xchg	edx,[bp][4]
 	ret
 	.8086
 clr3_expand_386	endp
 
 clr4_expand_286	proc near
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+	; produce the fg XOR bg intermediate and keep it on the stack
+	mov	ax,[bp.lo][4]
+	mov	dx,[bp.hi][4]
+	xor	[bp.lo][0],ax
+	xor	[bp.hi][0],dx
 
+	; if the XOR is zero, then just fill the solid plane
+	mov	cx,[bp.lo][0]
+	or	cx,[bp.hi][0]
+	jnz	@F
+
+	; restore the input colour on the stack
+	mov	[bp.lo][0],ax
+	mov	[bp.hi][0],dx
+	jmp	fill_solid4_286
+
+@@:	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 clr4_expand_286_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
@@ -1882,6 +1931,12 @@ clr4_expand_286_inner_loop:
 	dec	ch
 	jnz	clr4_expand_286_inner_loop
 	loop	clr4_expand_286_outer_loop
+
+	; restore the input colour on the stack
+	mov	ax,[bp.lo][4]
+	mov	dx,[bp.hi][4]
+	xor	[bp.lo][0],ax
+	xor	[bp.hi][0],dx
 	ret
 clr4_expand_286	endp
 
@@ -1890,10 +1945,19 @@ clr4_expand_386	proc near
 	push	bp
 	; get the colours into registers - exchange to ensure we don't
 	; accidentally stomp the upper halves of any 32-bit regs!
-	xchg	edx,[bp][0]
-	xchg	ebp,[bp][4]
+	xchg	edx,[bp][4]
+	xchg	ebp,[bp][0]
+	; produce the fg XOR bg intermediate and keep it on the stack
+	xor	ebp,edx
+	jnz	@F
 
-	mov	cl,SIZE_PATTERN 	; cl = outer loop count
+	; if the XOR is zero, then just fill the solid plane
+	mov	ax,dx
+	sar	dx,10h
+	call	fill_solid4_386
+	jmp	clr4_expand_386_done
+
+@@:	mov	cl,SIZE_PATTERN 	; cl = outer loop count
 clr4_expand_386_outer_loop:
 	mov	ch,SIZE_PATTERN 	; ch = inner loop count
 	lodsb				; Get next byte of pattern
@@ -1912,11 +1976,13 @@ clr4_expand_386_inner_loop:
 	jnz	clr4_expand_386_inner_loop
 	loop	clr4_expand_386_outer_loop
 
+clr4_expand_386_done:
 	; get back the registers we stuffed in the colour slots
+	xor	ebp,edx
 	pop	bx
-	xchg	ebp,ss:[bx][4]
+	xchg	ebp,ss:[bx][0]
 	; now we have our proper frame pointer back in BP
-	xchg	edx,[bp][0]
+	xchg	edx,[bp][4]
 	ret
 	.8086
 clr4_expand_386	endp

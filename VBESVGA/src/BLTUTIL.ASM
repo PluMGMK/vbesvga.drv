@@ -359,26 +359,9 @@ brush_convert_mono_to_color	   PROC    NEAR
 
 	push	bp
 	mov	bp,bx
-	; get background colour
-	mov	ax,[bp][4]
-	mov	dx,[bp][6]
-	; XOR with foreground and push on stack
-	mov	bx,[bp][2]
-	xor	bx,dx
-	push	bx
-	mov	bx,[bp][0]
-	xor	bx,ax
-	push	bx
-	; then push the background itself on the stack
-	push	dx
-	push	ax
-
-	; now set the pointer and call the function
-	mov	bp,sp
 	call	[colour_expand]
-
-	add	sp,8
 	pop	bp
+
 	ret
 
 brush_convert_mono_to_color	   ENDP 	;
