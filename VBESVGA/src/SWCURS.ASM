@@ -97,7 +97,7 @@ swcursor_expand_loop:
 	sbb	ah,ah
 
 	org	$+1
-PUBLIC	pxbytes	;this gets set in VESAFNS.ASM and referenced through the module
+PUBLIC	pxbytes	;this gets set in VESAFNS.ASM and referenced in many places
 pxbytes label	word
 	org	$-1
 	mov	cx,1234h
