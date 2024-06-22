@@ -65,7 +65,6 @@ FILE_VGA	EQU	1
 	include cmacros.inc
 	include gdidefs.inc
 	include ega.inc
-        include ssb.inc
 	include display.inc
 	include macros.mac
 	include	cursor.inc
