@@ -335,7 +335,6 @@ bitblt_prep_pattern	PROC	NEAR
 bitblt_prep_color_pattern:
 	test	word ptr device_flags,DEVFLAG_DST_COLOR
 	jne	@F
-	mov	bx,my_data_seg
 	call	brush_convert_color_to_mono
 	jmp	short	bitblt_prep_pattern_rotate
 @@:	call	brush_convert_color_to_color

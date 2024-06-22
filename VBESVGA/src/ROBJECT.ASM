@@ -48,8 +48,6 @@ sBegin	Data
 
 externB abPaletteAccl
 
-dodgy_brush_count	db 1
-
 sEnd    Data
 
 
@@ -1940,8 +1938,6 @@ clr4_expand_386	endp
 ; Entry:
 ;	DS:SI --> colour pattern (64*bpp bytes)
 ;       ES:DI --> mono pattern destination (8 bytes)
-;	SS:BP --> physical FG colour
-;	SS:BP+4 > physical BG colour
 ; Returns:
 ;       None
 ; Error Returns:

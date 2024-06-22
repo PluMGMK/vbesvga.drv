@@ -31,6 +31,7 @@ externW	pxbytes			; in SWCURS.ASM
 externW	oem_brush_size		; in ROBJECT.ASM
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 externW	colour_expand		; in ROBJECT.ASM (function pointer)
+externW	colour_compress		; in ROBJECT.ASM (function pointer)
 
 ;
 ;	blt_clip
@@ -374,41 +375,18 @@ brush_convert_mono_to_color	   ENDP 	;
 ;	PARMS:
 ;	DS:SI	ptr to oem_brush_def structure
 ;	ES:DI	ptr to location to store preped brush
-;	BX	driver data segment so we can access abPaletteAccl
 ;
 ;
 ;	RETURNS:
 ;	ES:DI	the memory it points to is filled with the new mono portion
 ;		of the brush (NOTE: The entire brush structure is NOT there.
-;		Just eight bytes of mono data.) However, the ES:DI buffer
-;		needs 64 free bytes for temporary scratch space.
+;		Just eight bytes of mono data.)
 ;
 
 public	brush_convert_color_to_mono
 brush_convert_color_to_mono	   PROC    NEAR
 
-	mov	cx,SIZE_PATTERN * SIZE_PATTERN	;SIZE_PATTERN rows of data
-	rep	movsb				;copy over color pattern
-	sub	di,SIZE_PATTERN * SIZE_PATTERN	;restore di
-	mov	si,di
-
-	mov	ds,bx				;driver data segment into ds
-        lea     bx,abPaletteAccl                ;color to mono xlat table
-	mov	cl,SIZE_PATTERN 		;SIZE_PATTERN rows of data
-
-brush_convert_color_to_mono0:
-	mov	ch,SIZE_PATTERN 		;SIZE_PATTERN bytes across
-
-brush_convert_color_to_mono1:
-	lods	byte ptr es:[si]		;get first mono byte
-	xlat					;abPaletteAccl holds mono bits
-	ror	al,1				;pull out mono bit
-	rcl	ah,1				;shove it into ah
-	dec	ch				;next byte in pattern row
-	jne	brush_convert_color_to_mono1
-	mov	al,ah
-	stosb					;store compressed byte
-	loop	brush_convert_color_to_mono0	;next pattern row
+	call	[colour_compress]
 	ret
 
 brush_convert_color_to_mono	   ENDP 	;
