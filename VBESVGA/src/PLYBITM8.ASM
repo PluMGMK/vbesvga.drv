@@ -178,14 +178,12 @@ Bm8_nyskip:
                 dec     cx                  ; take out last pixel from loop
                 jz      bm8_nylast
 bm8_nyloop:
-		int	3
 		call	BM8
 		add	di,si
 		jc	bm8_ny_incbank
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
 bm8_nylast:
-		int	3
 		call	BM8
 		ret
 bm8_ny_incbank:
@@ -198,7 +196,6 @@ bm8_ny_incbank:
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
-		int	3
 		call	BM8
 		ret
 bm8_ny_segment:
@@ -208,7 +205,6 @@ bm8_ny_segment:
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
-		int	3
 		call	BM8
 		ret
 Bm8_Negative_Y  endp
@@ -255,14 +251,12 @@ Bm8_pyskip:
         dec     cx                  ; take out last pixel from loop
         jz      bm8_pylast
 bm8_pyloop:
-	int	3
 	call	BM8
 	add	di,si
 	jnc	bm8_py_decbank
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
 bm8_pylast:
-	int	3
 	call	BM8
 	ret
 
@@ -276,7 +270,6 @@ bm8_py_decbank:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
-	int	3
 	call	BM8
 	ret
 
@@ -287,7 +280,6 @@ bm8_py_segment:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
-	int	3
 	call	BM8
 	ret
 
@@ -300,7 +292,7 @@ Bm8_Positive_X	proc	near
 	cmp	ax,offset BM8_ROPC
 	jne	bm8_px_skip
 	cmp	cx,8
-	jge	@F
+	jge	plh_rop_c
 
 	loadcol		; mov	al,TmpColor
 	dec	cx
@@ -311,8 +303,8 @@ bm8_px_loop:
 	jnc	@F
 	call	inc_bank_select
 @@:
-  loopm	bm8_px_loop
-;;loop	bm8_px_loop
+;;loopm	bm8_px_loop
+	loop	bm8_px_loop
 bm8_px_last:
 	writepx		; mov	[di],al
 	ret
@@ -323,14 +315,14 @@ bm8_px_skip:
         jz      bm8_x_do_last
 bm8_x_output_loop:
         call    BM8
-        inc     di
-  loopm   bm8_x_output_loop
-;;loop    bm8_x_output_loop
+	add	di,bx ;inc	di
+;;loopm   bm8_x_output_loop
+	loop    bm8_x_output_loop
 bm8_x_do_last:
         call    BM8
         ret
 
-@@:
+plh_rop_c:
 	push	es
 	mov	ax,ds
 	mov	es,ax
@@ -421,7 +413,6 @@ Bm8_Diag_loop:
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
 Bm8_diag_last_pixel:
-	int	3
 	call	BM8
 	ret
 
@@ -435,7 +426,6 @@ Bm8_Diag_incbank:
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
-	int	3
 	call	BM8
 	ret
 
@@ -446,7 +436,6 @@ bm8_diag_segment:
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
-	int	3
 	call	BM8
 	ret
          
@@ -505,7 +494,6 @@ Diag_loop:
   loopm	Diag_loop
 ;;loop	Diag_loop
 diag_last_pixel:
-	int	3
 	call	BM8
 	ret
 
@@ -519,7 +507,6 @@ Diag_decbank:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
-	int	3
 	call	BM8
 	ret
 
@@ -530,7 +517,6 @@ diag_segment:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
-	int	3
 	call	BM8
 	ret
 

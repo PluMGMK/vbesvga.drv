@@ -783,6 +783,7 @@ jump_error_exit1:
 	jmp	error_exit
 
 get_style_info:
+	xor	ch,ch			    ; blank upper byte!
 	mov	si,cx			    ; the passed in line style
         shl     si,1                        ; 2 bytes of mask per style
         mov     ax,word ptr cs:style_table[si]      ; get the style mask
@@ -1553,8 +1554,7 @@ endif	; Back to common code...
 
         SET_BANK 
 
-	mov	dx,TempCurSeg		; for EGA segment value saved
-        mov     ds,dx                   ; load ds
+	mov	ds,TempCurSeg		; for EGA segment value saved
 
 if	?PARTIAL_SCANLINES
 	mov	ax,di			; all the multiplying up's already done
