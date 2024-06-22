@@ -77,8 +77,10 @@ right_edge_count	EQU	<[bp - 4F2H]>
 full_byte_count 	EQU	<[bp - 4F4H]>
 dst2_width_bytes	EQU	<[bp - 4F6H]>
 dst2_blt_offset 	EQU	<[bp - 4F8H]>
-blt216_scandir_func	EQU	<[bp - 4FAH]>
-blt216_reg_cd		EQU	<[bp - 4FCH]>
+
+; old WorkSelector base/limit, to be restored for re-entrancy
+old_worksel_limit	EQU	<[bp - 4FCH]>
+old_worksel_base	EQU	<[bp - 500H]>
 
 
 

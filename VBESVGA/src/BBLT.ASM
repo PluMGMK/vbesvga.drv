@@ -33,6 +33,10 @@ include blt88.inc
 include bltstos.inc
 
 externFP PrestoChangeoSelector	; CS <--> DS conversion (hopefully CS <-> SS)
+externFP GetSelectorBase
+externFP GetSelectorLimit
+externFP SetSelectorBase
+externFP SetSelectorLimit
 EXTRN	unexclude:near
 EXTRN	exclude:near
 EXTRN   PaletteModified:byte
@@ -738,8 +742,25 @@ bitblt_execute	PROC	NEAR
         lea     ax,bitblt_execute_retaddr
         push    ax
 
-	mov	ax,WorkSelector
-	cCall	PrestoChangeoSelector,<ss,ax>
+	; bitblt_execute needs to be re-entrant, as BITBLT gets called under
+	; SysErrorBox, which is used for "hard" errors. Raymond Chen pointed
+	; out that handling "hard" errors was supposed to use only re-entrant
+	; parts of USER (and presumably by extension GDI).
+	; In other words, if one instance of bitblt_execute gets interrupted,
+	; and then BITBLT gets called again to draw up an error box, we need
+	; to be able to come back and resume the one that was interrupted.
+	; This is only possible if the interrupting BITBLT saves and restores
+	; the parameters of the code segment that the interrupted one was
+	; operating within!
+	mov	bx,WorkSelector
+	cCall	GetSelectorLimit,<bx>
+	mov	[old_worksel_limit.lo],ax
+	mov	[old_worksel_limit.hi],dx
+	cCall	GetSelectorBase,<bx>
+	mov	[old_worksel_base.lo],ax
+	mov	[old_worksel_base.hi],dx
+
+	cCall	PrestoChangeoSelector,<ss,bx>
 	push	ax				;push compiled code segment
         lea     ax,cblt_code
         push    ax                              ;push the compiled code offset
@@ -757,6 +778,12 @@ bitblt_execute	PROC	NEAR
 
 bitblt_execute_retaddr: 			;here's where we return from
 	pop	bp				; the compiled code -- amazing!
+
+	; restore the previous WorkSelector base/limit, for re-entrancy
+	mov	bx,WorkSelector
+	cCall	SetSelectorLimit,<bx,old_worksel_limit.hi,old_worksel_limit.lo>
+	cCall	SetSelectorBase,<bx,old_worksel_base.hi,old_worksel_base.lo>
+
 	ret
 
 bitblt_execute	ENDP
