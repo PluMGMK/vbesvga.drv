@@ -44,14 +44,9 @@ incLogical      =       1               ; Include control for gdidefs.inc
         ??_out  robject
 ;
 
-;DEBUG_PREVIEW_BRUSH	equ 1
-
 sBegin	Data
 
 externB abPaletteAccl
-ifdef	DEBUG_PREVIEW_BRUSH
-externW	ScreenSelector
-endif
 
 dodgy_brush_count	db 1
 
@@ -115,8 +110,10 @@ oem_font_size	dw      0
 ;
 ; pointers to modal function implementations
 	PUBLIC	colour_expand
+	PUBLIC	colour_compress
 	PUBLIC	fill_solid_plane
 colour_expand		dw offset clr4_expand_286
+colour_compress		dw offset clr1_comp_pal		; default to palette
 fill_solid_plane	dw offset fill_solid4_286
 ;
 ;
@@ -897,45 +894,9 @@ pattern_copy_numwords	dw SIZE_PATTERN SHL 1	; 16 words = 8*32 bits
         jnz     pattern_copy_colour_loop
 
 	pop	si
-	mov	ds	,my_data_seg
-	lea	bx	,abPaletteAccl
-	mov	cl	,SIZE_PATTERN
-	mov	dx	,[pxbytes]
-
-realize_pattern11:
-	mov	ch	,SIZE_PATTERN
-	cmp	dl	,1		;8-bit colour?
-	ja	realize_pattern13	; NO, go convert to mono the hard way...
-
-realize_pattern12:
-	lods	BYTE PTR es:[si]
-	xlat
-	ror	al	,1
-	rcl	ah	,1
-	dec	ch
-	jne	realize_pattern12
-	mov	al	,ah
-	stosb
-	loop	realize_pattern11
-        jmp     realize_pattern_done
-
-realize_pattern13:
-	mov	bl	,dl	;stash pxbytes where it won't be stomped
-	mov	ax	,es:[si]
-	mov	dx	,es:[si+2]
-	xchg	si	,ax
-	add	al	,bl	;move onto next pixel
-	adc	ah	,0
-	xchg	si	,ax
-	call	ipc_to_rgb	;get accelerators into DH
-	ror	dh	,1
-	rcl	bh	,1
-	mov	dl	,bl	;get back pxbytes
-	dec	ch
-	jne	realize_pattern13
-	mov	al	,bh
-	stosb
-	loop	realize_pattern11
+	mov	ax,es
+	mov	ds,ax
+	call	[colour_compress]
         jmp     realize_pattern_done
 
 pattern_copy_mono:
@@ -1085,8 +1046,8 @@ realize_hatch_actual:
 
 ;       State of regs: desired regs
 ;	AX -				SI - end hatch pattern:color brush
-;	BX - :abPaletteAccl		DI - mono brush
-;	CX - :SIZE_PATTERN,SIZE_PATTERN DS - our code seg:our data seg
+;	BX -				DI - mono brush
+;	CX -				DS - our code seg:output object seg
 ;	DX -				ES - output object seg
 
 
@@ -1096,25 +1057,8 @@ realize_hatch20:
 
         sub     si,SIZE_PATTERN         ; Restore hatch pointer
 	push	si
-	mov	si	,lp_out_obj.off
-	mov	ds	,my_data_seg
-	lea	bx	,abPaletteAccl
-	mov	cl	,SIZE_PATTERN
-
-realize_hatch11:
-	mov	ch	,SIZE_PATTERN
-
-realize_hatch12:
-	; FIXME: What if we don't have a palette?
-	lods	BYTE PTR es:[si]
-	xlat
-	ror	al	,1
-	rcl	ah	,1
-	dec	ch
-	jne	realize_hatch12
-	mov	al	,ah
-	stosb
-	loop	realize_hatch11
+	lds	si	,lp_out_obj
+	call	[colour_compress]
 	pop	si
 
 ;	MOVE THE TRANSPARENCY MASK
@@ -1122,11 +1066,11 @@ realize_hatch12:
 ;	State of the registers:What we want
 ;	AX -				SI - hatch pattern:
 ;	BX -				DI - end mono brush:brush xpar mask
-;	CX - 0: 			DS - our data seg
+;	CX - 0: 			DS - output object seg:our code seg
 ;	DX -				ES - output object seg
 
 
-	add	di	,oem_brush_mask - oem_brush_mono - SIZE_PATTERN
+	add	di	,oem_brush_mask - size oem_brush_mono
 	mov	ax	,cs
 	mov	ds	,ax
 	mov	cx,SIZE_PATTERN/2	; Set up move for a single plane
@@ -1986,7 +1930,158 @@ clr4_expand_386_done:
 	ret
 	.8086
 clr4_expand_386	endp
+;
+;
+;--------------------------Public-Routine------------------------------;
+; colour_compress
+;
+;   Compress colour pattern to mono (extracted from realize_pattern).
+;
+; Entry:
+;	DS:SI --> colour pattern (64*bpp bytes)
+;       ES:DI --> mono pattern destination (8 bytes)
+;	SS:BP --> physical FG colour
+;	SS:BP+4 > physical BG colour
+; Returns:
+;       None
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP
+; Registers Destroyed:
+;       AX,BX,CX,DX,SI,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
 
+clr1_comp_pal	proc near
+	; Let's use DX to mark if the src/dst are in the same segment
+	mov	ax	,ds
+	mov	dx	,es
+	xor	dx	,ax
+
+	; Get the palette translation table segment in DS
+	mov	ds	,my_data_seg
+	lea	bx	,abPaletteAccl
+	; And the src segment in ES
+	push	es
+	mov	es	,ax
+	mov	cl	,SIZE_PATTERN
+
+realize_pattern11:
+	mov	ch	,SIZE_PATTERN
+
+realize_pattern12:
+	lods	BYTE PTR es:[si]
+	xlat
+	ror	al	,1
+	rcl	ah	,1
+	dec	ch
+	jne	realize_pattern12
+	mov	al	,ah
+	test	dx	,dx
+	jz	@F
+	pop	es	; this was saved on the stack before
+@@:	stosb
+	test	dx	,dx
+	jz	@F
+	push	es	; put it back on the stack
+	mov	ax	,es
+	xor	ax	,dx
+	mov	es	,ax
+@@:	loop	realize_pattern11
+
+	mov	ax	,es
+	mov	ds	,ax
+	pop	es
+        ret
+clr1_comp_pal	endp
+
+clr1_comp_nopal	proc near
+	mov	cl	,SIZE_PATTERN
+clr1_comp_nopal11:
+	mov	ch	,SIZE_PATTERN
+clr1_comp_nopal13:
+	lodsb
+	call	ipc_to_rgb	;get accelerators into DH
+	ror	dh	,1
+	rcl	bh	,1
+	dec	ch
+	jne	clr1_comp_nopal13
+	mov	al	,bh
+	stosb
+	loop	clr1_comp_nopal11
+        ret
+clr1_comp_nopal	endp
+
+clr2_comp	proc near
+	mov	cl	,SIZE_PATTERN
+clr2_comp11:
+	mov	ch	,SIZE_PATTERN
+clr2_comp13:
+	lodsw
+	call	ipc_to_rgb	;get accelerators into DH
+	ror	dh	,1
+	rcl	bh	,1
+	dec	ch
+	jne	clr2_comp13
+	mov	al	,bh
+	stosb
+	loop	clr2_comp11
+        ret
+clr2_comp	endp
+
+clr3_comp	proc near
+	mov	cl	,SIZE_PATTERN
+clr3_comp11:
+	mov	ch	,SIZE_PATTERN
+clr3_comp13:
+	lodsw
+	xchg	ax,dx
+	lodsb
+	xchg	ax,dx
+	call	ipc_to_rgb	;get accelerators into DH
+	ror	dh	,1
+	rcl	bh	,1
+	dec	ch
+	jne	clr3_comp13
+	mov	al	,bh
+	stosb
+	loop	clr3_comp11
+        ret
+clr3_comp	endp
+
+clr4_comp	proc near
+	mov	cl	,SIZE_PATTERN
+clr4_comp11:
+	mov	ch	,SIZE_PATTERN
+clr4_comp13:
+	lodsw
+	xchg	ax,dx
+	lodsw
+	xchg	ax,dx
+	call	ipc_to_rgb	;get accelerators into DH
+	ror	dh	,1
+	rcl	bh	,1
+	dec	ch
+	jne	clr4_comp13
+	mov	al	,bh
+	stosb
+	loop	clr4_comp11
+        ret
+clr4_comp	endp
 ;
 ;
 ;--------------------------Private-Routine------------------------------;
@@ -2100,8 +2195,9 @@ assumes cs,InitSeg
 ; Entry:
 ;	ES	= Code
 ;	AL	= Bytes (not bits!) per pixel
+;	AH	= Non-zero if using a palette
 ; Returns:
-;	AL	= trashed
+;	AX	= trashed
 ; Registers Destroyed:
 ;	AX,FLAGS
 ; Registers Preserved:
@@ -2129,6 +2225,11 @@ fill_solid_table	label word
 	dw	offset	fill_solid2
 	dw	offset	fill_solid3
 	dw	offset	fill_solid4_386
+colour_comp_table_nopal	label word
+	dw	offset	clr1_comp_nopal
+	dw	offset	clr2_comp
+	dw	offset	clr3_comp
+	dw	offset	clr4_comp
 brush_size_table	label word
 	dw	size	oem_brush_def
 	dw	size	oem_brush_def2
@@ -2141,32 +2242,37 @@ init_modal_realizations	proc near
 
 	; get indices for the correct modal functions
 	push	bx
-	mov	bh,[??BigFontFlags]
-	and	bh,8
-	mov	bl,al
-	dec	bl	; select the correct function for our pxbytes setting
-	shl	bl,1	; convert index to pointer offset
-	or	bl,bh	; select the second half of colour_expand_table if ??BFF
-	xor	bh,bh	; make BX a proper index
-
 	; multiply pxbytes by SIZE_PATTERN/2 to get the
 	; number of words in a pattern scanline
+	mov	bx,ax
 	xor	ah,ah
 	shl	ax,1
 	shl	ax,1
 	errnz	SIZE_PATTERN-2*4
 	mov	[pattern_copy_numwords],ax
 
-	; set the correct modal functions
+	; now we need to set the correct modal functions
+	dec	bl	; select the correct function for our pxbytes setting
+	shl	bl,1	; convert index to pointer offset
+
+	; colour compression and oem_brush size are independent of 286/386
+	test	bh,bh	; using a palette?
+	mov	bh,0	; make BX a proper index
+	jnz	@F	; leave the default colour compression fptr in place
+	mov	ax,colour_comp_table_nopal[bx]
+	mov	[colour_compress],ax
+@@:	mov	ax,brush_size_table[bx]
+	mov	[oem_brush_size],ax
+
+	; now do the functions that are different between 286 and 386
+	mov	ah,[??BigFontFlags]
+	and	ah,8
+	or	bl,ah	; select the second half of colour_expand_table if ??BFF
+
 	mov	ax,colour_expand_table[bx]
 	mov	[colour_expand],ax
 	mov	ax,fill_solid_table[bx]
 	mov	[fill_solid_plane],ax
-
-	; oem_brush size is independent of 286/386
-	and	bx,NOT 8
-	mov	ax,brush_size_table[bx]
-	mov	[oem_brush_size],ax
 
 	pop	bx
 	ret

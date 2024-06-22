@@ -1190,12 +1190,15 @@ FindMode_done:
 	shr	al,3	; bits to bytes
 	cbw
 	mov	[pxbytes],ax
+	mov	dh,[VESAMemModel]
+	xor	dh,VESA_MEM_DIRECT	; zero if NO palette, else non-zero
+	mov	ah,dh
 	call	init_modal_realizations
 
 	; while we're at it, set the full colour conversion parameters
-	cmp	[VESAMemModel],VESA_MEM_PACKED
+	test	dh,dh
 	; if using a palette, we don't do this.
-	je	@@skipcolourloop
+	jnz	@@skipcolourloop
 
 	push	si
 	push	di
