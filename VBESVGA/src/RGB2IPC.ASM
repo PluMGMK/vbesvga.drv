@@ -821,7 +821,14 @@ load_next_word:
 	mov	[previous_ipc].lo,ax
 	mov	[previous_ipc].hi,dx
 
-	;Convert the colour!
+	test	bl,1
+	jz	@F
+	shr	al,1	; get the LSB (MONO_BIT)
+	; extend to four bytes
+	sbb	ax,ax
+	cwd
+
+@@:	;Convert the colour!
 	call	ipc_to_rgb
 cache_rgb:
 	mov	[previous_rgb].lo,ax
