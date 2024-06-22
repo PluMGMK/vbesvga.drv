@@ -316,6 +316,9 @@ bm8_px_skip:
 bm8_x_output_loop:
         call    BM8
 	add	di,bx ;inc	di
+	jnc	@F
+	call	inc_bank_select
+@@:
 ;;loopm   bm8_x_output_loop
 	loop    bm8_x_output_loop
 bm8_x_do_last:
