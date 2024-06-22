@@ -17,7 +17,6 @@ global_bank		EQU	<[bp - 09H]> ;last bank # set outside bitblt
 local_enable_flag	EQU	<[bp - 0AH]> ;Local copy of the enable flag
 device_flags		EQU	<[bp - 0CH]> ;tells things about src,dst devices
 rop_flags		EQU	<[bp - 0EH]> ;tells things about the ROP
-brush_accel_flags	EQU	<[bp - 10H]>
 src_xExt_bytes		EQU	<[bp - 12H]> ;width of src blt rect in bytes
 dst_xExt_bytes		EQU	<[bp - 14H]> ;width of dst blt rect in bytes
 src_width_bytes 	EQU	<[bp - 16H]> ;leftover bytes in src segment
@@ -42,7 +41,6 @@ last_edge_mask		EQU	<[bp - 36H]> ;used in DST_IS_MONO blts
 align_rotate_count	EQU	<[bp - 38H]> ;used in MONO/COLOR to MONO blts
 bgcolour		EQU	<[bp - 3CH]> ;physical background colour
 fgcolour		EQU	<[bp - 40H]> ;physical foreground colour
-mono_bits		EQU	<[bp - 42H]> ;bgmonobit:fgmonobit = hibyte:lobyte
 pattern_offset		EQU	<[bp - 44H]> ;used in blts with patterns
 rop_offset		EQU	<[bp - 46H]> ;offset of ropcode in roptable
 rop_length		EQU	<[bp - 48H]> ;length of the rop code

@@ -32,6 +32,7 @@ externW	oem_brush_size		; in ROBJECT.ASM
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 externW	colour_expand		; in ROBJECT.ASM (function pointer)
 externW	colour_compress		; in ROBJECT.ASM (function pointer)
+externNP ipc_to_rgb		; in RGB2IPC.ASM
 
 ;
 ;	blt_clip
@@ -337,61 +338,6 @@ bcmtom_solid:
 brush_convert_mono_to_mono ENDP 		;
 
 ;
-;	brush_convert_mono_to_color
-;
-;	The classic color expansion problem.
-;
-;	PARMS:
-;	SS:BX	ptr to fgcolour
-;	SS:BX+4	ptr to bgcolour
-;	DS:SI	ptr to oem_brush_def structure
-;	ES:DI	ptr to location to store preped brush
-;
-;	RETURNS:
-;	ES:DI	the memory it points to is filled with the new color portion
-;		of the brush (NOTE: The entire brush structure is NOT there.
-;		Just sixty-four pixels' worth of color data.)
-;
-public	brush_convert_mono_to_color
-brush_convert_mono_to_color	   PROC    NEAR
-
-	add	si,[oem_brush_size]
-	sub	si,size oem_brush_com		;point to mono portion
-
-	push	bp
-	mov	bp,bx
-	call	[colour_expand]
-	pop	bp
-
-	ret
-
-brush_convert_mono_to_color	   ENDP 	;
-
-;
-;	brush_convert_color_to_mono
-;
-;	The classic color compression problem.
-;
-;	PARMS:
-;	DS:SI	ptr to oem_brush_def structure
-;	ES:DI	ptr to location to store preped brush
-;
-;
-;	RETURNS:
-;	ES:DI	the memory it points to is filled with the new mono portion
-;		of the brush (NOTE: The entire brush structure is NOT there.
-;		Just eight bytes of mono data.)
-;
-
-public	brush_convert_color_to_mono
-brush_convert_color_to_mono	   PROC    NEAR
-
-	call	[colour_compress]
-	ret
-
-brush_convert_color_to_mono	   ENDP 	;
-
-;
 ;	brush_convert_color_to_color
 ;
 ;	PARMS:
@@ -414,6 +360,95 @@ brush_convert_color_to_color	    PROC    NEAR
 	ret
 
 brush_convert_color_to_color	    ENDP	;
+
+;
+;       prep_pattern_norotate
+;
+;       PARMS:
+;       DS:SI   ptr to brush structure
+;       ES:DI   ptr to place to put preprocessed pattern
+;	SS:BP	ptr to physical fg colour then physical bg colour
+;       DL	zero if mono dest, non-zero if colour dest
+;
+;       RETURNS:
+;	ES:DI	the memory it points to is filled with the new pattern for
+;		the brush (NOTE: The entire brush structure is NOT there.
+;		Just 64*bpp bytes of color data / 8 bytes of mono data.)
+;
+
+PUBLIC  prep_pattern_norotate
+prep_pattern_norotate  PROC    NEAR
+
+	mov	ax,ds
+	or	ax,si				;if the brush is NULL then
+	je	bitblt_prep_pattern_error	; there is an error
+	mov	bx,[oem_brush_size]
+	sub	bx,size oem_brush_com
+	mov	ax,[bx+si].oem_brush_style
+	cmp	ax,BS_HOLLOW			;if the brush is hollow then
+	je	bitblt_prep_pattern_error	; there is an error
+
+	cmp	ax,BS_SOLID			;solid and hatched brushes
+	je	bitblt_prep_pattern_copy	; go exactly as they are since
+	cmp	ax,BS_HATCHED			; they are created in both hues
+	je	bitblt_prep_pattern_copy	; but they may need rotation
+
+	test	byte ptr [bx+si].oem_brush_accel,GREY_SCALE
+	je	bitblt_prep_color_pattern
+	test	dl,dl
+	jz	@F
+	add	si,bx
+	call	[colour_expand]
+        jmp     short   prep_pattern_norotate_done
+
+	; get the mono bits for the colours on the stack frame
+	mov	ax,[bp]				;foreground
+	mov	dx,[bp+2]
+	call	ipc_to_rgb			;get accels in DH
+	mov	bl,dh
+	cmp	bl,0FFh				;just an index?
+	jne	@F
+	mov	bl,ah				;then accels are in AH
+@@:
+	mov	ax,[bp+4]			;background
+	mov	dx,[bp+6]
+	call	ipc_to_rgb			;get accels in DH
+	mov	bh,dh
+	cmp	bh,0FFh				;just an index?
+	jne	@F
+	mov	bh,ah				;then accels are in AH
+@@:
+        call    brush_convert_mono_to_mono
+	jmp	short	prep_pattern_norotate_done
+
+bitblt_prep_color_pattern:
+	test	dl,dl
+	jne	@F
+	call	[colour_compress]
+	jmp	short	prep_pattern_norotate_done
+@@:	call	brush_convert_color_to_color
+	jmp	short	prep_pattern_norotate_done
+
+bitblt_prep_pattern_error:
+        stc
+        ret
+
+public	bitblt_prep_pattern_copy
+bitblt_prep_pattern_copy:
+	mov	cx,[pattern_copy_numwords]
+	shl	cx,3
+	errnz	SIZE_PATTERN-8
+	test	dl,dl
+	jnz	@F
+	mov	cx,SIZE_PATTERN SHR 1
+	add	si,bx
+@@:	rep	movsw
+
+prep_pattern_norotate_done:
+	clc
+        ret
+
+prep_pattern_norotate	ENDP				;
 
 ;
 ;       pattern_rotate

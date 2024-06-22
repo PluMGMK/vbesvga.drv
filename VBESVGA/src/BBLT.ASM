@@ -66,7 +66,6 @@ externW _cstods
 externW	pattern_copy_numwords		; in ROBJECT.ASM
 externW	oem_brush_size			; in ROBJECT.ASM
 externW	compile_colour_stos_table	; in COMPBLT.ASM
-externNP ipc_to_rgb			; in RGB2IPC.ASM
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
@@ -213,23 +212,11 @@ bitblt_prep_rop_etal	PROC	NEAR
 	mov	dx,es:[di].bkColor.hi		; now can save a lot of hassle
 	mov	[bgcolour.lo],ax		; and segment reloads later
 	mov	[bgcolour.hi],dx		; if they are needed
-	call	ipc_to_rgb			;get accels in DH
-	mov	bl,dh
-	cmp	bl,0FFh				;just an index?
-	jne	@F
-	mov	bl,ah				;then accels are in AH
-@@:
 	mov	ax,es:[di].TextColor.lo
 	mov	dx,es:[di].TextColor.hi
 	mov	[fgcolour.lo],ax
 	mov	[fgcolour.hi],dx
-	call	ipc_to_rgb			;get accels in DH
-	mov	bh,dh
-	cmp	bh,0FFh				;just an index?
-	jne	@F
-	mov	bh,ah				;then accels are in AH
-@@:
-	mov	[mono_bits],bx
+
 	mov	word ptr background_mode,OPAQUE
 	mov	ax,es:[di].bkMode
 	cmp	ax,3
@@ -297,73 +284,26 @@ PUBLIC	bitblt_prep_pattern
 bitblt_prep_pattern	PROC	NEAR
 
 	lds	si,lpPBrush
-	mov	ax,ds
-	or	ax,si				;if the brush is NULL then
-	je	bitblt_prep_pattern_error	; there is an error
-	mov	bx,[oem_brush_size]
-	sub	bx,size oem_brush_com
-	mov	al,[bx+si].oem_brush_accel
-	mov	brush_accel_flags,ax
-	mov	ax,[bx+si].oem_brush_style
-	cmp	ax,BS_HOLLOW			;if the brush is hollow then
-	je	bitblt_prep_pattern_error	; there is an error
-
         lea     di,pattern_space
         add     di,SIZE_PATTERN * SIZE_PATTERN - 1
         and     di,NOT (SIZE_PATTERN * SIZE_PATTERN - 1)
         mov     pattern_offset,di
-	lea	di,pattern_work
-
+	lea	di,pattern_work	
 	mov	cx,ss
 	mov	es,cx
-	cmp	ax,BS_SOLID			;solid and hatched brushes
-	je	bitblt_prep_pattern_copy	; go exactly as they are since
-	cmp	ax,BS_HATCHED			; they are created in both hues
-	je	bitblt_prep_pattern_copy	; but they may need rotation
 
-	test	byte ptr [bx+si].oem_brush_accel,GREY_SCALE
-	je	bitblt_prep_color_pattern
-	test	word ptr device_flags,DEVFLAG_DST_COLOR
-	jnz	@F
-	mov	bx,mono_bits
-        call    brush_convert_mono_to_mono
-	jmp	short	bitblt_prep_pattern_rotate
-@@:	lea	bx,fgcolour
-	call	brush_convert_mono_to_color
-        jmp     short   bitblt_prep_pattern_rotate
-
-bitblt_prep_color_pattern:
-	test	word ptr device_flags,DEVFLAG_DST_COLOR
-	jne	@F
-	call	brush_convert_color_to_mono
-	jmp	short	bitblt_prep_pattern_rotate
-@@:	call	brush_convert_color_to_color
-	jmp	short	bitblt_prep_pattern_rotate
-
-bitblt_prep_pattern_error:
-        stc
+	mov	dl,device_flags
+	and	dl,DEVFLAG_DST_COLOR  ;set DL non-zero for color
+	push	bp
+	lea	bp,fgcolour
+	call	prep_pattern_norotate
+	pop	bp
+	jnc	short bitblt_prep_pattern_rotate
         ret
 
-public	bitblt_prep_pattern_copy
-bitblt_prep_pattern_copy:
-	mov	cx,[pattern_copy_numwords]
-	shl	cx,3
-	errnz	SIZE_PATTERN-8
-	test	word ptr device_flags,DEVFLAG_DST_COLOR
-	jnz	@F
-	mov	cx,SIZE_PATTERN SHR 1
-	add	si,[oem_brush_size]
-	sub	si,size oem_brush_com
-@@:	rep	movsw
-
 bitblt_prep_pattern_rotate:
-	mov	bx,0707H			;assume the worst that we must
-;	test	word ptr device_flags,DEVFLAG_DST_SCREEN     ; byte align the
-;	jz	@F				; pattern in the x direction
-;	test	rop_flags,SOURCE_PRESENT	;if the latches can be used
-;	jnz	@F				; we only need to order the
-;	mov	bx,0704H			; nibbles in the x direction
-@@:	mov	ax,es
+	mov	bx,0707H
+	mov	ax,es
 	mov	ds,ax
 	lea	si,pattern_work
 	mov	di,pattern_offset
