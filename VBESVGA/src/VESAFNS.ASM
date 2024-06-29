@@ -277,8 +277,8 @@ VESAOSMem	LONG <?,?>	; Off-Screen Memory
 VESAOSMemSize	dw ?	; in kiB
 OFF_VESA_SLLIN	equ $-VESAModeStruct
 VESAScanLineLin	dw ?	; same as VESAScanLineLen but for linear modes
-VESAImgsBanked	dw ?
-VESAImgsLinear	dw ?
+VESAImgsBanked	db ?
+VESAImgsLinear	db ?
 ; Same as above but for linear modes
 OFF_VESA_LDEPTH	equ $-VESAModeStruct
 VESALRFieldSize	db ?
@@ -327,6 +327,34 @@ BankSwitchPMInt	proc far
 	assumes	ds,nothing
 	ret
 BankSwitchPMInt	endp
+
+; This function emulates bank-switching for linear modes.
+; It allows me to start programming support for linear modes,
+; while still fully stress-testing the bank-switching code paths.
+; Unfortunately, the performance doesn't seem to be any better...
+BankSwitchSoft	proc far
+	; Since we're calling a Win16 API function, save these:
+	push	dx
+	push	cx
+	push	bx
+	push	es
+
+	; DX is the bank index, so we just add that to the
+	; upper half of the 32-bit buffer address.
+	add	dx,[VESALinearBuf.hi]
+	; Note that this doesn't trap into Ring0 at all, as
+	; the Windows "KERNEL" can modify the LDT directly
+	; from Ring3...
+	cCall	SetSelectorBase,<[VESAWinASeg],dx,[VESALinearBuf.lo]>
+
+	; If needed, DS should be reloaded already. Now we also reload ES:
+	pop	es
+	; And restore the other saved regs
+	pop	bx
+	pop	cx
+	pop	dx
+	ret
+BankSwitchSoft	endp
 
 sEnd	Code
 
@@ -618,10 +646,12 @@ SetupPMInt	proc near
 	; finally, get a CS alias for the PM code...
 	push	es
 	cCall	AllocDSToCSAlias, <es>
-	pop	es	; kernel call may destroy ES!
+	pop	es	; Win16 API call stomps ES!
 	test	ax,ax
 	jz	@@unlockbiosdata
 ifdef	INT3
+public	PMIntSelReady
+PMIntSelReady:
 	int	3
 endif
 	mov	[PMIntEntry.sel],ax
@@ -644,9 +674,6 @@ endif
 	assumes	ds,Data
 
 	; fill in the selectors as needed
-ifdef	INT3
-	int	3
-endif
 	mov	es:[bp.BIOSDataSel],dx
 	mov	es:[bp.A0000Sel],__A000
 	mov	es:[bp.B0000Sel],__B000
@@ -903,10 +930,71 @@ cProc	FindMode,<NEAR,PUBLIC>,<es,ds,di,bx,si,cx>
 	parmB	bLinear	; zero if bank-switched mode is desired
 	localW	CodeSel	; RW selector to Code segment
 cBegin
-	; ensure that VBE Info is populated before we use it!
+	cmp	[bLinear],0
+	jz	@F
+
+	; do a few checks before agreeing to search for a linear mode
+	mov	ax,__WinFlags
+	mov	di,-1		; in case we return with error
+	test	ax,WF_ENHANCED
+	jnz	@F		; linear modes will work in enhanced mode
+
+	test	ax,WF_PMODE
+	jz	LinRealMode
+
+	; DOSX can screw us over because it always codes int 31h 800h as a
+	; no-op, even when it's using paging (via VCPI).
+	test	ax,WF_CPU386 OR WF_CPU486
+	jz	@F		; no paging, int 31h 800h as a no-op is fine
+
+	; Check if a different DPMI host is being used, rather than
+	; DOSX (e.g. HX-DOS extender)
+	mov	ax,400h		; Get DPMI version
+	int	31h
+	test	bl,1		; 32-bit?
+	jnz	@F		; OK, it's not DOSX, so we're probably OK
+
+	; Windows in Standard Mode always tells us there's no paging, even
+	; when there is. We have to go to deeper to find the truth...
+	mov	ax,200h		; get real-mode interrupt vector
+	mov	bl,67h		; EMS / VCPI
+	int	31h
+	or	cx,dx
+	jz	@F		; no VCPI, we're fine
+
+	; attempt to ask VCPI about the contents of CR0
+	.386
+	pushad			; in case stuff gets trashed
+	xor	ebx,ebx
+	mov	ax,0DE07h	; VCPI: read CR0
+	int	67h		; this should reflect through to VM86 mode
+	bt	ebx,1Fh
+	popad
+	.286
+	jnc	@F		; no paging
+
+ifdef	INT3
+public	LinStdModePaging
+LinStdModePaging:
+	int	3
+endif
+	WriteAux <'Linear framebuffer not usable in Standard Mode with Paging.'>
+	jmp	FindMode_reterr
+
+LinRealMode:
+ifdef	INT3
+public	LinRealMode
+	int	3
+endif
+	WriteAux <'Linear framebuffer not usable in Real Mode.'>
+	jmp	FindMode_reterr
+
+@@:	; ensure that VBE Info is populated before we use it!
 	call	GetVBEInfo
 
 ifdef	INT3
+public	VBEInfoReady
+VBEInfoReady:
 	int	3
 endif
 	; fail fast if the DAC cannot be set as desired
@@ -917,6 +1005,8 @@ endif
 	jnz	@F	; we're OK
 
 ifdef	INT3
+public	No8bDAC
+No8bDAC:
 	int	3
 endif
 	WriteAux <'8-bit DAC specified in profile but not supported by card'>
@@ -1104,34 +1194,41 @@ ModeFound:
 	assumes	es,Code
 
 	test	di,di		; returning success?
-	jnz	FindMode_done
+	jnz	@F
+
+	; Prepare to fix up the far pointer if needed
+	lea	si,VESABankSwitch
+	lea	bx,VESAModeStruct
+	mov	cx,seg VESABankSwitch	; code may be placed in this segment!
+
+	; But if we've a linear mode, that's not necessary...
+	test	[Vmode],VESA_FLAG_LINEAR
+	jnz	FindMode_setuplin
 
 	; Fix up the far pointer
 	mov	dx,[int10h_es]
-	lea	bx,VESAModeStruct
-
-	lea	si,VESABankSwitch
-	mov	cx,seg VESABankSwitch	; code may be placed in this segment!
 	call	FixupFarPtr
 	test	ax,ax
 	mov	di,ERR_PROT_ALLOC
-	jz	FindMode_done
+	jz	@F
 
 	; Fix up the segments too
 	xor	cx,cx		; want data segments!
 	mov	ax,[VESAWinASeg]
 	call	SegToSel
 	mov	[VESAWinASeg],ax
-	mov	[ScreenSelector],ax
+
 	mov	ax,[VESAWinBSeg]
 	call	SegToSel
 	mov	[VESAWinBSeg],ax
 
 	xor	di,di	; all good!
-	jmp	short FindMode_done
+@@:	jmp	FindMode_done
 
-public	FindMode_checksels	; for debugging
 FindMode_checksels:
+	test	[Vmode],VESA_FLAG_LINEAR
+	jnz	FindMode_setuplin
+
 	; Dodgy PMID implementations may leave us with segments rather than
 	; selectors in some of the essential pointers. Deal with that...
 	.286p			; for LAR instruction
@@ -1168,10 +1265,62 @@ FindMode_checksels:
 
 @@:
 	xor	di,di	; all good!
+	jmp	short FindMode_done
+
+FindMode_setuplin:
+ifdef	INT3
+public	FindMode_setuplin
+	int	3
+endif
+	; Map the framebuffer into virtual memory if needed.
+	; Start by calculating its size:
+	mov	ax,[MemoryWidth]
+	mul	[VESAHeight]
+	mov	si,dx
+	mov	di,ax
+	; Now just set its location:
+	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
+	mov	cx,[VESALinearBuf.lo]
+	mov	bx,[VESALinearBuf.hi]
+	; And call:
+	int	31h
+	mov	di,ERR_PROT_ALLOC
+	jc	FindMode_done
+	; Now we can put the linear address back where we got the physical one
+	mov	[VESALinearBuf.lo],cx
+	mov	[VESALinearBuf.hi],bx
+
+	; Create a selector that will be used to access 64k at a time
+	; (we can copy __A000 and then change its base dynamically)
+	cCall	AllocSelector,<__A000>
+	mov	es,[CodeSel]	; ES gets stomped when we call the C function
+	test	ax,ax
+	jz	FindMode_done
+
+	; Set the selector base as appropriate
+	cCall	SetSelectorBase,<ax,[VESALinearBuf.hi],[VESALinearBuf.lo]>
+	mov	es,[CodeSel]	; ES gets stomped when we call the C function
+	test	ax,ax
+	jz	FindMode_done
+	; Helpfully, SetSelectorBase gives back the selector value in AX again.
+	mov	[VESAWinASeg],ax
+
+	; Set the bank-switching function to our "soft" implementation
+	mov	[VESABankSwitch.sel],seg BankSwitchSoft
+	mov	[VESABankSwitch.off],offset BankSwitchSoft
+
+	; Also ensure the window size is correctly set to 64k
+	mov	[VESABankSize],64
+
+	xor	di,di
 FindMode_done:
 	.286
 	test	di,di
 	jnz	@F
+
+	; Set ScreenSelector based on what has taken place above
+	mov	ax,[VESAWinASeg]
+	mov	[ScreenSelector],ax
 
 	; while we're here with a code segment alias,
 	; setup modal functions / data for brush realization

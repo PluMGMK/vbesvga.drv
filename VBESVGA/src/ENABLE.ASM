@@ -400,8 +400,11 @@ enable_read_profile	PROC	NEAR
 	jmp	enable_read_profile_fail
 @@:	mov	VScreen_Depth,al
 
-	; Linear=0 for now
-	; TODO: bring it in if we detect 32-bit DPMI
+	; Try Linear=1 first
+	cCall	FindMode,<1>
+	test	ax,ax
+	jz	@F
+	; OK, fallback to Linear=0
 	cCall	FindMode,<0>
 	test	ax,ax
 	jz	@F
