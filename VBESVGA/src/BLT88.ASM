@@ -146,7 +146,10 @@ blt_ctoc_prep	PROC	NEAR
 	; doing this:
 	mov	ax,inner_loop_count
 	mov	dx,dst_xExt_bytes
-	cmp	ax,dx
+	test	dx,dx
+	jns	@F
+	neg	dx
+@@:	cmp	ax,dx
 	jae	@F
 	mov	inner_loop_count,dx
 @@:	ret
