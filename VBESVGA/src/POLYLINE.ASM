@@ -351,9 +351,15 @@ MoveTable_bm8           dw      offset Bm8_Move_Diagonal_4Q
 			dw	offset Bm8_Move_Diagonal_1Q
 			dw	offset Bm8_Move_Positive_Y
 
+; colour rotation routine addresses
+RotateColourTable	dw	offset RotateColour8
+			dw	offset RotateColour16
+			dw	offset RotateColour24
+			dw	offset RotateColour32
+
 ; logical operation routine addresses for BM8 functions
 
-BM8_ROP_Table	    dw	    offset BM8_ROP0
+BM8_ROP_Table		dw	offset BM8_ROP0
 			dw	offset BM8_ROP1
 			dw	offset BM8_ROP2
 			dw	offset BM8_ROP3
@@ -369,54 +375,6 @@ BM8_ROP_Table	    dw	    offset BM8_ROP0
 			dw	offset BM8_ROPD
 			dw	offset BM8_ROPE
 			dw	offset BM8_ROPF
-BM16_ROP_Table	    dw	    offset BM16_ROP0
-			dw	offset BM16_ROP1
-			dw	offset BM16_ROP2
-			dw	offset BM16_ROP3
-			dw	offset BM16_ROP4
-			dw	offset BM16_ROP5
-			dw	offset BM16_ROP6
-			dw	offset BM16_ROP7
-			dw	offset BM16_ROP8
-			dw	offset BM16_ROP9
-			dw	offset BM16_ROPA
-			dw	offset BM16_ROPB
-			dw	offset BM16_ROPC
-			dw	offset BM16_ROPD
-			dw	offset BM16_ROPE
-			dw	offset BM16_ROPF
-BM24_ROP_Table	    dw	    offset BM24_ROP0
-			dw	offset BM24_ROP1
-			dw	offset BM24_ROP2
-			dw	offset BM24_ROP3
-			dw	offset BM24_ROP4
-			dw	offset BM24_ROP5
-			dw	offset BM24_ROP6
-			dw	offset BM24_ROP7
-			dw	offset BM24_ROP8
-			dw	offset BM24_ROP9
-			dw	offset BM24_ROPA
-			dw	offset BM24_ROPB
-			dw	offset BM24_ROPC
-			dw	offset BM24_ROPD
-			dw	offset BM24_ROPE
-			dw	offset BM24_ROPF
-BM32_ROP_Table	    dw	    offset BM32_ROP0
-			dw	offset BM32_ROP1
-			dw	offset BM32_ROP2
-			dw	offset BM32_ROP3
-			dw	offset BM32_ROP4
-			dw	offset BM32_ROP5
-			dw	offset BM32_ROP6
-			dw	offset BM32_ROP7
-			dw	offset BM32_ROP8
-			dw	offset BM32_ROP9
-			dw	offset BM32_ROPA
-			dw	offset BM32_ROPB
-			dw	offset BM32_ROPC
-			dw	offset BM32_ROPD
-			dw	offset BM32_ROPE
-			dw	offset BM32_ROPF
 
 ; AND/XOR mask definitions for ROP codes on BITMAPS
 
@@ -503,6 +461,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localW  FillBytes               ; filler bytes at end of huge segment
         localW  NextSegOff              ; offset to next hugemap segment
         localW  BM8                     ; point to BM8_... dataROT routine
+	localW	RotColour		; point to colour rotation routine
 
 ; following variables are used for styled lines
 
@@ -549,7 +508,6 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localW  XformFlags              ; records transformations done
         localW  cdy                     ; stores pseudo line minor coord
         localW  cScanMove               ; offset to next scan line
-        localW  cScanStep               ; sidestep error add factor
         localB  LineStyle               ; value of line style
         localW  cScans                  ; no of scans lines for pseudo line
         localW  cTempScans              ; save for later passes
@@ -583,6 +541,7 @@ stack_space_ok:
 ;----------------------------------------------------------------------------;
 
 ifdef PALETTES
+	;FIXME: This is not in Data anymore, need to use something else!
 	cmp	[red_shr],-1
 	jne	no_translation_needed	; not using a palette
 
@@ -761,16 +720,16 @@ ld_bg_color2:
         dec     bx                          ; make it zero based
         and     bx,RASTER_OP_MASK           ; only 4 bits are significant
         mov     DrawModeIndex,bx            ; save a copy
-
-	; choose which table to index (BM8, BM16, etc.)
-	mov	cl,BytesPerPixel
-	dec	cl
-	shl	cl,RASTER_OP_SHL
-	or	bl,cl
-
 	shiftl	bx,1
 	mov	bx	,cs:[BM8_ROP_Table][bx]
 	mov	BM8	,bx
+
+	mov	bl,BytesPerPixel
+	dec	bl
+	xor	bh	,bh
+	shiftl	bx,1
+	mov	bx	,cs:[RotateColourTable][bx]
+	mov	RotColour,bx
 
 	mov	cx,[si].oem_pen_style	    ; get the requested style
         mov     LineStyle,cl                ; save style
@@ -1411,13 +1370,6 @@ test_Y_FLIP:
 tests_done:
         mov     cRotation,cl            ; no of bits to ratate by (0 or 1)
         mov     cScanMove,si            ; offset to move to next(prev) scan
-        neg     ch                      ; setting up mask
-        mov     cl,ch                   ; make it a word
-        and     si,cx
-
-; si will be forced to zero if no scan move during step is necessary
-
-        mov     cScanStep,si            ; offset used in step routines
 
 ; now we will calculate the offset in the display memory of the first point
 
@@ -1498,6 +1450,7 @@ calculate_for_bytemap:
         add     ax,di
         mov     TempCurByte,ax
         mov     TempCurByteSty,ax
+	; abuse the TempCurBit slot for non-mono bitmaps
 	mov	bl,BytesPerPixel
         mov     TempCurBit,bl
         jmp     short calculate_addr_for_draw
@@ -1566,6 +1519,7 @@ endif
         add     ax,TempCurOff           ; + screen begin offset
         mov     TempCurByte,ax
         mov     TempCurByteSty,ax
+	; abuse the TempCurBit slot for the screen, which is non-mono
 	mov	bl,BytesPerPixel
         mov     TempCurBit,bl
 
@@ -1621,8 +1575,6 @@ do_another_pass:
 	test	DeviceFlags,TYPE_IS_BYTEMAP
 	jnz	@F
 
-	push	bx			; I don't know if this is necessary
-
 	mov	bx, DrawModeIndex	; has the zero based rop code
 	ror	ROPcolor,1		; rotate the color
 	jnc	color_bit_is_0		; the color for this plane is 0
@@ -1633,8 +1585,6 @@ color_bit_is_0:
 	add	bx,bx			; double up for word retrieval
 	mov	ax,[BitmapMaskTable][bx]
 	mov	wBitmapROP,ax		; save it
-
-	pop	bx
 
 
 @@:	; continue on initializing
@@ -1728,6 +1678,7 @@ dl_Diag_1Q_posx:
 	;S1_Move==Bm8_Move_Positive_X
 dl_Q1posx_loop:
 
+	int	3
         call    S1                      ; draw the slice
 
 	;mov	dh,TmpColor

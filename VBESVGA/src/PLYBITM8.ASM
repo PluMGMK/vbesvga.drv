@@ -83,19 +83,17 @@ end comment ~
 ; INPUTS:                                                                     ;
 ;                                                                             ;
 ;            DS:DI          -----  current byte in BITMAP memory              ;
-;               BL          -----  bytes per pixel
+;               BL          -----  number of bytes per pixel                  ;
 ;               SI          -----  offset to next scan line (up or down)      ;
 ;               CX          -----  number of bits to draw                     ;
 ;       wBitmapROP          -----  XOR & AND MASK for current pen and ROP     ;
 ;        FillBytes          -----  extra bytes at the end of the segment      ;
 ;       NextSegOff          -----  segment offset to next segment             ;
-;               DX          -----  number of scan lines left in the segment   ;
 ;                                                                             ;
 ; RETURNS:                                                                    ;
-;            DS:DI          -----  updated current byte in BITMAP             ;
-;               BX          -----  destroyed
-;               DX          -----  updated numver of scan lines left          ;
-;                                    this value is maintained in ScanLeft     ;
+;            DS:DI          -----  updated NEXT pixel in BITMAP               ;
+;               DX          -----  destroyed                                  ;
+;               BX          -----  number of bytes per pixel                  ;
 ;            AX,CX          -----  destroyed                                  ;
 ;                                                                             ;
 ; The DRAW routines for the POSITIVE_Y and DIAGONAL_1Q direction map on to the;
@@ -106,35 +104,40 @@ end comment ~
 
 ; Load colour into AX:DX
 loadcol	macro
+
 	mov	ax,TmpColor.lo
 	mov	dx,TmpColor.hi
-	endm
+endm
 
-; Write BL bytes to DI and ensure BX = bytes written
-writepx	macro
+; Do BL bytes of rop/write to DS:DI and ensure BX = bytes written
+dopixel	macro	command
+	local	@@next
+
 	mov	bh,bl
-	mov	[di],al
-	dec	bh
-	jz	@F
-	mov	[di+1],ah
-	dec	bh
-	jz	@F
-	mov	[di+2],dl
-	dec	bh
-	jz	@F
-	mov	[di+3],dh
-	dec	bh
-	jz	@F
-	int	3	; Houston, we have a problem...
+@@next:
+	command
+	call	RotColour
+	inc	di
+	; in 24-bit modes, DI can hit the end of a segment even within a pixel!
+	jnz	@F
+	; we know DI is supposed to be zero, so we can stash DX in it
+	mov	di,dx
+	inc	bank_select
+	mov	dl,bank_select
+	SET_BANK
+	mov	dx,di
+	xor	di,di
 @@:
-	endm
+	dec	bh
+	jnz	@@next
+endm
 
 loopm	macro	lloop
 
 	dec	cx
 	jnz	lloop
 ;	loop	lloop
-	endm
+endm
 
 	PUBLIC Bm8_Negative_Y
 Bm8_Negative_Y  proc    near
@@ -154,14 +157,16 @@ Bm8_nynoskip:
 		dec	cx 	;last pixel addressing?ds:di
 		JZ	NEGYLASTP
 dobankyPos_loop:
-		writepx		; mov	[di],al
+		dopixel <mov	[di],al>
+		sub	si,bx
 		add	di,si
+		lea	si,[bx+si]	; doesn't disturb flags
 		jc	dobankyPos
 
 	loopm	dobankyPos_loop
 ;;	loop	dobankyPos_loop
 NEGYLASTP:
-		writepx		; mov	[di],al
+		dopixel <mov	[di],al>
 		ret
 dobankyPos:
 		inc	bank_select
@@ -170,7 +175,7 @@ dobankyPos:
 		loadcol		; mov	al,TmpColor
 	loopm	dobankyPos_loop
 ;;	loop	dobankyPos_loop
-		writepx		; mov	[di],al
+		dopixel <mov	[di],al>
 		ret
 
 Bm8_nyskip:
@@ -178,13 +183,15 @@ Bm8_nyskip:
                 dec     cx                  ; take out last pixel from loop
                 jz      bm8_nylast
 bm8_nyloop:
-		call	BM8
+		call	BM8_wrap
+		sub	si,bx
 		add	di,si
+		lea	si,[bx+si]	; doesn't disturb flags
 		jc	bm8_ny_incbank
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
 bm8_nylast:
-		call	BM8
+		call	BM8_wrap
 		ret
 bm8_ny_incbank:
 		test	DeviceFlags,TYPE_IS_DEV
@@ -196,7 +203,7 @@ bm8_ny_incbank:
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
-		call	BM8
+		call	BM8_wrap
 		ret
 bm8_ny_segment:
                 mov     dx,ds             ; get current segment
@@ -205,7 +212,7 @@ bm8_ny_segment:
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
-		call	BM8
+		call	BM8_wrap
 		ret
 Bm8_Negative_Y  endp
 
@@ -228,13 +235,15 @@ Bm8_pynoskip:
 	dec	cx 	;last pixel addressing?ds:di
 	jz	pos_y_last
 dobankyNeg_loop:
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	dobankyNeg
   loopm	dobankyNeg_loop
 ;;loop	dobankyNeg_loop
 pos_y_last:
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret
 dobankyNeg:
 	dec	bank_select
@@ -243,7 +252,7 @@ dobankyNeg:
 	loadcol		; mov	al,TmpColor
   loopm	dobankyNeg_loop
 ;;loop	dobankyNeg_loop
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret
 
 Bm8_pyskip:
@@ -251,13 +260,15 @@ Bm8_pyskip:
         dec     cx                  ; take out last pixel from loop
         jz      bm8_pylast
 bm8_pyloop:
-	call	BM8
+	call	BM8_wrap
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	bm8_py_decbank
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
 bm8_pylast:
-	call	BM8
+	call	BM8_wrap
 	ret
 
 bm8_py_decbank:
@@ -270,7 +281,7 @@ bm8_py_decbank:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
-	call	BM8
+	call	BM8_wrap
 	ret
 
 bm8_py_segment:
@@ -280,33 +291,37 @@ bm8_py_segment:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
-	call	BM8
+	call	BM8_wrap
 	ret
 
 Bm8_Positive_Y  endp
 ;---------------------------------------------------------------------------;
+externA	__WinFlags
+WF_486	equ 8
+WF_386	equ 4
 	PUBLIC Bm8_Positive_X
 Bm8_Positive_X	proc	near
 
 	mov	ax,BM8
 	cmp	ax,offset BM8_ROPC
 	jne	bm8_px_skip
+	cmp	bl,3	; difficult to make 24-bit case more efficient
+	je	@F
+	mov	ax,__WinFlags
+	rcl	al,1	; if 2 bytes or fewer, set LSB of AX
+	test	al,((WF_486 OR WF_386) SHL 1) OR 1
+	jz	@F
 	cmp	cx,8
 	jge	plh_rop_c
-
+@@:
 	loadcol		; mov	al,TmpColor
 	dec	cx
 	jz	bm8_px_last
 bm8_px_loop:
-	writepx		; mov	[di],al
-	add	di,bx ;inc	di
-	jnc	@F
-	call	inc_bank_select
-@@:
-;;loopm	bm8_px_loop
+	dopixel <mov	[di],al>
 	loop	bm8_px_loop
 bm8_px_last:
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret
 
 bm8_px_skip:
@@ -314,50 +329,83 @@ bm8_px_skip:
         dec     cx
         jz      bm8_x_do_last
 bm8_x_output_loop:
-        call    BM8
-	add	di,bx ;inc	di
-	jnc	@F
-	call	inc_bank_select
-@@:
-;;loopm   bm8_x_output_loop
+        call	BM8_wrap
 	loop    bm8_x_output_loop
 bm8_x_do_last:
-        call    BM8
+        call	BM8_wrap
         ret
 
 plh_rop_c:
+	; when we get here, bytes per pixel is guaranteed to be a power of 2,
+	; and if it is 4, we are guaranteed to be able to use 386 registers.
 	push	es
 	mov	ax,ds
 	mov	es,ax
-	loadcol		; mov	al,TmpColor
+
+	; turn CX into the total number of bytes, to check if we wrap
+	mov	bh,bl
+@@:	shr	bh,1
+	jc	@F	;once we shift out the one, we're done
+	shl	cx,1
+	jmp	@B
+@@:
+	xor	dx,dx
+	add	di,cx
+	jnc	@F
+	mov	dx,di	;DX is the #bytes left over after the current bank
+@@:	sub	di,cx	;restore original DI
+	sub	cx,dx	;CX is just the #bytes in the current bank
+	
+	cmp	bl,4
+	jb	@F
+	.386
+	mov	eax,[TmpColor]
+	.8086
+@@:	mov	ax,[TmpColor.lo]
+
+setup_count:
+	cmp	bl,4
+	jnb	plh_rop_c_32bit
+
+	cmp	bl,1
+	ja	@F
 	mov	ah,al
-	shr	cx,1
+@@:	shr	cx,1
 	jc	plh_rop_c_odd
 	test	di,1
 	jnz	plh_rop_c_ena
-	rep	stosw	;even alined
-	dec	di
-	pop	es
-	ret
+	rep	stosw	;even aligned
+	jmp	short count_done
 plh_rop_c_ena:
 	dec	cx
 	stosb
 	rep	stosw
-	mov	es:[di],al
-	pop	es
-	ret
+	stosb
+	jmp	short count_done
 plh_rop_c_odd:
 	test	di,1
 	jnz	plh_rop_c_ona
 	rep	stosw
-	mov	es:[di],al
-	pop	es
-	ret
+	stosb
+	jmp	short count_done
 plh_rop_c_ona:
 	stosb
 	rep	stosw
-	dec	di
-	pop	es
+	jmp	short count_done
+plh_rop_c_32bit:
+	.386
+	shr	cx,2
+	rep	stosd
+	db	67h,90h
+	.8086
+
+count_done:
+	; check if we need a second round...
+	xchg	cx,dx
+	jcxz	@F
+	call	inc_bank_select
+	jmp	short setup_count
+@@:	pop	es
 	ret
 
 Bm8_Positive_X	endp
@@ -382,17 +430,15 @@ Bm8_d4qnoskip:
         dec     cx              ; leave out the last pixel
         jz      Bm8_d4q_last_pixel
 Bm8_d4q_iloop:
-	writepx		; mov	[di],al
-	add	di,bx ;inc	di
-	jnc	@F
-	call	inc_bank_select
-@@:
+	dopixel <mov	[di],al>
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jc	Bm8_d4q_incbank
   loopm	Bm8_d4q_iloop
 ;;loop	Bm8_d4q_iloop
 Bm8_d4q_last_pixel:
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret		;exit	      
 Bm8_d4q_incbank:
 	inc	bank_select
@@ -401,7 +447,7 @@ Bm8_d4q_incbank:
 	loadcol		; mov	al,TmpColor
   loopm	Bm8_d4q_iloop
 ;;loop	Bm8_d4q_iloop
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret   		;exit
 
 Bm8_d4qskip:
@@ -409,14 +455,15 @@ Bm8_d4qskip:
         dec     cx              ; leave out the last pixel
         jz      Bm8_diag_last_pixel
 Bm8_Diag_loop:
-        call    BM8
-	inc	di
+        call	BM8_wrap
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jc	Bm8_Diag_incbank
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
 Bm8_diag_last_pixel:
-	call	BM8
+	call	BM8_wrap
 	ret
 
 Bm8_Diag_incbank:
@@ -429,7 +476,7 @@ Bm8_Diag_incbank:
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
-	call	BM8
+	call	BM8_wrap
 	ret
 
 bm8_diag_segment:
@@ -439,7 +486,7 @@ bm8_diag_segment:
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
-	call	BM8
+	call	BM8_wrap
 	ret
          
 Bm8_Diagonal_4Q endp
@@ -463,17 +510,15 @@ Bm8_d1qnoskip:
 	dec	cx 	;last pixel addressing?ds:di
 	jz	d1q_lastpixel
 Bm8_d1q_dloop:
-	writepx		; mov	[di],al
-	add	di,bx ;inc	di
-	jnc	@F
-	call	inc_bank_select
-@@:
+	dopixel <mov	[di],al>
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	Bm8_d1q_decbank
   loopm	Bm8_d1q_dloop
 ;;loop	Bm8_d1q_dloop
 d1q_lastpixel:
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret
 Bm8_d1q_decbank:
 	dec	bank_select
@@ -482,7 +527,7 @@ Bm8_d1q_decbank:
 	loadcol		; mov	al,TmpColor
   loopm	Bm8_d1q_dloop
 ;;loop	Bm8_d1q_dloop
-	writepx		; mov	[di],al
+	dopixel <mov	[di],al>
 	ret
 
 Bm8_d1qskip:
@@ -490,14 +535,15 @@ Bm8_d1qskip:
         dec     cx              ; leave out the last pixel
         jz      diag_last_pixel
 Diag_loop:
-        call    BM8
-	inc	di
+        call	BM8_wrap
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	Diag_decbank
   loopm	Diag_loop
 ;;loop	Diag_loop
 diag_last_pixel:
-	call	BM8
+	call	BM8_wrap
 	ret
 
 Diag_decbank:
@@ -510,7 +556,7 @@ Diag_decbank:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
-	call	BM8
+	call	BM8_wrap
 	ret
 
 diag_segment:
@@ -520,7 +566,7 @@ diag_segment:
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
-	call	BM8
+	call	BM8_wrap
 	ret
 
 Bm8_Diagonal_1Q endp
@@ -528,7 +574,8 @@ Bm8_Diagonal_1Q endp
 ;-----------------------------------------------------------------------------;
 Bm8_Move_Positive_X proc        near
 
-        inc     di
+        ; this does nothing since the Bm8_* routine should automatically have
+	; incremented the pixel in the X direction!
         ret
 
 Bm8_Move_Positive_X     endp
@@ -536,12 +583,19 @@ Bm8_Move_Positive_X     endp
 ;----------------------------------------------------------------------------;
 Bm8_Move_Diagonal_4Q proc near
 
-        inc     di
+	; previous Bm8_* routine should automatically have moved us forward,
+	; so we only need to go down to the next scanline, with no adjustment
+	add	di,si
+	jc	@F
+	ret
 
 PUBLIC	Bm8_Move_Negative_Y
 	Bm8_Move_Negative_Y proc        near
 
+	; need to move back to previous pixel before going down
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jc	@F
 	ret
 @@:	test	DeviceFlags,TYPE_IS_DEV
@@ -566,12 +620,19 @@ Bm8_Move_Diagonal_4Q    endp
 ;---------------------------------------------------------------------------;
 Bm8_Move_Diagonal_1Q proc near
 
-        inc     di
+	; previous Bm8_* routine should automatically have moved us forward,
+	; so we only need to go up to the next scanline, with no adjustment
+	add	di,si
+	jnc	@F
+	ret
 
 PUBLIC	Bm8_Move_Positive_Y
 	Bm8_Move_Positive_Y proc        near
 
+	; need to move back to previous pixel before going up
+	sub	si,bx
 	add	di,si
+	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	@F
 	ret
 @@:
@@ -594,6 +655,53 @@ PUBLIC	Bm8_Move_Positive_Y
 
 Bm8_Move_Diagonal_1Q    endp
 
+
+; colour rotation routines, to ensure the next byte to write is in AL
+;---------------------------------------------------------------------------;
+RotateColour8	proc	near
+		; in the 8-bit case, it's always in AL, so do nothing
+                ret
+RotateColour8	endp
+;---------------------------------------------------------------------------;
+RotateColour16	proc	near
+		; just need to swap two bytes
+		xchg	al,ah
+                ret
+RotateColour16	endp
+;---------------------------------------------------------------------------;
+RotateColour24	proc	near
+		; here's where it gets tricky...
+		; suppose AL:AH:DL = |1|2|3|
+		xchg	al,dl
+		; now AL:AH:DL = |3|2|1|
+		xchg	al,ah
+		; now AL:AH:DL = |2|3|1| --> this is what we want :)
+                ret
+RotateColour24	endp
+;---------------------------------------------------------------------------;
+RotateColour32	proc	near
+		; trickier...
+		; suppose AL:AH:DL:DH = |1|2|3|4|
+		xchg	al,dh
+		; now AL:AH:DL:DH = |4|2|3|1|
+		xchg	al,ah
+		; now AL:AH:DL:DH = |2|4|3|1|
+		xchg	ah,dl
+		; now AL:AH:DL:DH = |2|3|4|1| --> this is what we want :)
+                ret
+RotateColour32	endp
+;---------------------------------------------------------------------------;
+
+; Wrapper for BM8 that allows for multiple bytes per pixel.
+; This is a subroutine since instantiating the dopixel macro everywhere
+; would seriously blow up the code size in this module...
+;---------------------------------------------------------------------------;
+public	BM8_wrap ; for debugging
+BM8_wrap	proc	near
+		dopixel <call	BM8>
+		ret
+BM8_wrap	endp
+;---------------------------------------------------------------------------;
 
 ;---------------------------------------------------------------------------;
 BM8_ROP0	proc	near
@@ -687,284 +795,6 @@ BM8_ROPF	proc	near
 		mov	BYTE PTR [di] ,0FFH
 		ret
 BM8_ROPF	endp
-
-
-;---------------------------------------------------------------------------;
-BM16_ROP0	proc	near
-		mov	WORD PTR [di],0
-                ret
-BM16_ROP0	endp
-;---------------------------------------------------------------------------;
-BM16_ROP1	proc	near
-		or	WORD PTR [di],ax
-		not	WORD PTR [di]
-                ret
-BM16_ROP1	endp
-;---------------------------------------------------------------------------;
-BM16_ROP2	proc	near
-		not	ax
-		and	WORD PTR [di],ax
-		not	ax
-		ret
-BM16_ROP2	endp
-;---------------------------------------------------------------------------;
-BM16_ROP3	proc	near
-		not	ax
-		mov	WORD PTR [di],ax
-		not	ax
-		ret
-BM16_ROP3	endp
-;---------------------------------------------------------------------------;
-BM16_ROP4	proc	near
-		not	WORD PTR [di]
-		and	WORD PTR [di],ax
-		ret
-BM16_ROP4	endp
-;---------------------------------------------------------------------------;
-BM16_ROP5	proc	near
-		not	WORD PTR [di]
-		ret
-BM16_ROP5	endp
-;---------------------------------------------------------------------------;
-BM16_ROP6	proc	near
-		xor	WORD PTR [di],ax
-		ret
-BM16_ROP6	endp
-;---------------------------------------------------------------------------;
-BM16_ROP7	proc	near
-		and	WORD PTR [di],ax
-		not	WORD PTR [di]
-                ret
-BM16_ROP7	endp
-;---------------------------------------------------------------------------;
-BM16_ROP8	proc	near
-		and	WORD PTR [di],ax
-                ret
-BM16_ROP8	endp
-;---------------------------------------------------------------------------;
-BM16_ROP9	proc	near
-		xor	WORD PTR [di],ax
-		not	WORD PTR [di]
-                ret
-BM16_ROP9	endp
-;---------------------------------------------------------------------------;
-BM16_ROPA	proc	near
-                ret
-BM16_ROPA	endp
-;---------------------------------------------------------------------------;
-BM16_ROPB	proc	near
-		not	ax
-		or	WORD PTR [di],ax
-		not	ax
-		ret
-BM16_ROPB	endp
-;---------------------------------------------------------------------------;
-BM16_ROPC	proc	near
-		mov	 WORD PTR [di],ax
-		ret
-BM16_ROPC	endp
-;---------------------------------------------------------------------------;
-BM16_ROPD	proc	near
-		not	WORD PTR [di]
-		or	WORD PTR [di] ,ax
-		ret
-BM16_ROPD	endp
-;---------------------------------------------------------------------------;
-BM16_ROPE	proc	near
-		or	WORD PTR [di] ,ax
-		ret
-BM16_ROPE	endp
-;---------------------------------------------------------------------------;
-BM16_ROPF	proc	near
-		mov	WORD PTR [di] ,0FFFFH
-		ret
-BM16_ROPF	endp
-
-
-;---------------------------------------------------------------------------;
-BM24_ROP0	proc	near
-		mov	BYTE PTR [di+2],0
-                jmp	BM16_ROP0
-BM24_ROP0	endp
-;---------------------------------------------------------------------------;
-BM24_ROP1	proc	near
-		or	BYTE PTR [di+2],dl
-		not	BYTE PTR [di+2]
-                jmp	BM16_ROP1
-BM24_ROP1	endp
-;---------------------------------------------------------------------------;
-BM24_ROP2	proc	near
-		mov	dh	,dl
-		not	dh
-		and	BYTE PTR [di+2],dh
-		jmp	BM16_ROP2
-BM24_ROP2	endp
-;---------------------------------------------------------------------------;
-BM24_ROP3	proc	near
-		mov	dh	,dl
-		not	dh
-		mov	BYTE PTR [di+2],dh
-		jmp	BM16_ROP3
-BM24_ROP3	endp
-;---------------------------------------------------------------------------;
-BM24_ROP4	proc	near
-		mov	dh	,BYTE PTR [di+2]
-		not	dh
-		and	dh	,dl
-		mov	BYTE PTR [di+2],dh
-		jmp	BM16_ROP4
-BM24_ROP4	endp
-;---------------------------------------------------------------------------;
-BM24_ROP5	proc	near
-		not	BYTE PTR [di+2]
-		jmp	BM16_ROP5
-BM24_ROP5	endp
-;---------------------------------------------------------------------------;
-BM24_ROP6	proc	near
-		xor	BYTE PTR [di+2],dl
-		jmp	BM16_ROP6
-BM24_ROP6	endp
-;---------------------------------------------------------------------------;
-BM24_ROP7	proc	near
-		and	BYTE PTR [di+2],dl
-		not	BYTE PTR [di+2]
-                jmp	BM16_ROP7
-BM24_ROP7	endp
-;---------------------------------------------------------------------------;
-BM24_ROP8	proc	near
-		and	BYTE PTR [di+2],dl
-                jmp	BM16_ROP8
-BM24_ROP8	endp
-;---------------------------------------------------------------------------;
-BM24_ROP9	proc	near
-		xor	BYTE PTR [di+2],dl
-		not	BYTE PTR [di+2]
-                jmp	BM16_ROP9
-BM24_ROP9	endp
-;---------------------------------------------------------------------------;
-BM24_ROPA	proc	near
-                ret
-BM24_ROPA	endp
-;---------------------------------------------------------------------------;
-BM24_ROPB	proc	near
-		mov	dh	,dl
-		not	dh
-		or	BYTE PTR [di+2],dh
-		jmp	BM16_ROPB
-BM24_ROPB	endp
-;---------------------------------------------------------------------------;
-BM24_ROPC	proc	near
-		mov	 BYTE PTR [di+2],dl
-		jmp	BM16_ROPC
-BM24_ROPC	endp
-;---------------------------------------------------------------------------;
-BM24_ROPD	proc	near
-		not	BYTE PTR [di+2]
-		or	BYTE PTR [di+2] ,dl
-		jmp	BM16_ROPD
-BM24_ROPD	endp
-;---------------------------------------------------------------------------;
-BM24_ROPE	proc	near
-		or	BYTE PTR [di+2] ,dl
-		jmp	BM16_ROPE
-BM24_ROPE	endp
-;---------------------------------------------------------------------------;
-BM24_ROPF	proc	near
-		mov	BYTE PTR [di+2] ,0FFH
-		jmp	BM16_ROPF
-BM24_ROPF	endp
-
-
-;---------------------------------------------------------------------------;
-BM32_ROP0	proc	near
-		mov	WORD PTR [di+2],0
-                jmp	BM16_ROP0
-BM32_ROP0	endp
-;---------------------------------------------------------------------------;
-BM32_ROP1	proc	near
-		or	WORD PTR [di+2],dx
-		not	WORD PTR [di+2]
-                jmp	BM16_ROP1
-BM32_ROP1	endp
-;---------------------------------------------------------------------------;
-BM32_ROP2	proc	near
-		not	dx
-		and	WORD PTR [di+2],dx
-		not	dx
-		jmp	BM16_ROP2
-BM32_ROP2	endp
-;---------------------------------------------------------------------------;
-BM32_ROP3	proc	near
-		not	dx
-		mov	WORD PTR [di+2],dx
-		not	dx
-		jmp	BM16_ROP3
-BM32_ROP3	endp
-;---------------------------------------------------------------------------;
-BM32_ROP4	proc	near
-		not	WORD PTR [di+2]
-		and	WORD PTR [di+2],dx
-		jmp	BM16_ROP4
-BM32_ROP4	endp
-;---------------------------------------------------------------------------;
-BM32_ROP5	proc	near
-		not	WORD PTR [di+2]
-		jmp	BM16_ROP5
-BM32_ROP5	endp
-;---------------------------------------------------------------------------;
-BM32_ROP6	proc	near
-		xor	WORD PTR [di+2],dx
-		jmp	BM16_ROP6
-BM32_ROP6	endp
-;---------------------------------------------------------------------------;
-BM32_ROP7	proc	near
-		and	WORD PTR [di+2],dx
-		not	WORD PTR [di+2]
-                jmp	BM16_ROP7
-BM32_ROP7	endp
-;---------------------------------------------------------------------------;
-BM32_ROP8	proc	near
-		and	WORD PTR [di+2],dx
-                jmp	BM16_ROP8
-BM32_ROP8	endp
-;---------------------------------------------------------------------------;
-BM32_ROP9	proc	near
-		xor	WORD PTR [di+2],dx
-		not	WORD PTR [di+2]
-                jmp	BM16_ROP9
-BM32_ROP9	endp
-;---------------------------------------------------------------------------;
-BM32_ROPA	proc	near
-                ret
-BM32_ROPA	endp
-;---------------------------------------------------------------------------;
-BM32_ROPB	proc	near
-		not	dx
-		or	WORD PTR [di+2],dx
-		not	dx
-		jmp	BM16_ROPB
-BM32_ROPB	endp
-;---------------------------------------------------------------------------;
-BM32_ROPC	proc	near
-		mov	 WORD PTR [di+2],dx
-		jmp	BM16_ROPC
-BM32_ROPC	endp
-;---------------------------------------------------------------------------;
-BM32_ROPD	proc	near
-		not	WORD PTR [di+2]
-		or	WORD PTR [di+2] ,dx
-		jmp	BM16_ROPD
-BM32_ROPD	endp
-;---------------------------------------------------------------------------;
-BM32_ROPE	proc	near
-		or	WORD PTR [di+2] ,dx
-		jmp	BM16_ROPE
-BM32_ROPE	endp
-;---------------------------------------------------------------------------;
-BM32_ROPF	proc	near
-		mov	WORD PTR [di+2] ,0FFFFH
-		jmp	BM16_ROPF
-BM32_ROPF	endp
 
 
 ; TRUTH TABLE
