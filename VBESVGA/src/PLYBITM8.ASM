@@ -431,9 +431,7 @@ Bm8_d4qnoskip:
         jz      Bm8_d4q_last_pixel
 Bm8_d4q_iloop:
 	dopixel <mov	[di],al>
-	sub	si,bx
 	add	di,si
-	lea	si,[bx+si]	; doesn't disturb flags
 	jc	Bm8_d4q_incbank
   loopm	Bm8_d4q_iloop
 ;;loop	Bm8_d4q_iloop
@@ -456,9 +454,7 @@ Bm8_d4qskip:
         jz      Bm8_diag_last_pixel
 Bm8_Diag_loop:
         call	BM8_wrap
-	sub	si,bx
 	add	di,si
-	lea	si,[bx+si]	; doesn't disturb flags
 	jc	Bm8_Diag_incbank
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
@@ -511,9 +507,7 @@ Bm8_d1qnoskip:
 	jz	d1q_lastpixel
 Bm8_d1q_dloop:
 	dopixel <mov	[di],al>
-	sub	si,bx
 	add	di,si
-	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	Bm8_d1q_decbank
   loopm	Bm8_d1q_dloop
 ;;loop	Bm8_d1q_dloop
@@ -536,9 +530,7 @@ Bm8_d1qskip:
         jz      diag_last_pixel
 Diag_loop:
         call	BM8_wrap
-	sub	si,bx
 	add	di,si
-	lea	si,[bx+si]	; doesn't disturb flags
 	jnc	Diag_decbank
   loopm	Diag_loop
 ;;loop	Diag_loop
