@@ -277,9 +277,8 @@ $(OBJ)\robject.obj:     $(SRC)\robject.asm
 			$(ASM) < vrammak
 
 $(OBJ)\scanline.obj:    $(SRC)\scanline.asm     \
-			$(SRC)\inc\scanmono.inc \
-			$(SRC)\inc\scancolo.inc \
-			$(SRC)\inc\pattern.inc
+			$(SRC)\inc\monostuf.inc \
+			$(SRC)\inc\clrstuff.inc
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak

@@ -38,6 +38,9 @@ ifdef	EXCLUSION
 	externFP unexclude_far		; Clear excluded area
 endif
 
+	externFP prep_pattern_far	; In BLTUTIL.ASM
+	externFP fill_solid_far		; In ROBJECT.ASM
+
 rscan_type	STRUC
 
 rsiterate       db      0       ;flag: if non 0 then in a Begin/End loop
@@ -46,6 +49,7 @@ rscolor_pattern db      SIZE_PATTERN * SIZE_PATTERN * 4 DUP(?)
 rsmono_pattern  db      SIZE_PATTERN DUP (?)
 rsstyle         dw      0
 rsaccel         db      0
+rspattern_len	db	?	;length of a pattern line in bytes
 rsxpar_mask     db      SIZE_PATTERN DUP(?)
 rsoutput        dw      0       ;rop and bg mode specific output routine
 rscan_type      ENDS
@@ -182,6 +186,7 @@ cProc   do_scanlines,<FAR,PUBLIC,WIN,PASCAL,NODATA>,<si,di,es,ds>
         localB  current_xpar_mask
         localV  current_color_pattern,SIZE_PATTERN*4
         localW  start_of_scan           ;address of start of scanline
+	localW	bank_of_scan		;bank containing start_of_scan
         localW  draw_output             ;rop and bg mode specific routine
 	localW	exclude_flag
 cBegin
@@ -337,8 +342,11 @@ color_main_loop_noex:
 	mov	current_xpar_mask, cl		  ; use. Then place these
 						  ; variables on the stack.
 	errnz	SIZE_PATTERN-8
-	; multiply by 32 to index 4*SIZE_PATTERN bytes per pattern line
-	shiftl	bx	,5
+	; multiply BL by number of bytes per pattern line
+	xchg	ax	,bx
+	mul	es:[rscan.rspattern_len]
+	xchg	ax	,bx
+
 	push	ds
 	mov	dx	,si
 
@@ -350,7 +358,9 @@ color_main_loop_noex:
 
 	lea	di	,current_color_pattern
 	lea	si	,rscan.rscolor_pattern[bx]
-	mov	cx	,SIZE_PATTERN*2		; 16 words = 32 bytes
+	mov	cl	,ds:[rscan.rspattern_len]
+	shr	cl	,1	; convert to word count
+	xor	ch	,ch
 	cld
 	rep	movsw
 
@@ -361,18 +371,20 @@ color_main_loop_noex:
         les     di,lp_dst_dev
         push    es:[di].bmType                  ; save device type
 
-	mov	cl,es:[di.bmBitsPixel]
-	shr	cl	,3	; convert to bytes
+	mov	cl	,es:[di.bmBitsPixel]
+	shr	cl	,3		; convert to bytes
 	mov	[pixbytes],cl
 
 	call	bmp_ptr 			; set ES:DI --> scan line
         mov     start_of_scan ,di               ; save offset
 
+	mov	bank_of_scan,-1			; default to no banking
         pop     ax                              ; get BITMAP type back
         or      ax,ax                           ; is it the device?
         jz      @f                              ;   No
 
         SET_BANK                                ; set bank iff DEVICE
+	mov	bank_of_scan,dx
 @@:
 
         lea     bx      ,[si+4]
@@ -385,21 +397,40 @@ color_main_draw_loop:
 	mov	cx	,ax			;save it
 	and	cx	,7			;compute the pattern rotation
 	lea	si	,current_color_pattern
-	add	si	,cx
-	mov	dl	,1			;dl will have 1 in the bit
+
+	mov	dl	,pixbytes
+	push	ax
+	mov	al	,cl
+	mul	dl
+	add	si	,ax
+	pop	ax
+
+	mov	di	,start_of_scan
+	xor	dh	,dh
+	mul	dx
+	add	di	,ax
+	jnc	@F
+	mov	dx	,bank_of_scan
+	inc	dx
+	jz	@F
+	SET_BANK
+
+@@:	mov	dl	,1			;dl will have 1 in the bit
 	rol	dl	,cl			;position corresponding to
 	mov	dh	,current_xpar_mask	;the current pattern byte
 	rol	dh	,cl			;rotate the xpar mask
 
-	mov	di	,start_of_scan
-	mov	cl	,pixbytes
-	xor	ch	,ch
-@@:	add	di	,ax
-
-	loop	@B
-
 	mov	cx	,[bx]			;cx = xend
 	add	bx	,2
+
+	xchg	cx	,ax
+	push	dx
+	mov	dl	,pixbytes
+	xor	dh	,dh
+	mul	dx
+	pop	dx
+	xchg	cx	,ax
+
 	sub	cx	,ax			;cx = xend - xstart
 	jz	color_main_draw_loop_skip
 	call	draw_output
@@ -540,6 +571,8 @@ begin_scanline_screen:
         public  begin_scanline_color
 begin_scanline_color:
 
+	lds	di	,[lp_dst_dev]
+
         mov     bh,0FFh                 ;color dest
 	call	get_fill_data		;returns bx as the background mode
 					;	 ax is the rop # [0-F]
@@ -645,10 +678,18 @@ get_fill_pen:
 
 no_pen_xlat_needed:
 
-	mov	ax	,wptr [si].oem_pen_pcol.pcol_Clr
-	mov	cx	,SIZE_PATTERN * SIZE_PATTERN
+	mov	ax	,[si].oem_pen_pcol.lo
+	mov	dx	,[si].oem_pen_pcol.hi
 	mov	di	,DataOFFSET rscan.rscolor_pattern
-	rep	stosb
+	call	fill_solid_far
+
+	; figure out how much pattern has been put at ES:DI
+	mov	cx	,di
+	sub	cx	,DataOFFSET rscan.rscolor_pattern
+	; get length of a single line
+	shr	cx	,3
+	errnz	SIZE_PATTERN-8
+	mov	[rscan.rspattern_len],cl
 
 	mov	cx	,SIZE_PATTERN
 	mov	al	,0FFH
@@ -671,12 +712,6 @@ no_pen_xlat_needed:
 
 get_fill_brush:
 
-	mov	ax,[si].oem_brush_style ; Get brush style
-	cmp	ax,MaxBrushStyle	; Legal?
-	ja	get_fill_brush_2	; Outside range, return error
-	cmp	ax,BS_HOLLOW		; Hollow?
-	je	get_fill_brush_2	; Yes, return now.
-
 	cmp	es:PaletteModified,0ffh ; was the palette modified ?
 	jne	no_brush_xlat_needed
 	cmp	bl	,SCREEN_TYPE
@@ -696,17 +731,52 @@ get_fill_brush:
 
 no_brush_xlat_needed:
 	mov	cx	,es
-	mov	ax	,DataOFFSET rscan.rscolor_pattern
+        push    bp
 	les	di	,lp_draw_mode
 	assume	es:nothing
-        pushem  bp,si
-        mov     bp      ,DataBASE
-	call	pattern_preprocessing
-        popem   bp,si
+	; push the background then foreground on the stack
+	push	es:[di].bkColor.hi
+	push	es:[di].bkColor.lo
+	push	es:[di].TextColor.hi
+	push	es:[di].TextColor.lo
+	; then point BP at them
+        mov     bp      ,sp
+	; point ES:DI back at the pattern dest
+	mov	es	,cx
+	assumes es,Data
+	mov	di	,DataOFFSET rscan.rscolor_pattern
+	; indicate whether mono or colour
+	mov	dl	,bh
+
+	call	prep_pattern_far
+	add	sp	,8
+        pop     bp
+
+	; figure out how much pattern has been put at ES:DI
+	mov	cx	,di
+	sub	cx	,DataOFFSET rscan.rscolor_pattern
+	; get length of a single line
+	shr	cx	,3
+	errnz	SIZE_PATTERN-8
+	mov	[rscan.rspattern_len],cl
 
 get_fill_brush_1:
-        mov     cx,     [si].oem_brush_style
+	;DS:SI should now point to the "common" part of the brush,
+	; so this offset is valid:
+        mov     cx	,[si].oem_brush_style
+	;TODO: Move these checks back to the beginning. Right now there's no
+	; straightforward way to get the style before we've run all the way
+	; through the preprocessing routine...
+	cmp	cx,MaxBrushStyle	; Legal?
+	ja	get_fill_brush_2	; Outside range, return error
+	cmp	cx,BS_HOLLOW		; Hollow?
+	jne	@F			; If yes, return now.
 
+get_fill_brush_2:
+	stc
+	ret
+
+@@:
         lds     si      ,lp_draw_mode
         mov     bx      ,OPAQUE-1       ; default to OPAQUE mode
 
@@ -736,15 +806,10 @@ get_fill_brush_exit:
 	clc
         ret
 
-get_fill_brush_2:
-	stc
-	ret
-
 get_fill_data	endp
 
 	include monostuf.inc
         include clrstuff.inc
-	include pattern.inc
 
 ;-----------------------------------------------------------------------;
 ; bmp_ptr
