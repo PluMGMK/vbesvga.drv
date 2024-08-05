@@ -1581,6 +1581,13 @@ rotate_brush_y  endp
         assumes ds,nothing
         assumes es,nothing
 
+; This can be accessed from other modules, e.g. scanlines
+public	fill_solid_far
+fill_solid_far	proc far
+	call	[fill_solid_plane]
+	ret
+fill_solid_far	endp
+
 fill_solid1	proc near
 	mov	cx, SIZE_PATTERN * SIZE_PATTERN / 2
 	mov	ah,al
@@ -1622,6 +1629,9 @@ fill_solid4_386	proc near
 
 	mov	cx, SIZE_PATTERN * SIZE_PATTERN
 	rep	stosd
+; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
+	db	67h
+	nop
 
 	ror	eax,10h
 	xchg	ax,dx	; restore the upper half of EAX from DX
@@ -1914,6 +1924,9 @@ clr4_expand_386_inner_loop:
 	; or 0 xor bg == bg, as desired :)
 	xor	eax,edx
 	stosd
+; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
+	db	67h
+	nop
 	dec	ch
 	jnz	clr4_expand_386_inner_loop
 	loop	clr4_expand_386_outer_loop
