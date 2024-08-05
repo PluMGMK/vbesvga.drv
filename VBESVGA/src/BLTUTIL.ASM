@@ -299,7 +299,7 @@ get_edge_masks_bytes  ENDP		;
 ;	identity or lastly it could be the inverse.
 ;
 ;	PARMS:
-;	DS:SI	ptr to oem_brush_def structure
+;	DS:SI	ptr to oem_brush_com structure
 ;	ES:DI	ptr to location to store preped brush
 ;	BH:BL	bg mono bit:fg mono bit
 ;
@@ -371,13 +371,20 @@ brush_convert_color_to_color	    ENDP	;
 ;       DL	zero if mono dest, non-zero if colour dest
 ;
 ;       RETURNS:
+;	DS:SI	points at the "common" part of the brush structure
 ;	ES:DI	the memory it points to is filled with the new pattern for
 ;		the brush (NOTE: The entire brush structure is NOT there.
 ;		Just 64*bpp bytes of color data / 8 bytes of mono data.)
 ;
 
+PUBLIC	prep_pattern_far
+prep_pattern_far	PROC	FAR
+	call	prep_pattern_norotate
+	ret
+prep_pattern_far	ENDP
+
 PUBLIC  prep_pattern_norotate
-prep_pattern_norotate  PROC    NEAR
+prep_pattern_norotate	PROC    NEAR
 
 	mov	ax,ds
 	or	ax,si				;if the brush is NULL then
@@ -395,13 +402,14 @@ prep_pattern_norotate  PROC    NEAR
 
 	test	byte ptr [bx+si].oem_brush_accel,GREY_SCALE
 	je	bitblt_prep_color_pattern
+	lea	si,[bx+si]			;point at common part
 	test	dl,dl
 	jz	@F
-	add	si,bx
 	call	[colour_expand]
+	lea	si,[si-SIZE_PATTERN]		;go back to start of common part
         jmp     short   prep_pattern_norotate_done
 
-	; get the mono bits for the colours on the stack frame
+@@:	; get the mono bits for the colours on the stack frame
 	mov	ax,[bp]				;foreground
 	mov	dx,[bp+2]
 	call	ipc_to_rgb			;get accels in DH
@@ -419,11 +427,12 @@ prep_pattern_norotate  PROC    NEAR
 	mov	bh,ah				;then accels are in AH
 @@:
         call    brush_convert_mono_to_mono
+	lea	si,[si-SIZE_PATTERN]		;go back to start of common part
 	jmp	short	prep_pattern_norotate_done
 
 bitblt_prep_color_pattern:
 	test	dl,dl
-	jne	@F
+	jnz	@F
 	call	[colour_compress]
 	jmp	short	prep_pattern_norotate_done
 @@:	call	brush_convert_color_to_color
