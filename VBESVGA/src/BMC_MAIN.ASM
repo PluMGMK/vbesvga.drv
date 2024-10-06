@@ -75,6 +75,19 @@ sBegin	DIMapSeg
 	externNP	GetDeviceBitmapBits	; in BMC_ITE.ASM
 	externNP	RleBlt			; in RLD.ASM
 
+; Grab the global Raster flags and check if the PALETTE flag is set.
+; Destroys DS, and returns AX = dpRaster & RC_PALETTE.
+; ZF is also set accordingly.
+public	check_palette_trans
+check_palette_trans	proc near
+	mov	ax, seg info_table_base
+	mov	ds, ax
+	assumes	ds, Code
+	mov	ax,[info_table_base.dpRaster]
+	and	ax,RC_PALETTE
+	ret
+check_palette_trans	endp
+
 	assumes	ds, Data		; this is a CProc after all!
 	assumes	es, nothing
 
@@ -85,12 +98,8 @@ cBegin
 WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	cld
 
-	mov	ax, seg info_table_base
-	mov	ds, ax
-	assumes	ds, Code
 	; check if we're supposed to use palette translation
-	mov	ax,[info_table_base.dpRaster]
-	and	ax,RC_PALETTE
+	call	check_palette_trans
 	mov	[use_palette_trans],ah	; RC_PALETTE is in upper byte!
 
 	lds	si, lp_dest_dev 	; DS:SI points to internal BM struc

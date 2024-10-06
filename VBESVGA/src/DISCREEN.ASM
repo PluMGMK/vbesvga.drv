@@ -52,6 +52,7 @@ WF_CPU486       =    0008h
         externNP        RleBlt                  ; in RLD.ASM
         externFP        FarDeviceSelectDIB      ; in DIBSEL.ASM
         externFP        StretchBlt              ; in STRETCH.ASM
+	externFP	rgb_to_ipc_seq		; in RGB2IPC.ASM
 
 ifdef EXCLUSION
 	externFP	exclude_far		; xeclude cursor from blt area
@@ -65,7 +66,7 @@ sBegin Data
 	externW		ColourFormat
 
         externB         PaletteTranslationTable
-        externB         PaletteModified
+        externB         bank_select_byte
 sEnd
 
 createSeg   _DIMAPS,DIMapSeg,word,public,code
@@ -74,6 +75,8 @@ sBegin DIMapSeg
 	assumes cs,DIMapSeg
 	assumes ds,Data
 	assumes es,nothing
+
+	externNP	check_palette_trans	; in BMC_MAIN.ASM
 
 ;
 ;   the following table is used to determine the init function
@@ -219,9 +222,9 @@ cProc	DibBlt,<NEAR,PUBLIC,PASCAL>,<ds,si,di>
 	parmD	lpBrush
 	parmD	lpDrawMode
 	parmD	lpClipRect
-        parmD   lpColorInfo	; GDI supplied value for color matching
+        parmD   lpColorInfo		; GDI supplied value for color matching
 
-        localB  bk_color                ; background color for TRANSPARENT mode
+        localD  bk_color                ; background color for TRANSPARENT mode
 
         localB  fbFlags                 ; flag bytes
 
@@ -229,6 +232,7 @@ MAP_BPP         equ     0000000110b     ; bpp field
 MAP_TRANSPARENT equ     0000001000b     ; transparent blt
 MAP_TRANSLATE   equ     0000010000b     ; translate table is not 1:1
 MAP_IS_HUGE     equ     0000100000b     ; source maps spans segments
+DEV_PALETTE	equ	0001000000b	; device uses a palette
 
 	localW	MapWidth		; width of map in pels
 	localW	MapHeight		; height of map in scans
@@ -239,7 +243,7 @@ MAP_IS_HUGE     equ     0000100000b     ; source maps spans segments
 
         localW  next_screen_scan        ; offset to next screen scan
 
-        localV  color_xlate,256         ; the local color xlate table
+        localV  color_xlate,1024        ; the local color xlate table (256dword)
 
         localD  DeviceColorMatch        ; GDI color match routine
 
@@ -250,6 +254,13 @@ MAP_IS_HUGE     equ     0000100000b     ; source maps spans segments
 	localB	bank_select		; track the current bank of display
 cBegin
         cld
+
+        xor     al,al                   ; reset the flag byte
+        mov     fbFlags,al
+
+	; get the ColourFormat from DS before we point the segreg elsewhere...
+	mov	ax,[ColourFormat]
+	mov	colour_format,ax
 
         cmp     Rop.hi, 00CCh           ; is the ROP SRCCOPY?
         jne     let_gdi_do_it           ; not get out'a here
@@ -264,17 +275,12 @@ let_gdi_do_it:
         jmp     discreen_ret            ; error return
 
 device_is_enabled:
-        xor     al,al                   ; reset the flag byte
-        mov     fbFlags,al
-
-        mov     al,PaletteModified
-
-	; get the ColourFormat from DS before we point the segreg elsewhere...
-	mov	ax,[ColourFormat]
-	mov	colour_format,ax
-
-        lds     si,lpbi                 ; DS:SI --> BITMAPINFO
+	call	check_palette_trans
         assumes ds,nothing
+	jz	@F
+	or	[fbFlags],DEV_PALETTE
+
+@@:     lds     si,lpbi                 ; DS:SI --> BITMAPINFO
 
 ;----------------------------------------------------------------------------;
 ; is the DIB a RLE DIB, if so call rle_to_screen
@@ -309,7 +315,8 @@ not_encoded:
         cmp     bptr es:[di].bkMode,3       ; NEWTRANSPARENT mode?
         jne     discreen_not_transparent
 
-        mov     bl,bptr es:[di].bkColor     ; get BkColor
+        mov     bx,bptr es:[di].bkColor.lo  ; get BkColor
+        mov     cx,bptr es:[di].bkColor.hi
         or      dl,dl                       ; are we in background mode?
         jz      discreen_not_background     ; no, nothing to do
 
@@ -320,7 +327,8 @@ not_encoded:
         assumes es,nothing
 
 discreen_not_background:
-        mov     bk_color,bl
+        mov     bk_color.lo,bx
+        mov     bk_color.hi,cx
 
         or      fbFlags, MAP_TRANSPARENT    ; set flag
 
@@ -339,9 +347,8 @@ discreen_not_transparent:
 
 ; test for souce pointer to be non NULL
 
-        mov     ax,lpBits.off
-        or      ax,lpBits.sel           ; NULL implies error
-        jz      parameter_error         ; can't support NULL pointer
+        mov     cx,lpBits.sel           ; NULL implies error
+        jcxz    parameter_error         ; can't support NULL pointer
 
         les     di,lpPDevice            ; get the pdevice structure
 	assumes	es,nothing
@@ -352,7 +359,7 @@ discreen_not_transparent:
         jcxz    let_gdi_do_it           ; can't support memory bitmaps here
 
         mov     ax,word ptr es:[di].bmPlanes
-	cmp	ax,colour_format		; our screen format?
+	cmp	ax,colour_format	; our screen format?
         jnz     parameter_error         ; don't support this format
 
 ; save screen-relevant parameters
@@ -494,7 +501,16 @@ endif
 	dec	ax
 	mul	next_screen_scan	; no of bytes in a scan
 					; dx:ax = bank:offset
-        add     ax,DstX                 ;shouldn't be a carry with 1K scanlines
+	mov	si,dx			; save these so we can reuse DX:AX
+	mov	bx,ax
+
+	mov	cx,colour_format	;CH := bits per pixel
+	shr	cx,0Bh			; Shift right 8+3 to get bytes in CL
+	mov	ax,DstX
+	mul	cx			;DX:AX := X origin in bytes
+
+	add	ax,bx
+	adc	dx,si
         add     ax,lp_screen.off        ; this is the start offset
 	adc	dl,dh
 	mov	bank_select,dl
@@ -567,6 +583,10 @@ init_4:
 ;----------------------------------------------------------------------------;
 init_8:
 
+	; If our native format is NOT 8-bit, then this isn't a special case!
+	cmp	byte ptr colour_format[1],8	; 8 bits per pixel
+	jne	init_done
+
 ;----------------------------------------------------------------------------;
 ; If we are on a 386, use fast special code.  We will only do this if the
 ; DIB matches the native format of the screen (ie 8 bpp) and transparency is
@@ -624,13 +644,18 @@ create_color_table	proc	near
         pop     es
         lea     di,color_xlate          ; index into xlate table on stack
 
-        xor     bl,bl                   ; Bl will range from 0-255
+	test	[fbFlags],DEV_PALETTE
+	jz	colour_table_nopalette
+
+        xor     bl,bl                   ; BL will range from 0-255
         xor     dx,dx                   ; DX is ident mapping error
 xlate_next_color:
         lodsw                           ; get palette index from GDI
-        stosb                           ; store it on the stack
+        stosw                           ; store it on the stack
         sub     al,bl                   ; test for a 1<-->1 translate
         add     dx,ax                   ; accumulate the error
+	mov	ax,0FF00h		; set upper word to indicate palette idx
+	stosw
         inc     bl
         loop    xlate_next_color
 
@@ -638,7 +663,13 @@ xlate_next_color:
         jz      create_color_table_exit
 
         or      fbFlags,MAP_TRANSLATE   ; not the identity table, set the bit
+        jmp     create_color_table_exit
 
+colour_table_nopalette:
+	mov	bx,320h	; BL:=32 == #bytes we want
+			; BH:=11b --> 4 bytes input, need to swap red and blue
+	call	rgb_to_ipc_seq
+	
 create_color_table_exit:
 	ret
 
@@ -657,12 +688,17 @@ init_done:
 
 blt_next_scan:
 	mov	cx,xExt			; the no of pels to blt
+	push	di
         call    draw_proc               ; do the blt of a scan
+	pop	di
+
+	; in case the bank rolled over during that scanline
+	mov	dl,bank_select
+        SET_BANK
 
         dec     yExt                    ; blt all the scans
         jz      blt_done
 
-        sub     di,xExt                 ; we map top to bottom
 	sub	di,next_screen_scan	; we map top to bottom
 	jnc	new_scan_in_bank
 
@@ -681,6 +717,24 @@ new_scan_in_bank:
 
 blt_done:
         jmp     discreen_exit           ; return success to the caller
+
+; Move to next bank WITHOUT updating "bank_select" on stack.
+; This is to be used if we cross a boundary in the middle of a scanline.
+; State will be restored after scanline subroutine returns.
+next_bank	proc near
+	push	ds
+	push	dx
+	mov	dx,DataBASE
+	mov	ds,dx
+	assumes	ds,Data
+	mov	dl,[bank_select_byte]
+	inc	dl
+	SET_BANK
+	pop	dx
+	pop	ds
+	assumes	ds,nothing
+	ret
+next_bank	endp
 
 ;----------------------------------------------------------------------------;
 ;                       copy_1
@@ -806,20 +860,37 @@ copy_1  endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                     BX,DX --    unchanged
-;                     AL,CX --    destroyed
+;                        BX --    unchanged
+;                  AL,CX,DX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_4  proc    near
 
+	mov	dx,[colour_format]
+	shr	dh,3			; output bytes per pixel in DH
+
+	push	bp
         test    SrcX,1                  ; if sign is odd then do low
         je      copy_4_loop             ;    nibble of byte
         call    get_byte                ; process first byte separately
 
 copy_4_lownib:
 	and	al,0fh			; get the lower 4 bits
+	shiftl	al,2			; index the four-byte palette table
+	mov	bp,cx			; save count
+	mov	cl,dh			; refresh bytes per pixel
+	mov	ch,al			; save the index
+copy_4_lownib_xlat:
 	xlat	ss:[bx]			; get the mapping index
 	stosb
+	test	di,di			; wrapped end of bank?
+	jnz	@F
+	call	next_bank
+@@:	inc	ch			; next byte in palette table
+	dec	cl			; any bytes left to write?
+	mov	al,ch
+	jnz	copy_4_lownib_xlat
+	mov	cx,bp			; get back count
         dec     cx                      ; one more pel done
         jz      copy_4_done
 
@@ -830,19 +901,33 @@ copy_4_loop:
 
 copy_4_wrap_resume:
 	mov	ah,al			; save the byte
-	shiftr	al,4			; get the high nibble into low pos
+	and	al,0f0h			; get the upper 4 bits
+	shiftr	al,2			; get the high nibble into middle pos
+	mov	bp,cx			; save count
+	mov	cl,dh			; refresh bytes per pixel
+	mov	ch,al			; save the index
+copy_4_highnib_xlat:
 	xlat	ss:[bx]			; get the mapping index
 	stosb
+	test	di,di			; wrapped end of bank?
+	jnz	@F
+	call	next_bank
+@@:	inc	ch			; next byte in palette table
+	dec	cl			; any bytes left to write?
+	mov	al,ch
+	jnz	copy_4_highnib_xlat
+	mov	cx,bp			; get back count
         mov     al,ah                   ; get back pel
         loop    copy_4_lownib           ; process all the remaining pels
 
 copy_4_done:
+	pop	bp
 	ret
 
 copy_4_wrap:
-        mov     dx,ds
-        add     dx,__AHINCR
-        mov     ds,dx
+        mov     bp,ds
+        add     bp,__AHINCR
+        mov     ds,bp
         jmp     copy_4_wrap_resume
 
 ;----------------------------------------------------------------------------;
