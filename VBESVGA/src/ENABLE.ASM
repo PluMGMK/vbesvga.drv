@@ -51,6 +51,7 @@ incDevice	= 1
         .list
 
 	externNP hook_int_2Fh		;Hook into multiplexed interrupt
+	externNP start_double_buf	;Start double-buffering timer if needed
 	externA  PHYS_DEVICE_SIZE	;Size of physical device
 	externA  __WinFlags		;Windows info bit
 	externFP FatalExit
@@ -280,6 +281,10 @@ endif
 
 	call	hook_int_2Fh		;Hook into multiplexed interrupt
 	call	physical_enable 	;Enable device
+
+	mov	di,lp_device.off
+	mov	si,lp_device.sel
+	call	start_double_buf	;Start double-buffering timer if needed
 	jmp	short exit_enable
 page
 

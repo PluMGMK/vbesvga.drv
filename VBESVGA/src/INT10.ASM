@@ -15,7 +15,8 @@ include DISPLAY.INC	; for WF_*
 subttl  Static & External Data Definitions -- DATA SEGMENT
 page +
 
-externA		PM_STACK_LEN
+PM_STACK_LEN	equ 406h
+
 externA		__WinFlags		;LSB set --> we're in protect mode
 externFP	GlobalDosAlloc
 externFP	AllocCSToDSAlias	; change a CS selector to DS

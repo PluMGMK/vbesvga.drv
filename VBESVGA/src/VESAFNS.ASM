@@ -151,9 +151,6 @@ VESAScratch1	db 216 dup (?)
 VESAScratch2	db 100h dup (?)
 
 VESA_INFO_LEN	equ $ - VESAInfoStruct
-
-public	PM_STACK_LEN
-PM_STACK_LEN	equ 406h
 BIOS_DATA_LEN	equ 600h
 
 PMIntHandles	label word
@@ -272,6 +269,7 @@ VESABFieldPos	db ?
 VESAAFieldSize	db ?
 VESAAFieldPos	db ?
 VESADirectMode	db ?	; Bit 0 = programmable ramp, 1 = usable alpha channel
+public	VESALinearBuf
 VESALinearBuf	LONG <?,?>	; 32-bit Physical Address
 VESAOSMem	LONG <?,?>	; Off-Screen Memory
 VESAOSMemSize	dw ?	; in kiB
@@ -481,6 +479,7 @@ createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
 
 externNP	init_modal_realizations	; in ROBJECT.ASM
+externNP	setup_double_buf		; in DBLBUF.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
@@ -1479,7 +1478,13 @@ vesa_gdi_fixup	proc near
 	mov	ax,es:[di].bmWidthBytes
 	mov	[MemWidth],ax
 
-	ret
+	; setup double-buffering if possible / necessary
+	test	[Vmode],VESA_FLAG_LINEAR
+	jz	@F
+	mov	si,es	; setup_double_buf requires pointer in SI:DI, not ES:DI
+	call	setup_double_buf
+
+@@:	ret
 vesa_gdi_fixup	endp
 
 

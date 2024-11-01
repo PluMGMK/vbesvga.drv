@@ -49,6 +49,7 @@ trn_pal.obj +
 vesafns.obj + 
 vgastate.obj + 
 vgavram.obj + 
+dblbuf.obj + 
 3xswitch.obj
 display.drv 
 display.map/map/al:16 
