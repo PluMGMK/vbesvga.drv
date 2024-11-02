@@ -79,9 +79,6 @@ SwapBuffers	proc near
 	mov	ax,cx
 	and	ax,3
 
-	; while copying, it is imperative that nothing modifies either buffer
-	EnterCrit
-
 	; copy dword-by-dword
 	shr	ecx,2
 	rep	movs dword ptr es:[edi], dword ptr ds:[esi]
@@ -106,8 +103,6 @@ SwapBuffers	proc near
 	nop
 
 @@:	; All done
-	LeaveCrit a
-
 	pop	edi
 	pop	esi
 	pop	ecx

@@ -221,10 +221,10 @@ cBegin
 
 @@:
         call    cursor_funcs.CURSFUNC_CHECK
-	call	SwapBuffers			;while we're at it
 	mov	screen_busy,1
 
 CheckCursor_Busy:
+	call	SwapBuffers			;while we're at it
 cEnd
 
 
