@@ -59,6 +59,8 @@ createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
 assumes cs,InitSeg
 	externFP	farsetmode
+	externFP	far_start_dblbuf
+	externFP	far_stop_dblbuf
 sEnd
 
 
@@ -124,6 +126,7 @@ WriteAux    <'devtofg'>
 @@:
 	call	init_hw_regs
 	mov	[enabled_flag],0ffh	; is now enabled.
+	call	far_start_dblbuf
 ;	 mov	 screen_busy,1
 
 	call	far_set_cursor_addr
@@ -162,6 +165,7 @@ dev_to_background	proc	near
 ;WriteAux <'dev_to_background'>
 WriteAux <'devtobk'>
 
+	call	far_stop_dblbuf
 	mov	[enabled_flag],00h	; block the driver from screen acesses.
 ;	 mov	 screen_busy,0
 	sub	bx,bx			;set 6 bit dac mode

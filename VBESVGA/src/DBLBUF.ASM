@@ -5,10 +5,12 @@
 ;	AUTHOR: PluMGMK
 ;
 ;	This module contains code and data to support double-buffering for
-;	improved performance.
+;	improved performance. In fact, this is a full implementation of a
+;	"hardware cursor" which is really a software cursor that only gets
+;	drawn on the front buffer.
 ;
 
-SB_PERIOD_MS	equ 15		;swap buffers every 15 milliseconds
+SB_PERIOD_MS	equ 16		;swap buffers every 16 milliseconds (60fps)
 TIME_PERIODIC	equ 1		;from MMSYSTEM.H
 
 incDevice = 1				;Include control for gdidefs.inc
@@ -19,6 +21,7 @@ incDevice = 1				;Include control for gdidefs.inc
 	include GDIDEFS.INC
 	include int3.inc
 	include windefs.inc
+	include	cursor.inc
 	.list
 
 	externFP AllocSelector
@@ -27,6 +30,8 @@ incDevice = 1				;Include control for gdidefs.inc
 	externFP GetSelectorBase
 	externFP GetSelectorLimit
 	externFP PrestoChangeoSelector
+	externFP LoadLibrary
+	externFP GetProcAddress
 
 sBegin	Data
 
@@ -40,80 +45,359 @@ BackBufDPMIHdl	dd ?
 ; How much data to transfer when swapping buffers
 BackBufSize	dd ?
 
+; VTDAPI entry point (preferred to MMSYSTEM if available)
+VTDAPIEntry	dd ?
+
+; Function pointers in MMSYSTEM.DLL
+TimeBeginPeriod	dd ?
+TimeEndPeriod	dd ?
+TimeSetEvent	dd ?
+TimeKillEvent	dd ?
+
+; Event handle for fast (MMSYSTEM-based) timer
+fast_timer_hdl	dw 0
+; Standard-Mode IRQ handler segment for TIMER.DRV:
+; if this becomes invalid, we stop the fast timer!
+fast_timer_irqseg dw 0
+
+externW		cursor_funcs		; in CURSOR.ASM
+externW		cursor_xdraw		; in CURSOR.ASM
+externW		cursor_ydraw		; in CURSOR.ASM
+externW		save_screen_y		; in SWCURS.ASM
+externW		save_screen_x		; in SWCURS.ASM
+externW		save_screen_yclip	; in SWCURS.ASM
+externW		save_screen_xclip	; in SWCURS.ASM
+externD		save_screen_longaddr	; in SWCURS.ASM
+externW		save_screen_height	; in SWCURS.ASM
+externW		save_screen_width	; in SWCURS.ASM
+externW		swcursor_data		; in SWCURS.ASM
+
+; cursor functions for "double-buffering cursor" implementation
+dbcursor_funcs	DW	dbcursor_set, dbcursor_move, dbcursor_check
+p_cursor_off	DW	dbcursor_off, dbcursor_exclude, dbcursor_unexclude
+end_dbcursor_funcs label word
+
 sEnd	Data
 
 
 sBegin	Code
 	assumes cs,Code
 
-externD	VESALinearBuf
+EXTRN   MemoryWidth:word
+externD		VESALinearBuf		; in VESAFNS.ASM
+externNP	common_cursor_set	; in SWCURS.ASM
+externNP	swcursor_setaddr	; in SWCURS.ASM
+externW		pxbytes			; in SWCURS.ASM
+externW		_cstods			; in CURSOR.ASM
 
-; Here is our callback function that gets called from CheckCursor
-public	SwapBuffers
-SwapBuffers	proc near
+; cursor functions
+dbcursor_set	proc near
+;	PARMS:
+;       ds      Data segment
+;	es:si	ptr to cursorShape structure
 	assumes ds,Data
 	assumes es,nothing
 
-	push	ax
-	mov	ax,[BackBufSize.lo]
-	or	ax,[BackBufSize.hi]
-	jz	SwapBufDone
+	; use the software cursor buffer to hold the data
+	call	common_cursor_set
+	; recalculate where to draw the cursor
+	call	swcursor_setaddr
 
+	; check if we have a stale TIMER.DRV segment
+	mov	ax,[fast_timer_irqseg]
+	test	ax,ax
+	jz	@F
+
+	; IRQ segment is already known to us. Is it still valid?
+	db	0Fh,02,0C0h		;lar ax,ax
+	jz	@F			; valid --> keep going
+
+	; force this to zero and don't try to restart it
+	mov	[fast_timer_hdl],0
+	ret
+
+@@:	; now check if the fast (MMSYSTEM-based) timer is
+	; running, and attempt to set it up if it isn't.
+	cmp	[fast_timer_hdl],0
+	jz	start_fast_timer	; need to set up the fast timer
+	ret
+dbcursor_set	endp
+
+; Attempt to start the fast timer. May fail, and if it does that's OK.
+; We will try again at the next call to dbcursor_set.
+start_fast_timer proc near
+	push	es	; destroyed by WinAPI calls
+
+	; Can we use VTDAPI?
+	mov	ax,[VTDAPIEntry.sel]
+	test	ax,ax
+	jz	@F
+
+	; VTDAPI requires the arguments in a buffer at ES:BX,
+	; in the correct order - so push right-to-left...
+	mov	ax,TIME_PERIODIC
+	xor	bx,bx
+	push	bp
+	mov	bp,sp
+	; flags
+	push	ax
+	; dwUser
+	push	bx
+	push	bx
+	; lpTimeProc
+	lea	ax,fast_timer_callback
+	push	cs
+	push	ax
+	; Resolution
+	mov	ax,SB_PERIOD_MS
+	push	ax
+	; Period
+	push	ax
+	; Now point ES:BX at this buffer
+	mov	bx,sp
+	mov	ax,ss
+	mov	es,ax
+	mov	ax,5	; TimeSetEvent
+	call	[VTDAPIEntry]
+	mov	[fast_timer_hdl],ax
+	mov	sp,bp
+	pop	bp
+
+	pop	es
+	ret
+
+@@:	cCall	TimeBeginPeriod,<SB_PERIOD_MS>
+	test	ax,ax
+	jnz	@F	; failed if NOT zero
+
+	lea	ax,fast_timer_callback
+	cCall	TimeSetEvent,<SB_PERIOD_MS,SB_PERIOD_MS,cs,ax,0,0,TIME_PERIODIC>
+	mov	[fast_timer_hdl],ax
+
+	; find out who's handling timer IRQs now so we can track
+	; when they're unloaded...
+	mov	ax,3508h; DOS: get interrupt vector 08
+	int	21h
+	mov	[fast_timer_irqseg],es
+
+@@:	pop	es
+	; fall through to ret below!
+start_fast_timer endp
+
+dbcursor_off	proc near
+	; this is a no-op as cursor_flags is maintained in CURSOR.ASM
+	; and tells us whether or not to draw anything
+dbcursor_exclude:
+dbcursor_unexclude:
+	; also no-ops as the double-buffered cursor doesn't need to
+	; be excluded (since all other blits are done onto the back
+	; buffer!)
+	ret
+dbcursor_off	endp
+
+dbcursor_move	proc near
+	; update save_screen_{x,y} as they are used in swcursor_setaddr
+	mov	ax,[cursor_xdraw]
+	mov	dx,[cursor_ydraw]
+	mov	[save_screen_x],ax
+	mov	[save_screen_y],dx
+
+	; calculate where to draw the cursor
+	call	swcursor_setaddr
+	ret
+dbcursor_move	endp
+
+start_fast_timer_far	proc far
+	call	start_fast_timer
+	ret
+start_fast_timer_far	endp
+
+dbcursor_check	proc near
+	; This is called every 54.925 milliseconds by a system timer.
+	; We'll take that in a pinch, but once the faster MMSYSTEM
+	; timer becomes available, then this slow function doesn't
+	; need to do anything anymore.
+	cmp	[fast_timer_hdl],0
+	jz	swap_buffers
+	ret
+dbcursor_check	endp
+
+; This initially gets called every 54.925 milliseconds, and once we
+; get MMSYSTEM / VTDAPI up and running, every 16 milliseconds.
+; Its job is to copy the entire back buffer onto the front buffer,
+; while putting the cursor over it.
+; FIXME: On real H/W, for large buffers, this is REALLY expensive,
+; and it negates any performance benefit. We need to look into
+; modifying some MTRRs (with the help of the VxD) to put the front
+; buffer in write-combining mode on the CPU. This will mean that
+; this function only writes to a cache buffer, which hopefully will
+; make it return much quicker...
+swap_buffers	proc near
 	.386	; if we get this far we have a 386 (required for lin framebuf)
-	push	ds
+	pushad	; we will use all the 386 registers!
 	push	es
-	push	ecx
-	push	esi
-	push	edi
-	mov	ecx,[BackBufSize]
+	push	fs
+
+	; We will use the registers like so:
+	; AX  = Current word of cursor data
+	; EBX = [UPPER HALF] Next cursor scanline pointer
+	; BH  = Cursor scanlines remaining
+	; BL  = Cursor byte-pair width (clipped)
+	; ECX = Current counter
+	; EBP = [UPPER HALF] MemoryWidth - Cursor byte-pair width
+	; BP  = Cursor byte width (total, byte-pair width * 2)
+	; ESI = Pointer to back buffer or cursor data
+	; EDI = Position in front/back buffer
+	; Segment registers:
+	; DS = Data
+	; ES = Front Buffer
+	; FS = Back Buffer
 
 	mov	es,[FrontBufSel]
-	mov	ds,[BackBufSel]
-	assumes	ds,nothing
-	; point at the start of the buffers
+	mov	fs,[BackBufSel]
+	; point at the start of the front buffer
 	cld
-	xor	esi,esi
-	mov	edi,esi
+	xor	edi,edi
 
-	; stash the lower two bits in case we need to move extra byte / word
-	mov	ax,cx
-	and	ax,3
+	; assume no cursor scanlines to draw --> zero EBX
+	mov	ebx,edi
+	test	[cursor_flags],YES_CURSOR
+	jz	@@no_cursor
 
-	; copy dword-by-dword
-	shr	ecx,2
-	rep	movs dword ptr es:[edi], dword ptr ds:[esi]
-; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
-	db	67h
-	nop
+	; Set BX to the beginning of the cursor data, modulo clipping...
+	; Start by converting yclip in scanlines to a pixel offset:
+	imul	bx,[save_screen_yclip],CURSOR_WIDTH
+	; Add the xclip in pixels:
+	add	bx,[save_screen_xclip]
+	; Convert to byte pairs
+	imul	bx,[pxbytes]
+	; Then to bytes
+	shl	bx,1
+	; Finally add the pointer to the cursor data itself
+	lea	bx,swcursor_data[bx]
 
-	; copy any extra word needed
-	btr	ax,1
+	; Now move the whole thing into the upper half!
+	shl	ebx,10h
+
+	; calculate the full and clipped byte widths of the cursor
+	mov	bh,CURSOR_WIDTH
+	mov	bl,byte ptr [save_screen_width]
+	; multiply BH and BL at the same time - safe since the maximum result
+	; for both bytes is 80h, so this will never carry!
+	imul	bx,[pxbytes]
+	; BH is now the total cursor byte width, which belongs in BP
+	movzx	ebp,bh
+	; Convert lower half of EBP to full byte width of the cursor data
+	; (since each byte of bitmap data is doubled into an AND and a XOR byte)
+	shl	bp,1
+
+	; Get the MemoryWidth minus cursor width for the upper half of EBP
+	mov	ax,[MemoryWidth]
+	xor	bh,bh	; BX becomes full byte-pair width of cursor
+	sub	ax,bx
+	; Move into upper half
+	shl	eax,10h
+	; Then into EBP
+	or	ebp,eax
+	; Now set BH as indicated above:
+	mov	bh,byte ptr [save_screen_height]
+
+	; Set the counter and start the first round of copying
+	mov	ecx,[save_screen_longaddr]
+@@copy_loop:
+	; We're moving the back to the front buffer, so the source and dest
+	; offsets are identical :)
+	mov	esi,edi
+
+	shr	ecx,1
 	jnc	@F
-	movs	word ptr es:[edi], word ptr ds:[esi]
+	; copy straggling byte
+	movs	byte ptr es:[edi], byte ptr fs:[esi]
 ; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
 	db	67h
 	nop
-
-@@:	; copy any extra byte needed
-	btr	ax,0
+@@:	shr	ecx,1
 	jnc	@F
-	movs	byte ptr es:[edi], byte ptr ds:[esi]
+	; copy straggling word
+	movs	word ptr es:[edi], word ptr fs:[esi]
+; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
+	db	67h
+	nop
+@@:	; copy everything else dword-by-dword
+	rep	movs dword ptr es:[edi], dword ptr fs:[esi]
 ; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
 	db	67h
 	nop
 
-@@:	; All done
-	pop	edi
-	pop	esi
-	pop	ecx
+	; copy loop done - any cursor scanlines left?
+	test	bh,bh
+	jz	@@done
+
+	; right, switch over to loading the cursor data
+	; 16-bit source address and counter registers are sufficient for this!
+	movzx	cx,bl	; this counts byte PAIRS!
+	mov	esi,ebx
+	shr	esi,10h	; pointer was in upper half of EBX
+
+	; loop over byte pairs
+	jcxz	@@cursor_scanline_done
+@@:	lodsw
+	and	al,fs:[edi]		;read byte from back buffer
+	xor	al,ah
+	stos	byte ptr es:[edi]	;write dword to front buffer
+	loop	@B
+
+@@cursor_scanline_done:
+	dec	bh			; decrement scanline counter
+	jz	@@no_cursor		; done with the cursor completely
+	ror	ebx,10h			; get pointer into lower half
+	add	bx,bp			; point at next scanline of cursor data
+	ror	ebx,10h			; shove back into upper half
+
+	; set the counter so we copy the rest of the buffer's current scanline
+	mov	ecx,ebp
+	shr	ecx,10h			; counter was in upper half of EBP
+	jmp	@@copy_loop
+
+@@no_cursor:
+	; done with the cursor altogether (or had none in the first place),
+	; so just chug through the rest of the buffer copy and we're done
+	mov	ecx,[BackBufSize]
+	; account for any progress made so far
+	sub	ecx,edi
+	jmp	@@copy_loop
+
+@@done:	pop	fs
 	pop	es
-	pop	ds
+	popad
 	.286
-
-SwapBufDone:
-	pop	ax
 	ret
-SwapBuffers	endp
+swap_buffers	endp
+
+; this gets called every 15 milliseconds - just call swap_buffers
+cProc   fast_timer_callback,<FAR,PUBLIC,PASCAL>
+        parmW	wTimerID
+        parmW	wMsg
+	parmD	dwUser	; not used
+	parmD	dw1
+	parmD	dw2
+cBegin
+	assumes	ds,nothing
+	push	ds
+	; do this to avoid having to declare an export...
+	mov	ds,[_cstods]
+	assumes	ds,Data
+	call	swap_buffers
+	pop	ds
+cEnd
+
+; This calls p_cursor_off. Its purpose is to be called immediately after
+; p_cursor_off gets set to point at the swcurs function, to ensure that
+; a stale software cursor doesn't get stuck on the back buffer!
+far_cursor_off	proc far
+	call	[p_cursor_off]
+	ret
+far_cursor_off	endp
 
 sEnd	Code
 
@@ -125,6 +409,12 @@ sBegin	InitSeg
 
 assumes	cs,InitSeg
 assumes	ds,Data
+
+mmsystem_dll		db "MMSYSTEM.DLL",0
+TimeBeginPeriod_name	db "timeBeginPeriod",0
+TimeEndPeriod_name	db "timeEndPeriod",0
+TimeSetEvent_name	db "timeSetEvent",0
+TimeKillEvent_name	db "timeKillEvent",0
 
 ;--------------------------------------------------------------------------;
 ; setup_double_buf
@@ -158,7 +448,75 @@ cBegin
 	jz	@F
 	jmp	setup_done
 
-@@:	; Allocate the back buffer memory. Use DPMI directly, since
+@@:	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
+	; this will allow us to schedule fast timer events in a way that's
+	; completely independent of USER.EXE, so it's a lot cleaner.
+	xchg	dx,di		; hold onto our pointer
+	mov	ax,1684h	; get VxD entry point
+	mov	bx,0442h	; VTDAPI
+	xor	di,di		; NULL default return value
+	mov	es,di		; NULL default return value
+	int	2Fh
+	mov	ax,es
+	test	ax,ax		; Still NULL?
+	xchg	dx,di		; get back our pointer
+	jz	@F
+
+	mov	[VTDAPIEntry.off],dx
+	mov	[VTDAPIEntry.sel],es
+	; stick ES into the "IRQ segment" as well so it'll always appear valid
+	mov	[fast_timer_irqseg],es
+	jmp	fnptrs_setup_done
+
+@@:	; Load MMSYSTEM.DLL so we can use timer functions - this has to be
+	; done at runtime, as DISPLAY.DRV cannot depend on DLLs other than
+	; KERNEL!
+	lea	ax,mmsystem_dll
+	cCall	LoadLibrary,<cs,ax>
+	cmp	ax,20h	; HINSTANCE_ERROR
+	jnb	@F
+	jmp	setup_done
+
+@@:	; Get the required functions
+	mov	bp,ax	; stash the HINSTANCE value
+	lea	ax,TimeBeginPeriod_name
+	cCall	GetProcAddress,<bp,cs,ax>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	setup_done
+
+@@:	mov	[TimeBeginPeriod.off],ax
+	mov	[TimeBeginPeriod.sel],dx
+
+	lea	ax,TimeEndPeriod_name
+	cCall	GetProcAddress,<bp,cs,ax>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	setup_done
+
+@@:	mov	[TimeEndPeriod.off],ax
+	mov	[TimeEndPeriod.sel],dx
+
+	lea	ax,TimeSetEvent_name
+	cCall	GetProcAddress,<bp,cs,ax>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	setup_done
+
+@@:	mov	[TimeSetEvent.off],ax
+	mov	[TimeSetEvent.sel],dx
+
+	lea	ax,TimeKillEvent_name
+	cCall	GetProcAddress,<bp,cs,ax>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	setup_done
+
+@@:	mov	[TimeKillEvent.off],ax
+	mov	[TimeKillEvent.sel],dx
+
+fnptrs_setup_done:
+	; Allocate the back buffer memory. Use DPMI directly, since
 	; GlobalAlloc/GlobalLock would allocate a whole bunch of selectors
 	; which we don't actually need!
 	mov	es,si
@@ -166,6 +524,11 @@ cBegin
 	mov	bx,es:[di].bmWidthPlanes.hi
 	mov	cx,es:[di].bmWidthPlanes.lo
 	mov	dx,di				; Stash this offset
+
+	; set BackBufSize while we're at it
+	mov	[BackBufSize.lo],cx
+	mov	[BackBufSize.hi],bx
+
 	int	31h
 	xchg	dx,di				; Get back the offset we stashed
 	jc	setup_done
@@ -237,7 +600,6 @@ cEnd
 ;	created.
 ; Entry:
 ;	DS	= Data
-;	SI:DI	= int_phys_device structure
 ;	BackBufSel and FrontBufSel populated, pointing at respective buffers
 ; Registers Destroyed:
 ;	FLAGS
@@ -255,18 +617,20 @@ cBegin
 	or	ax,bx
 	jz	start_done
 
-	; grab the buffer size again
-	mov	es,si
-	mov	bx,es:[di].bmWidthPlanes.hi
-	mov	cx,es:[di].bmWidthPlanes.lo
+	; make sure it's not already set up
+	lea	ax,dbcursor_set
+	cmp	[cursor_funcs],ax
+	je	start_done
 
-	; place it in BackBufSize to indicate that SwapBuffers should run
-	mov	[BackBufSize.lo],cx
-	mov	[BackBufSize.hi],bx
+	; install our cursor functions
+	call	swap_cursor_funcs
 
 	; now point the driver bitmap at the back buffer
 	mov	di,[BackBufSel]
-	call	ChangeLinBuf
+	call	change_lin_buf
+
+	; attempt to start the fast timer, but if we fail it's OK
+	call	start_fast_timer_far
 
 start_done:
 cEnd
@@ -288,26 +652,57 @@ cEnd
 ;--------------------------------------------------------------------------;
 cProc	stop_double_buf,<NEAR,PUBLIC>,<es,ax,bx,cx,dx,di>
 cBegin
-	; check if SwapBuffers is actually set to run
-	mov	ax,[BackBufSize.lo]
-	or	ax,[BackBufSize.hi]
-	jz	stop_done
+	; check if swap_buffers is actually set to run
+	lea	ax,dbcursor_set
+	cmp	[cursor_funcs],ax
+	jne	stop_done
 
-	; disable it by setting the amount of data to transfer to zero
-	xor	ax,ax
-	mov	[BackBufSize.lo],ax
-	mov	[BackBufSize.hi],ax
+	; disable it by putting back the swcurs functions
+	call	swap_cursor_funcs
+
+	; disable the timer event too
+	mov	ax,[VTDAPIEntry.sel]
+	test	ax,ax
+	jz	@F
+
+	; point ES:BX at our timer handle
+	push	ds
+	pop	es
+	lea	bx,[fast_timer_hdl]
+	mov	ax,6		; TimeKillEvent
+	call	[VTDAPIEntry]
+	jmp	timer_disabled
+
+@@:	db	0Fh,02,06	;lar ax,word ptr
+	dw	offset fast_timer_irqseg
+	jnz	timer_disabled	; invalid segment - so avoid Time* calls!
+	cCall	TimeKillEvent,<[fast_timer_hdl]>
+	cCall	TimeEndPeriod,<SB_PERIOD_MS>
+timer_disabled:
+	mov	[fast_timer_hdl],0
 
 	; now point the driver bitmap at the front buffer
 	mov	di,[FrontBufSel]
-	call	ChangeLinBuf
+	call	change_lin_buf
 
 stop_done:
 cEnd
 
+; far entry points for use in 3XSWITCH.ASM
+public	far_start_dblbuf
+public	far_stop_dblbuf
+far_start_dblbuf	proc far
+	call	start_double_buf
+	ret
+far_start_dblbuf	endp
+far_stop_dblbuf	proc far
+	call	stop_double_buf
+	ret
+far_stop_dblbuf	endp
+
 ; Change VESALinearBuf to point at the base of the selector pointed to by DI,
 ; and reset the bank pointer to ensure reads/writes go to the right place
-ChangeLinBuf	proc near
+change_lin_buf	proc near
 	push	bp
 	push	si
 
@@ -358,7 +753,36 @@ ChangeLinBuf	proc near
 	pop	si
 	pop	bp
 	ret
-ChangeLinBuf	endp
+change_lin_buf	endp
+
+; this function swaps the list of functions at cursor_funcs with that at
+; dbcursor_funcs, hence installing or uninstalling our cursor implementation
+;
+; requires DS to point to Data
+swap_cursor_funcs	proc near
+	push	si
+	push	di
+	push	cx
+
+	lea	si,cursor_funcs
+	lea	di,dbcursor_funcs
+	mov	cx,(end_dbcursor_funcs - dbcursor_funcs) SHR 1
+
+@@:	mov	ax,[si]
+	xchg	ax,[di]
+	xchg	ax,[si]
+	lea	si,[si+2]
+	lea	di,[di+2]
+	loop	@B
+
+	; ensure the old cursor is OFF
+	call	far_cursor_off
+
+	pop	cx
+	pop	di
+	pop	si
+	ret
+swap_cursor_funcs	endp
 
 sEnd	InitSeg
 

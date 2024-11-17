@@ -282,8 +282,6 @@ endif
 	call	hook_int_2Fh		;Hook into multiplexed interrupt
 	call	physical_enable 	;Enable device
 
-	mov	di,lp_device.off
-	mov	si,lp_device.sel
 	call	start_double_buf	;Start double-buffering timer if needed
 	jmp	short exit_enable
 page

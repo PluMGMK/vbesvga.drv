@@ -96,4 +96,6 @@ IMPORTS
     FreeSelector		= KERNEL.176
     PrestoChangeoSelector	= KERNEL.177
     __WinFlags			= KERNEL.178
-;   LongPtrAdd                  = KERNEL.180
+
+    LoadLibrary			= KERNEL.95
+    GetProcAddress		= KERNEL.50

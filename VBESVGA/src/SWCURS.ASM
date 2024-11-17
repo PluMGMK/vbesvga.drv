@@ -39,10 +39,12 @@ sBegin  Data
 EXTRN   ScreenSelector:word
 save_screen_x		DW	0
 save_screen_y		DW	0
+PUBLIC	save_screen_x,save_screen_y,save_screen_yclip,save_screen_xclip,save_screen_longaddr,save_screen_height,save_screen_width
 save_screen_width	DW	CURSOR_WIDTH
 save_screen_height	DW	CURSOR_HEIGHT
 save_screen_xclip	DW	CURSOR_WIDTH
 save_screen_yclip	DW	CURSOR_HEIGHT
+save_screen_longaddr	LABEL	DWORD
 save_screen_address     DW      0
 save_screen_bank	DW	0
 ; CURSOR_WIDTH * CURSOR_HEIGHT pixels, times (up to) four bytes per pixel
@@ -53,6 +55,7 @@ swcursor_flags	DW		0
 swcursor	cursorShape	<>
 ; CURSOR_WIDTH * CURSOR_HEIGHT pixels, times (up to) four bytes per pixel,
 ; times two because we have both the cursor image and the AND mask!
+public	swcursor_data	; we will also use this in DBLBUF.ASM
 swcursor_data	DW		CURSOR_WIDTH*CURSOR_HEIGHT*4*2 DUP (0)
 sEnd    Data
 
@@ -63,17 +66,10 @@ sBegin	Code
 
 EXTRN   MemoryWidth:word
 
-;	swcursor_set
-;
-;	This routine should be called whenever new cursor data is supplied.
-;	The current cursor will be taken down and the new cursor put up at
-;	the same place.
-;	PARMS:
-;       ds      Data segment
-;	es:si	ptr to cursorShape structure
+;	this code is common to the swcursor and double-buffering cursor code
 
-PUBLIC	swcursor_set
-swcursor_set	PROC	NEAR
+PUBLIC	common_cursor_set
+common_cursor_set	PROC	NEAR
 
 	cld
         push    ds
@@ -110,6 +106,23 @@ pxbytes label	word
 	jnz	swcursor_expand_loop
         push    es
         pop     ds
+	ret
+
+common_cursor_set	ENDP
+
+;	swcursor_set
+;
+;	This routine should be called whenever new cursor data is supplied.
+;	The current cursor will be taken down and the new cursor put up at
+;	the same place.
+;	PARMS:
+;       ds      Data segment
+;	es:si	ptr to cursorShape structure
+
+PUBLIC	swcursor_set
+swcursor_set	PROC	NEAR
+
+	call	common_cursor_set
         call    swcursor_move
         ret
 
@@ -289,6 +302,7 @@ swcursor_save_screen	PROC	NEAR
 	push	ds
 
 	call	swcursor_setaddr
+	call	far_set_bank_select	;swcursor_setaddr sets DX
 	mov	si,save_screen_address
         pop     es
 	lea	di,save_screen_buffer
@@ -477,6 +491,7 @@ swcursor_draw	ENDP
 ;	save_screen_xclip	# of pixels clipped off LEFT edge of cursor
 ;	save_screen_yclip	# of pixels clipped off TOP edge of cursor
 ;	save_screen_address	address of upper left corner of cursor
+;	save_screen_bank == DX	bank of upper left corner of cursor
 ;	save_screen_width	width in pixels of displayed cursor
 ;	save_screen_height	height in pixels of displayed cursor
 
@@ -527,7 +542,6 @@ swcursor_clip_bottom:
 	adc	dx,bx			;and final bank index
 	mov	save_screen_address,ax
 	mov	save_screen_bank,dx
-	call	far_set_bank_select	; oth_pages
 	mov	save_screen_width,si
 	mov	save_screen_height,di
 	ret

@@ -79,7 +79,6 @@ sBegin	Code
 	assumes cs,Code
 	assumes ds,Data
 
-externNP	SwapBuffers		;in DBLBUF.ASM
 
 ;
 ;	SetCursor	- change cursor shape
@@ -203,7 +202,7 @@ cEnd
 
 ;	CheckCursor
 ;
-;	This Routine is called every 1/4 of a second by the system. If
+;	This Routine is called every 54.925 msecs by the system. If
 ;	anything needs to happen to the cursor, this is your chance!!
 
 cProc	CheckCursor,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
@@ -224,7 +223,6 @@ cBegin
 	mov	screen_busy,1
 
 CheckCursor_Busy:
-	call	SwapBuffers			;while we're at it
 cEnd
 
 
