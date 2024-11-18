@@ -128,45 +128,7 @@ dbcursor_set	endp
 start_fast_timer proc near
 	push	es	; destroyed by WinAPI calls
 
-	; Can we use VTDAPI?
-	mov	ax,[VTDAPIEntry.sel]
-	test	ax,ax
-	jz	@F
-
-	; VTDAPI requires the arguments in a buffer at ES:BX,
-	; in the correct order - so push right-to-left...
-	mov	ax,TIME_PERIODIC
-	xor	bx,bx
-	push	bp
-	mov	bp,sp
-	; flags
-	push	ax
-	; dwUser
-	push	bx
-	push	bx
-	; lpTimeProc
-	lea	ax,fast_timer_callback
-	push	cs
-	push	ax
-	; Resolution
-	mov	ax,SB_PERIOD_MS
-	push	ax
-	; Period
-	push	ax
-	; Now point ES:BX at this buffer
-	mov	bx,sp
-	mov	ax,ss
-	mov	es,ax
-	mov	ax,5	; TimeSetEvent
-	call	[VTDAPIEntry]
-	mov	[fast_timer_hdl],ax
-	mov	sp,bp
-	pop	bp
-
-	pop	es
-	ret
-
-@@:	cCall	TimeBeginPeriod,<SB_PERIOD_MS>
+	cCall	TimeBeginPeriod,<SB_PERIOD_MS>
 	test	ax,ax
 	jnz	@F	; failed if NOT zero
 
@@ -375,7 +337,7 @@ swap_buffers	proc near
 swap_buffers	endp
 
 ; this gets called every 15 milliseconds - just call swap_buffers
-cProc   fast_timer_callback,<FAR,PUBLIC,PASCAL>
+cProc   fast_timer_callback,<FAR,PUBLIC,PASCAL>,<ds>
         parmW	wTimerID
         parmW	wMsg
 	parmD	dwUser	; not used
@@ -383,12 +345,10 @@ cProc   fast_timer_callback,<FAR,PUBLIC,PASCAL>
 	parmD	dw2
 cBegin
 	assumes	ds,nothing
-	push	ds
 	; do this to avoid having to declare an export...
 	mov	ds,[_cstods]
 	assumes	ds,Data
 	call	swap_buffers
-	pop	ds
 cEnd
 
 ; This calls p_cursor_off. Its purpose is to be called immediately after
@@ -398,6 +358,64 @@ far_cursor_off	proc far
 	call	[p_cursor_off]
 	ret
 far_cursor_off	endp
+
+; Internal implementations of MMSYSTEM time functions, which call VTDAPI directly
+; **THESE REQUIRE DS == Data**
+cProc   IntBeginPeriod,<FAR,PUBLIC,PASCAL>
+        parmW	wPeriod
+cBegin
+	push	ss
+	pop	es
+	lea	bx,wPeriod
+	mov	ax,1	; TimeBeginPeriod
+	call	[VTDAPIEntry]
+cEnd
+
+cProc   IntEndPeriod,<FAR,PUBLIC,PASCAL>
+        parmW	wPeriod
+cBegin
+	push	ss
+	pop	es
+	lea	bx,wPeriod
+	mov	ax,2	; TimeEndPeriod
+	call	[VTDAPIEntry]
+cEnd
+
+cProc   IntSetEvent,<FAR,PUBLIC,PASCAL>
+	parmW	uDelay
+	parmW	uResolution
+	parmD	lpFunction
+	parmD	dwUser
+	parmW	uFlags
+cBegin
+	push	ss
+	pop	es
+	; This one's awkward because the arguments are passed to us in Pascal
+	; order, whereas VTDAPI requires them in a buffer in C order...
+	mov	dx,sp	; save this...
+	.386		; we know we're in 386 Enhanced Mode so this is safe
+	push	[uFlags]
+	push	[dwUser]
+	push	[lpFunction]
+	push	[uResolution]
+	push	[uDelay]
+	.286
+	mov	bx,sp
+	mov	ax,5	; TimeSetEvent
+	call	[VTDAPIEntry]
+	; restore stack pointer
+	mov	sp,dx
+cEnd
+
+cProc   IntKillEvent,<FAR,PUBLIC,PASCAL>
+        parmW	wTimerID
+cBegin
+	push	ss
+	pop	es
+	lea	bx,wTimerID
+	mov	ax,6	; TimeKillEvent
+	call	[VTDAPIEntry]
+cEnd
 
 sEnd	Code
 
@@ -464,8 +482,22 @@ cBegin
 
 	mov	[VTDAPIEntry.off],dx
 	mov	[VTDAPIEntry.sel],es
-	; stick ES into the "IRQ segment" as well so it'll always appear valid
-	mov	[fast_timer_irqseg],es
+
+	; use our internal implementations of the MMSYSTEM time functions
+	mov	dx,seg IntBeginPeriod
+	lea	ax,IntBeginPeriod
+	mov	[TimeBeginPeriod.off],ax
+	mov	[TimeBeginPeriod.sel],dx
+	lea	ax,IntEndPeriod
+	mov	[TimeEndPeriod.off],ax
+	mov	[TimeEndPeriod.sel],dx
+	lea	ax,IntSetEvent
+	mov	[TimeSetEvent.off],ax
+	mov	[TimeSetEvent.sel],dx
+	lea	ax,IntKillEvent
+	mov	[TimeKillEvent.off],ax
+	mov	[TimeKillEvent.sel],dx
+
 	jmp	fnptrs_setup_done
 
 @@:	; Load MMSYSTEM.DLL so we can use timer functions - this has to be
@@ -663,20 +695,13 @@ cBegin
 	; disable the timer event too
 	mov	ax,[VTDAPIEntry.sel]
 	test	ax,ax
-	jz	@F
+	jnz	@F		; skip segment validity check if using VTDAPI
 
-	; point ES:BX at our timer handle
-	push	ds
-	pop	es
-	lea	bx,[fast_timer_hdl]
-	mov	ax,6		; TimeKillEvent
-	call	[VTDAPIEntry]
-	jmp	timer_disabled
-
-@@:	db	0Fh,02,06	;lar ax,word ptr
+	db	0Fh,02,06	;lar ax,word ptr
 	dw	offset fast_timer_irqseg
 	jnz	timer_disabled	; invalid segment - so avoid Time* calls!
-	cCall	TimeKillEvent,<[fast_timer_hdl]>
+
+@@:	cCall	TimeKillEvent,<[fast_timer_hdl]>
 	cCall	TimeEndPeriod,<SB_PERIOD_MS>
 timer_disabled:
 	mov	[fast_timer_hdl],0
