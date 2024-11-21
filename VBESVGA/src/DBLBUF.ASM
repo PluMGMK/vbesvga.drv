@@ -10,10 +10,9 @@
 ;	drawn on the front buffer.
 ;
 
-SB_PERIOD_MS	equ 16		;swap buffers every 16 milliseconds (60fps)
 TIME_PERIODIC	equ 1		;from MMSYSTEM.H
 
-incDevice = 1				;Include control for gdidefs.inc
+incDevice = 1			;Include control for gdidefs.inc
 
 	.xlist
 	include CMACROS.INC
@@ -25,6 +24,7 @@ incDevice = 1				;Include control for gdidefs.inc
 	.list
 
 	externFP AllocSelector
+	externFP FreeSelector
 	externFP SetSelectorBase
 	externFP SetSelectorLimit
 	externFP GetSelectorBase
@@ -49,6 +49,7 @@ BackBufSize	dd ?
 VTDAPIEntry	dd ?
 
 ; Function pointers in MMSYSTEM.DLL
+TimeGetDevCaps	dd ?
 TimeBeginPeriod	dd ?
 TimeEndPeriod	dd ?
 TimeSetEvent	dd ?
@@ -59,6 +60,16 @@ fast_timer_hdl	dw 0
 ; Standard-Mode IRQ handler segment for TIMER.DRV:
 ; if this becomes invalid, we stop the fast timer!
 fast_timer_irqseg dw 0
+
+; Approximate time in milliseconds taken to run swap_buffers
+frame_budget	dw -1
+sb_period_ms	dw ?	; swap_buffers period in milliseconds
+max_budget	dw ?	; maximum allowable value for frame_budget
+
+; User-specified refresh rate and maximum frame budget percentage
+public	desired_fps,max_budget_pct
+desired_fps	db 60
+max_budget_pct	db 50
 
 externW		cursor_funcs		; in CURSOR.ASM
 externW		cursor_xdraw		; in CURSOR.ASM
@@ -128,12 +139,16 @@ dbcursor_set	endp
 start_fast_timer proc near
 	push	es	; destroyed by WinAPI calls
 
-	cCall	TimeBeginPeriod,<SB_PERIOD_MS>
+	cCall	TimeBeginPeriod,<[sb_period_ms]>
 	test	ax,ax
 	jnz	@F	; failed if NOT zero
 
+	call	find_frame_budget
+	cmp	ax,[max_budget]
+	jg	too_expensive
+
 	lea	ax,fast_timer_callback
-	cCall	TimeSetEvent,<SB_PERIOD_MS,SB_PERIOD_MS,cs,ax,0,0,TIME_PERIODIC>
+	cCall	TimeSetEvent,<[sb_period_ms],[sb_period_ms],cs,ax,0,0,TIME_PERIODIC>
 	mov	[fast_timer_hdl],ax
 
 	; find out who's handling timer IRQs now so we can track
@@ -141,6 +156,11 @@ start_fast_timer proc near
 	mov	ax,3508h; DOS: get interrupt vector 08
 	int	21h
 	mov	[fast_timer_irqseg],es
+	jmp	@F
+
+too_expensive:
+	int	3
+	call	far ptr cancel_double_buf
 
 @@:	pop	es
 	; fall through to ret below!
@@ -336,8 +356,8 @@ swap_buffers	proc near
 	ret
 swap_buffers	endp
 
-; this gets called every 15 milliseconds - just call swap_buffers
-cProc   fast_timer_callback,<FAR,PUBLIC,PASCAL>,<ds>
+; this gets called every 16 milliseconds - just call swap_buffers
+cProc   fast_timer_callback,<FAR,PUBLIC,PASCAL,NODATA>,<ds>
         parmW	wTimerID
         parmW	wMsg
 	parmD	dwUser	; not used
@@ -359,9 +379,106 @@ far_cursor_off	proc far
 	ret
 far_cursor_off	endp
 
+; Find the minimum timer period supported (used for counting the frame budget)
+get_min_period	proc near
+	mov	ax,[VTDAPIEntry.sel]
+	test	ax,ax
+	jz	@F
+
+	; the VTDAPI way
+	sub	sp,0Ch	; VTDAPI function 0 returns three dwords
+	mov	ax,ss
+	mov	es,ax
+	mov	bx,sp
+	xor	ax,ax	; function 0 gets version and capabilities
+	call	[VTDAPIEntry]
+	; check if successful
+	cmp	ax,1	; sets CF if AX is zero (VTDAPI not working)
+	; minimum period is the second dword returned
+	mov	ax,ss:[bx+4]
+	lea	sp,[bx+0Ch]
+	ret
+
+@@:	; the MMSYSTEM way
+	sub	sp,4	; timeGetDevCaps returns two words
+	mov	bx,sp
+	; this call takes a long pointer to a buffer,
+	; and the size, which needs to be exactly 4.
+	cCall	TimeGetDevCaps,<ss,bx,4>
+	; check if successful
+	cmp	ax,1
+	cmc		; sets CF if AX is NOT zero (MMSYSTEM error)
+	; minimum period is the first word returned
+	mov	ax,ss:[bx]
+	lea	sp,[bx+4]
+	ret
+get_min_period	endp
+
+; Find the approximate frame budget (i.e. how long it takes to run swap_buffers)
+; in milliseconds, and return it. This can be used to decide to cancel double
+; buffering, if it's eating up too much CPU time.
+find_frame_budget proc near
+	; value already stored?
+	mov	ax,[frame_budget]
+	test	ax,ax
+	js	@F	; if negative, it means we need to calculate it...
+	ret
+
+@@:	; if we're already running the fast timer, this should not be done
+	cmp	[fast_timer_hdl],0
+	jz	@F
+	int	3
+	ret
+
+@@:	; find out what resolution we can use
+	call	get_min_period
+	jnc	@F	; if we failed to find it, go no further
+	sbb	ax,ax	; AX becomes -1 because CF is 1
+	ret
+
+@@:	; create a timer at the min resolution - note that we are passing
+	; AX three times: as the period, the resolution AND the dwUser value!
+	lea	bx,frame_budget_counter
+	cCall	TimeSetEvent,<ax,ax,cs,bx,0,ax,TIME_PERIODIC>
+	mov	[fast_timer_hdl],ax	; to prevent CheckCursor from calling swap_buffers
+	test	ax,ax
+	jnz	@F	; if NULL then go no further
+	dec	ax	; AX becomes -1
+	ret
+
+@@:	; do the buffer swap with the counter timer running
+	call	swap_buffers
+	; done, so kill the counter
+	cCall	TimeKillEvent,<[fast_timer_hdl]>
+	; allow CheckCursor to run normally again
+	mov	[fast_timer_hdl],0
+	; increment the frame budget since it would have started at -1 when
+	; this function was called, rather than zero
+	inc	[frame_budget]
+
+	mov	ax,[frame_budget]
+	ret
+find_frame_budget endp
+
+; increment the frame budget counter as often as possible
+cProc   frame_budget_counter,<FAR,PUBLIC,PASCAL,NODATA>,<ds>
+        parmW	wTimerID
+        parmW	wMsg
+	parmD	dwPeriod
+	parmD	dw1
+	parmD	dw2
+cBegin
+	assumes	ds,nothing
+	; do this to avoid having to declare an export...
+	mov	ds,[_cstods]
+	assumes	ds,Data
+	mov	ax,word ptr [dwPeriod]
+	add	[frame_budget],ax
+cEnd
+
 ; Internal implementations of MMSYSTEM time functions, which call VTDAPI directly
 ; **THESE REQUIRE DS == Data**
-cProc   IntBeginPeriod,<FAR,PUBLIC,PASCAL>
+cProc   IntBeginPeriod,<FAR,PUBLIC,PASCAL,NODATA>
         parmW	wPeriod
 cBegin
 	push	ss
@@ -369,9 +486,12 @@ cBegin
 	lea	bx,wPeriod
 	mov	ax,1	; TimeBeginPeriod
 	call	[VTDAPIEntry]
+	; VTDAPI returns zero on failure and wPeriod on success,
+	; whereas this function needs to return zero on success!
+	xor	ax,[wPeriod]
 cEnd
 
-cProc   IntEndPeriod,<FAR,PUBLIC,PASCAL>
+cProc   IntEndPeriod,<FAR,PUBLIC,PASCAL,NODATA>
         parmW	wPeriod
 cBegin
 	push	ss
@@ -379,9 +499,12 @@ cBegin
 	lea	bx,wPeriod
 	mov	ax,2	; TimeEndPeriod
 	call	[VTDAPIEntry]
+	; VTDAPI returns zero on failure and wPeriod on success,
+	; whereas this function needs to return zero on success!
+	xor	ax,[wPeriod]
 cEnd
 
-cProc   IntSetEvent,<FAR,PUBLIC,PASCAL>
+cProc   IntSetEvent,<FAR,PUBLIC,PASCAL,NODATA>
 	parmW	uDelay
 	parmW	uResolution
 	parmD	lpFunction
@@ -407,7 +530,7 @@ cBegin
 	mov	sp,dx
 cEnd
 
-cProc   IntKillEvent,<FAR,PUBLIC,PASCAL>
+cProc   IntKillEvent,<FAR,PUBLIC,PASCAL,NODATA>
         parmW	wTimerID
 cBegin
 	push	ss
@@ -429,6 +552,7 @@ assumes	cs,InitSeg
 assumes	ds,Data
 
 mmsystem_dll		db "MMSYSTEM.DLL",0
+TimeGetDevCaps_name	db "timeGetDevCaps",0
 TimeBeginPeriod_name	db "timeBeginPeriod",0
 TimeEndPeriod_name	db "timeEndPeriod",0
 TimeSetEvent_name	db "timeSetEvent",0
@@ -464,6 +588,26 @@ cBegin
 	mov	bx,[FrontBufSel]
 	or	ax,bx
 	jz	@F
+	jmp	setup_done
+
+@@:	; Calculate the relevant periods
+	mov	ax,1000		; milliseconds per second
+	div	[desired_fps]	; AL := milliseconds per frame, AH := remainder
+	xor	ah,ah		; we don't care about the remainder
+	mov	[sb_period_ms],ax
+
+	mul	[max_budget_pct]; AX := max frame budget in tens of microseconds
+	mov	cl,100
+	div	cl		; AL := max frame budget in milliseconds
+	xor	ah,ah		; we don't care about the remainder
+	mov	[max_budget],ax
+
+	; If the frame budget breaks the bank, go no further.
+	; Note that initially the frame budget is unknown, so the -1 will
+	; always be "less than" the max. This is just to prevent the setup
+	; code from rerunning after it's all been torn down...
+	cmp	ax,[frame_budget]
+	jge	@F
 	jmp	setup_done
 
 @@:	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
@@ -519,6 +663,15 @@ cBegin
 
 @@:	mov	[TimeBeginPeriod.off],ax
 	mov	[TimeBeginPeriod.sel],dx
+
+	lea	ax,TimeGetDevCaps_name
+	cCall	GetProcAddress,<bp,cs,ax>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	setup_done
+
+@@:	mov	[TimeGetDevCaps.off],ax
+	mov	[TimeGetDevCaps.sel],dx
 
 	lea	ax,TimeEndPeriod_name
 	cCall	GetProcAddress,<bp,cs,ax>
@@ -625,6 +778,39 @@ fnptrs_setup_done:
 setup_done:
 cEnd
 
+; does the opposite of setup_double_buf, as a far function
+; so it can be called from Code...
+cProc	cancel_double_buf,<FAR,PUBLIC,NODATA>,<es,ax,bx,cx,dx,si,di>
+cBegin
+	call	stop_double_buf
+
+	; Forget the selectors (but don't free them since
+	; this seems to cause mayhem throughout the LDT...)
+	xor	di,di
+	mov	[FrontBufSel],di
+	xchg	[BackBufSel],di
+
+	; Unlock the back buffer memory
+	test	di,di
+	jz	@F
+	cCall	GetSelectorBase,<di>
+	xchg	di,ax
+	mov	si,dx
+
+	mov	ax,601h				; Unlock linear region
+	mov	bx,si
+	mov	cx,di
+	mov	si,[BackBufSize.hi]
+	mov	di,[BackBufSize.lo]
+	int	31h
+
+@@:	; and free it.
+	mov	ax,502h				; Free memory block
+	mov	di,[BackBufDPMIHdl.lo]
+	mov	si,[BackBufDPMIHdl.hi]
+	int	31h
+cEnd
+
 ;--------------------------------------------------------------------------;
 ; start_double_buf
 ;	actually starts the double-buffering: the linear framebuffer pointer
@@ -702,7 +888,7 @@ cBegin
 	jnz	timer_disabled	; invalid segment - so avoid Time* calls!
 
 @@:	cCall	TimeKillEvent,<[fast_timer_hdl]>
-	cCall	TimeEndPeriod,<SB_PERIOD_MS>
+	cCall	TimeEndPeriod,<[sb_period_ms]>
 timer_disabled:
 	mov	[fast_timer_hdl],0
 
