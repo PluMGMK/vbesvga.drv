@@ -404,17 +404,19 @@ get_min_period	proc near
 	ret
 
 @@:	; the MMSYSTEM way
+	push	bp
 	sub	sp,4	; timeGetDevCaps returns two words
-	mov	bx,sp
+	mov	bp,sp
 	; this call takes a long pointer to a buffer,
 	; and the size, which needs to be exactly 4.
-	cCall	TimeGetDevCaps,<ss,bx,4>
+	cCall	TimeGetDevCaps,<ss,bp,4>
 	; check if successful
 	cmp	ax,1
 	cmc		; sets CF if AX is NOT zero (MMSYSTEM error)
 	; minimum period is the first word returned
-	mov	ax,ss:[bx]
-	lea	sp,[bx+4]
+	mov	ax,[bp]
+	lea	sp,[bp+4]
+	pop	bp
 	ret
 get_min_period	endp
 
