@@ -101,6 +101,10 @@ externNP	swcursor_setaddr	; in SWCURS.ASM
 externW		pxbytes			; in SWCURS.ASM
 externW		_cstods			; in CURSOR.ASM
 
+externFP	enable_wrcomb		; in MTRR.ASM
+externFP	enable_wrthru		; in MTRR.ASM
+externFP	disable_wrcomb		; in MTRR.ASM
+
 ; cursor functions
 dbcursor_set	proc near
 ;	PARMS:
@@ -809,6 +813,10 @@ cBegin
 	mov	di,[BackBufDPMIHdl.lo]
 	mov	si,[BackBufDPMIHdl.hi]
 	int	31h
+
+	; the least we can offer in this case is write-through, so reading
+	; from the screen mightn't always be so painfully slow...
+	call	enable_wrthru
 cEnd
 
 ;--------------------------------------------------------------------------;
@@ -839,6 +847,9 @@ cBegin
 	lea	ax,dbcursor_set
 	cmp	[cursor_funcs],ax
 	je	start_done
+
+	; setup write combining if possible so swap_buffers isn't slow
+	call	enable_wrcomb
 
 	; install our cursor functions
 	call	swap_cursor_funcs
@@ -897,6 +908,10 @@ timer_disabled:
 	call	change_lin_buf
 
 stop_done:
+	; make front buffer uncacheable again - do this unconditionally
+	; since even if we abandoned double-buffereing we may have enabled
+	; write-through instead!
+	call	disable_wrcomb
 cEnd
 
 ; far entry points for use in 3XSWITCH.ASM

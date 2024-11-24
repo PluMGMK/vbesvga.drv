@@ -35,6 +35,11 @@ sBegin	Data
 
         externW ScreenSelector  ; the selector for display memory
 
+public	VDDEntry,Ring3to0,Ring0to3
+	VDDEntry	dd 0	; entry point to Virtual Display Driver
+	Ring3to0	dd 0	; entry point to enter Ring0
+	Ring0to3	dd 0	; entry point to get back to Ring3
+
 sEnd	Data
 
 createSeg _INIT,InitSeg,byte,public,CODE
@@ -78,7 +83,7 @@ page
 	assumes ds,Data
 	assumes es,nothing
 
-cProc	dev_initialization,<FAR,PUBLIC>
+cProc	dev_initialization,<FAR,PUBLIC>,<di>
 
 cBegin
 	mov	ax,__A000			; get the address of memory
@@ -100,7 +105,32 @@ cBegin
 	; ENABLE.ASM, because we need to allow the user to specify how to check
 	; the structure's integrity...
 
-	mov	ax,1				;no way to have error
+	; grab the VDD entry and ring-transition code
+	mov	ax,1684h	; get VxD entry point
+	mov	bx,000Ah	; VDD
+	xor	di,di		; NULL default return value
+	mov	es,di		; NULL default return value
+	int	2Fh
+	mov	ax,es
+	test	ax,ax		; Still NULL?
+	jz	@F
+	mov	[VDDEntry.off],di
+	mov	[VDDEntry.sel],ax
+
+	; now get the ring-transition entry points
+	xor	dx,dx
+	xor	cx,cx
+	mov	ax,000Ah	;VDD ring transition API
+	mov	cx,_TEXT	;desired code segment.
+	call	VDDEntry
+	or	dx,dx
+	jz	@F		;RingAPI not present.
+	mov	[Ring3to0.off],ax
+	mov	[Ring3to0.sel],dx
+	mov	[Ring0to3.off],bx
+	mov	[Ring0to3.sel],cx
+
+@@:	mov	ax,1		;no way to have error
 dev_init_exit:
 cEnd
 
