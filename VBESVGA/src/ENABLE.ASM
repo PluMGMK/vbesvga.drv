@@ -98,7 +98,6 @@ bad_width	db	'Width < 640 is not allowed',13,10,'$'
 bad_height	db	'Height < 480 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
 bad_framerate	db	'Refresh rate must be in range 4-255 fps inclusive',13,10,'$'
-bad_framebudget	db	'Frame budget percentage must be between 1% and 100%',13,10,'$'
 general_fail	db	'Unsuitable settings for current driver / hardware',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
@@ -121,7 +120,6 @@ height_member	db	"Height",0
 depth_member	db	"Depth",0
 
 fps_member	db	"DoubleBufRefreshRate",0
-budget_member	db	"DoubleBufMaxFrameBudgetPercentage",0
 
 font_member	db	"fontsize",0
 dpi_96		db	"small",0
@@ -148,7 +146,6 @@ SYSINI	<Enable216_off,1,0>
         externW ScratchSel              ; the free selector
 
 	externB	desired_fps		; in DBLBUF.ASM
-	externB	max_budget_pct	; in DBLBUF.ASM
 
 sEnd	Data
 
@@ -413,18 +410,6 @@ enable_read_profile	PROC	NEAR
 	mov	[fail_reason],offset bad_framerate
 	jmp	enable_read_profile_fail
 @@:	mov	desired_fps,al
-
-	lea	ax,boot_category
-	lea	bx,budget_member
-	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,50,ds,cx>
-	dec	ax	; allow us to exclude zero and >100 with a single CMP
-	cmp	ax,100
-	jb	@F	; CF set if read int was zero, negative or >100
-	mov	[fail_reason],offset bad_framebudget
-	jmp	enable_read_profile_fail
-@@:	inc	al	; undo the DEC
-	mov	max_budget_pct,al
 
 	; Try Linear=1 first
 	cCall	FindMode,<1>
