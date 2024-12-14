@@ -62,6 +62,7 @@ fast_timer_hdl	dw 0
 fast_timer_irqseg dw 0
 
 ; Approximate time in milliseconds taken to run swap_buffers
+public	frame_budget	; we can look at it with a debugger under Windows
 frame_budget	dw -1
 sb_period_ms	dw ?	; swap_buffers period in milliseconds
 max_budget	dw ?	; maximum allowable value for frame_budget

@@ -241,17 +241,32 @@ set_mtrr_types	proc near
 	call	Ring3to0		; preserves ds, es, ecx, esi, edi, ebp
 ife	USING_ANCIENT_MASM
 	.586p
+else
+	.386p
 endif
 	mov	bx,di			; get back our argument
 
+	EnterCrit
 @@:	mov	di,cx
 	movzx	ecx,mtrrs[di-1]
 	mov	ch,2			; ECX points at MTRR base register
 	rdmsr
 	mov	al,bl
 	wrmsr
+	; have you tried turning it off and on again?
+	inc	cl
+	rdmsr
+	btr	ax,11			; clear valid flag
+	wrmsr
+	bts	ax,11			; set valid flag
+	wrmsr
 	mov	cx,di
 	loop	@B
+
+	; try invalidating the TLB as well
+	mov	eax,cr3
+	mov	cr3,eax
+	LeaveCrit a
 	call	Ring0to3		; preserves ds, es, ecx, esi, edi, ebp
 
 wrcomb_enabled:
