@@ -214,12 +214,11 @@ CALL_PMINT	macro
 sBegin  Code
 assumes cs,Code
 
+externB		??BigFontFlags
 externW		_cstods		; in CURSOR.ASM
 externW		pxbytes		; in SWCURS.ASM
-externB		??BigFontFlags
-
-; From INT10.ASM
-externFP	DoInt10h
+externFP	DoInt10h	; in INT10.ASM
+externFP	find_mtrrs	; in MTRR.ASM
 
 ; This goes in the Code segment for ease of access, and in case the
 ; BankSwitch function is included in the buffer (unlikely?)
@@ -1278,10 +1277,12 @@ endif
 	mov	si,dx
 	mov	di,ax
 	; Now just set its location:
-	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
 	mov	cx,[VESALinearBuf.lo]
 	mov	bx,[VESALinearBuf.hi]
+	; Take this opportunity to check for MTRRs
+	call	find_mtrrs
 	; And call:
+	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
 	int	31h
 	mov	di,ERR_PROT_ALLOC
 	jc	FindMode_done
