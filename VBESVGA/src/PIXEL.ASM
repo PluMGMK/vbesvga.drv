@@ -65,8 +65,6 @@ sEnd    Data
 
 ifdef   PALETTES
 	externB PaletteModified		; Set when palette is modified
-	externFP TranslateBrush		; 'on-the-fly' translation of brush
-	externFP TranslatePen		; 'on-the-fly' translation of pen
 	externFP TranslateTextColor	; 'on-the-fly' translation of textcol
 endif
 ;
@@ -330,7 +328,6 @@ pixel_40:
         mov     cl,MONO_OP              ; cl = 1 (only plane 0 is on)
         jne     pixel_60                ; Not our color format, treat as mono
 ;
-        mov     cl,p_color.pcol_Clr     ; load the 8 bit color
         mov     di,1                    ; force a change to display handling
         mov     is_device,1             ; fake it, color is same as display
 ;
@@ -348,8 +345,12 @@ pixel_60:
         cmp     is_device,0             ; mono or color maps?
         jne     @F                      ; color use x as true pointer
         shiftr  ax,3                    ; AX = byte offset from start of scan
+	jmp	@@got_x_offset
 ;
-@@:
+@@:	mov	dx,[colour_format]	; get bits per pixel into DH
+	shr	dx,8+3			; convert to bytes per pixel in DL
+	mul	dx			; convert pixel offset to bytes
+@@got_x_offset:
         add     si,ax                   ; ds:si --> byte of pixel
         and     bx,00000111B            ; Get bit mask for mono bit
         mov     ch,rot_bit_tbl[bx]      ; loaded for mono, ignored by color
@@ -384,7 +385,6 @@ pixel_70:                               ; Display code enters here
 ;       DS:SI --> byte pixel is to be set in
 ;       BX:DI --> physical drawing mode
 ;       CH    =   bit mask
-;       CL    =   color - pixel, mono - don't care
 ;       DX    =   Index to next plane
 ;                 1 if the display
 ;
@@ -397,34 +397,85 @@ pixel_100:
         dec     bx                      ; Make it zero based
         and     bx,000Fh                ; Keep it valid
         test    dl,00000001b            ; mono bitmap?
-        jz      pixel_130               ; Yes, can't use special drawing modes
+	jnz	@F
+        jmp     pixel_130               ; Yes, can't use special drawing modes
 ;
 ;-----------------------------------------------
 ; D I S P L A Y / C O L O R   S E T   P I X E L
 ;-----------------------------------------------
 ;
+@@:	; load the physical colour
+	mov	cx,p_color.lo
+	mov	dx,p_color.hi
+
         test    dm_flags[bx],SINGLE_OK
-        jz      pixel_110
-        and     cl,dm_pen_and[bx]       ; Set correct color for the ROP
-        xor     cl,dm_pen_xor[bx]
+	jnz	@F
+        jmp     pixel_110
+
+@@:     mov     ah,dm_pen_and[bx]
+	mov	al,ah
+        and     cx,ax			; Set correct color for the ROP
+        and     dx,ax
+        mov     ah,dm_pen_xor[bx]
+	mov	al,ah
+        xor     cx,ax
+        xor     dx,ax
+	mov	ax,[colour_format]	; get bits per pixel into AH
+	shr	ax,8+3			; convert to bytes per pixel in AL
         mov     ah,dm_data_r[bx]
         shiftr  ah,3
         or      ah,ah
         jne     dr_more1
         mov     [si],cl
+	dec	al
+	jz	dr_morex
+	mov	[si+1],ch
+	dec	al
+	jz	dr_morex
+	mov	[si+2],dl
+	dec	al
+	jz	dr_morex
+	mov	[si+3],dh
         jmp     short dr_morex
 dr_more1:
         dec     ah
         jne     dr_more2
         and     [si],cl
+	dec	al
+	jz	dr_morex
+	and	[si+1],ch
+	dec	al
+	jz	dr_morex
+	and	[si+2],dl
+	dec	al
+	jz	dr_morex
+	and	[si+3],dh
         jmp     short dr_morex
 dr_more2:
         dec     ah
         jne     dr_more3
         or      [si],cl
+	dec	al
+	jz	dr_morex
+	xor	[si+1],ch
+	dec	al
+	jz	dr_morex
+	xor	[si+2],dl
+	dec	al
+	jz	dr_morex
+	xor	[si+3],dh
         jmp     short dr_morex
 dr_more3:
         xor     [si],cl
+	dec	al
+	jz	dr_morex
+	xor	[si+1],ch
+	dec	al
+	jz	dr_morex
+	xor	[si+2],dl
+	dec	al
+	jz	dr_morex
+	xor	[si+3],dh
 dr_morex:
         jmp     pixel_160
 ;
@@ -433,20 +484,75 @@ dr_morex:
 ;---------------------------------------
 ;
 pixel_110:
-        xor     cl,dm_pen_xor[bx]
-        mov     ch,cl
-        not     ch
-        mov     ax,cx
-        and     cl,dm_pen_and[bx]
-        and     ch,[si]
-        or      cl,ch
+	; here the XOR comes first!
+        mov     ah,dm_pen_xor[bx]
+	mov	al,ah
+        xor     cx,ax
+        xor     dx,ax
+        mov     ah,dm_pen_and[bx]
+	mov	al,ah
+	; save the non-ANDed one in BX:AX and invert it
+	mov	di,ax
+	mov	ax,cx
+	mov	bx,dx
+	not	ax
+	not	bx
+	; save everything
+	push	dx
+	push	cx
+	push	bx
+	push	ax
+	; then do the ANDs
+        and     cx,di
+        and     dx,di
 
-        mov     ch,cl
-        not     ch
-        and     ch,ah
-        and     cl,al
-        or      cl,ch
-        mov     [si],cl
+	; AND with the destination - #bytes depends on colour format
+	mov	di,[colour_format]	; get bits per pixel into DIH
+	shr	di,8+3			; convert to bytes per pixel in DIL
+	and	al,[si]
+	dec	di
+	jz	@F
+	and	ah,[si+1]
+	dec	di
+	jz	@F
+	and	bl,[si+2]
+	dec	di
+	jz	@F
+	and	bh,[si+3]
+@@:
+	or	cx,ax
+	or	dx,bx
+
+	mov	ax,cx
+	mov	bx,dx
+	not	ax
+	not	bx
+	; get stuff back from the stack and AND it
+	pop	di
+	and	ax,di
+	pop	di
+	and	bx,di
+	pop	di
+	and	cx,di
+	pop	di
+	and	dx,di
+
+	or	cx,ax
+	or	dx,bx
+
+	; write to the destination - #bytes depends on colour format
+	mov	di,[colour_format]	; get bits per pixel into DIH
+	shr	di,8+3			; convert to bytes per pixel in DIL
+	mov	[si],cl
+	dec	di
+	jz	pixel_160
+	mov	[si+1],ch
+	dec	di
+	jz	pixel_160
+	mov	[si+2],dl
+	dec	di
+	jz	pixel_160
+	mov	[si+3],dh
         jmp     short pixel_160
 ;
 ;
@@ -537,9 +643,23 @@ pixel_250:
 ;
 ; color map, load the color & return in dx:ax
 ;
-	mov	dx,0ff00h		; return ff00h in dx
+	mov	dx,0ff00h		; return ff00h in dx (i.e. assume palette)
 	xor	ax,ax			; clear out ax
 	lodsb				; grab the pixel
+; check if we need to load more bytes (in which case we don't have a palette!)
+	mov	bx,[colour_format]
+	cmp	bh,8			; 8bpp or less?
+	jna	pixel_300
+	xor	dx,dx			; no palette
+	shr	bh,3			; convert to bytes
+	dec	bh			; we know there's at least two
+	mov	ah,[si]			; since the LODSB incremented SI already
+	dec	bh
+	jz	pixel_300
+	mov	dl,[si+1]
+	dec	bh
+	jz	pixel_300
+	mov	dh,[si+2]
 ;
 pixel_300:
         test    is_device,0FFh
