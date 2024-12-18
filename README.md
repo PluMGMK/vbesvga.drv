@@ -9,13 +9,21 @@ This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** av
 * Because my AMD Radeon RX 5500 XT doesn't support 256-colour modes, rendering the old [VESA Patch](http://www.win3x.org/win3board/viewtopic.php?t=5408&hilit=svga) useless for me
 * To help out any fellow enthusiasts who like running old software on new hardware!
 
-## Screenshot
+## Screenshots
+
+### Using standard Program Manager shell
 
 ![True-Colour Full HD screenshot of Windows 3.1 desktop showing colour settings (on "Bordeaux"), Program Manager, two MS-DOS prompts of different sizes, Solitaire and Minesweeper](./Screenshots/VBESVGA.CLP.rec0.png)
 
 This True-Colour Full HD screenshot gives you some idea of what's working so far. The colour settings dialogue shows that pretty much the entire Windows GUI renders correctly, and the Program Manager shows icons working well too. The two windowed DOS prompts demonstrate that I am running this on MS-DOS 6.20, and that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14`. Minesweeper looks OK, while Solitaire is mostly working, but a few glitches are evident...
 
 See the Issues page for more details of what is _not_ working at the moment...
+
+### Using **third-party** [Calmira XP](https://winworldpc.com/product/calmira/4x) shell
+
+![True-Colour Full HD screenshot of Calmira XP shell showing colour settings (on "Bordeaux"), Character Map, Advanced Task Manager, Calmira Explorer, an MS-DOS prompt, GVim and Minesweeper](./Screenshots/VBESVGA2.CLP.rec0.png)
+
+This screenshot showcases the True Colour rendering capability, in the Windows-XP-derived icons used by the Calmira XP shell. The [Advanced Task Manager](https://winworldpc.com/product/advanced-task-manage/1x) instance again confirms that we're on DOS 6.20 and Windows 3.10. It also says we're on a 486, which of course isn't true, but that's just the newest CPU that Windows 3.1 knows about! Again, the `debugx` session in the DOS prompt confirms that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14` (reported a bit more legibly this time!).
 
 ## Building
 
@@ -92,3 +100,19 @@ In general, the VBE modes used by this driver involve a framebuffer larger than 
 When using a linear framebuffer, the driver also attempts to use [Double Buffering](https://wiki.osdev.org/Double_Buffering), which improves performance by ensuring that GDI operations never have to touch video RAM directly. However, it involves allocating two copies of the framebuffer in system RAM, which is quite expensive (especially given that Windows 3.1 usually can't take advantage of more than a quarter of a GiB). If it can't allocate this much RAM, it falls back to direct VRAM access.
 
 Basically, if you're using 386 Enhanced Mode (or Standard Mode without `EMM386`), with a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust the refresh rate using the `DoubleBufRefreshRate=` setting in `SYSTEM.INI`!
+
+## Mode selection
+
+When Windows boots, the driver queries the BIOS for available modes, and automatically selects the first one which fulfills the following criteria:
+
+* Supported by the current hardware according to the BIOS
+* Graphics mode (not text)
+* Colour mode (not black & white)
+* Resolution matches what was specified in `SYSTEM.INI`
+* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2, 3 or 4 bytes
+* Either packed-pixel or direct-colour framebuffer
+* Significant bit depth (i.e. red+green+blue but without padding) matches what was specified in `SYSTEM.INI`
+
+The driver searches for linear modes first, and if it can't find any (or the system can't support them), it goes back and looks for bank-switching modes. If it can't find any mode matching the above criteria, it will switch the display back to text mode, print an error message and return to DOS.
+
+Note that this automatic search is currently the only way the driver selects modes: you cannot give it a specific VESA mode number to use.
