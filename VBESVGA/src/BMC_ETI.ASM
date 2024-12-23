@@ -637,13 +637,13 @@ eti_4t8_color:
 ;
 	xor	ax,ax
         shr     dx,1                    ; # of source BYTES
-        mov     int_move_count,dx
 	adc	al,al			; get excess pixel count (1 or 0)
 	cmp	[total_depth_bytes],2
 	jnb	@F
-	add	int_move_count,ax	; process extra pixel (alignment byte)
-	dec	ax			; no partial pixels in that case
+	add	dx,ax			; process extra pixel (alignment byte)
+	xor	ax,ax			; no partial pixels in that case
 @@:
+        mov     int_move_count,dx
 	mov	int_remaining_pixel_count,ax
 ;
 ; calculate the external dword adjustment
