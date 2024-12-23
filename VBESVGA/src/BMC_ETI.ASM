@@ -629,14 +629,28 @@ eti_4t8_color:
 ;
 ; calculate the color internal move count, with no int_remaining_pixel_count
 ;
-	inc	dx			; we will process any excess pel
+; IF we have an 8-bit destination, then it's more efficient to round UP to
+; the nearest even number, because if we process an extra pixel, it just ends
+; up being the alignment byte to make the scanline word-aligned.
+; OTHERWISE (depth >= 2 bytes), we have to round down, and set the excess
+; count appropriately (which will involve calling copy_e4i8_partial).
+;
+	xor	ax,ax
         shr     dx,1                    ; # of source BYTES
         mov     int_move_count,dx
+	adc	al,al			; get excess pixel count (1 or 0)
+	cmp	[total_depth_bytes],2
+	jnb	@F
+	add	int_move_count,ax	; process extra pixel (alignment byte)
+	dec	ax			; no partial pixels in that case
+@@:
+	mov	int_remaining_pixel_count,ax
 ;
 ; calculate the external dword adjustment
 ;
 	shr	bx,1			; make a byte count
 	sub	bx,dx			; get the remaining bytes
+	sub	bx,ax			; partial pixel also counts!
 	mov	ext_dword_adjust,bx	; save the difference
 ;
 	ret
@@ -1677,7 +1691,6 @@ page
 copy_e4i8_partial proc near
 
 	mov	dh, [total_depth_bytes]
-	shr	cl, 1			; Source is pels (nibbles)
 	lea	bx, color_xlate
 ce4i8p_next_pixel:
 	call	load_with_seg_check	; Get 2	bits of	source data
@@ -1694,6 +1707,9 @@ ce4i8p_next_pixel:
 	mov	al,dl
 	jnz	@B
 
+	dec	cl
+	jz	ce4i8p_done
+
 	mov	ch, dh
 	mov	al, ah
 	and	al, 0fh
@@ -1708,6 +1724,7 @@ ce4i8p_next_pixel:
 
 	dec	cl
 	jne	ce4i8p_next_pixel
+ce4i8p_done:
         ret
 
 copy_e4i8_partial endp
