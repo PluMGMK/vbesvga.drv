@@ -278,7 +278,6 @@ PS_SOLID        equ     0               ; solid lines
 PS_NULL         equ     5               ; null lines
 
 externB         enabled_flag            ; non zero if output to screen allowed
-externB		red_shr
 
 sEnd            Data
 
@@ -541,10 +540,7 @@ stack_space_ok:
 ;----------------------------------------------------------------------------;
 
 ifdef PALETTES
-	;FIXME: This is not in Data anymore, need to use something else!
-	cmp	[red_shr],-1
-	jne	no_translation_needed	; not using a palette
-
+	; PaletteModified will always be zero if not using palette...
         cmp     PaletteModified,0ffh    ; was the palette modified ?
         jnz     no_translation_needed   ; no
         push    ds                      ; save own ds
@@ -703,8 +699,8 @@ load_bg_color:
 	les	di,lp_draw_mode 	    ; point to the draw mode block
 	mov	dx,es:[di].bkMode	    ; get the background mode
         mov     BackMode,dl                 ; save it
-	mov	ax,byte ptr es:[di].bkColor.lo
-	mov	dx,word ptr es:[di].bkColor.hi
+	mov	ax,es:[di].bkColor.lo
+	mov	dx,es:[di].bkColor.hi
 	test	DeviceFlags,TYPE_IS_BYTEMAP
 	jnz	short ld_bg_color2
 	call	ipc_to_rgb_far		    ; get accelerators in DH
@@ -1387,17 +1383,7 @@ tests_done:
 if	?PARTIAL_SCANLINES
 	test	DeviceFlags,TYPE_IS_DEV
         jnz     calculate_for_screen       ; target is ega
-endif
-	; DI := BX * BytesPerPixel
-	mov	cl,BytesPerPixel
-@@:
-	dec	cl
-	jz	@F
-	lea	di,[bx+di]
-	jmp	@B
-
-@@:
-ife	?PARTIAL_SCANLINES
+else
 	test	DeviceFlags,TYPE_IS_DEV
         jnz     calculate_for_screen       ; target is ega
 endif
@@ -1447,6 +1433,15 @@ calculate_for_small:
 ; calculate address for byte/pixel "byte"map here
 
 calculate_for_bytemap:
+	; DI := BX * BytesPerPixel
+	mov	cl,BytesPerPixel
+@@:
+	dec	cl
+	jz	@F
+	lea	di,[bx+di]
+	jmp	@B
+
+@@:
         add     ax,di
         mov     TempCurByte,ax
         mov     TempCurByteSty,ax
