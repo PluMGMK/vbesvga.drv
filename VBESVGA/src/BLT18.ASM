@@ -43,33 +43,33 @@ blt18	PROC	NEAR
 
 	call	blt_mtoc_prep
 
-	;there is no need to check SOURCE_PRESENT because bitblt_dispatch only
-	; calls blt18 if that is already the case.
-	call	compile_mtoc_src1
+	;create a subroutine that will be called for each byte of each colour,
+	; to optimize our memory footprint and prevent overflow.
+	call	mtoc_begin_subroutine
+	push	di				;save subroutine start address
 
-	;determine how many bytes per colour to process
-	; mov	ax,[dst_xExt_bytes]
-	; cwd
-	; div	word ptr [inner_loop_count]
-	; mov	cx,ax
-	; mov	si,dx	;if we've done this right, DX (remainder) is zero!
-	mov	cx,[pxbytes]
-	xor	si,si
-blt18_colour_byte_loop:
-	push	cx
-	call	compile_mtoc_src2
-	inc	si
-	push	si
-
-@@:	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
+	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
 	je	@F				; if a pattern is used
 	call	compile_color_pattern_fetch
 
 @@:	call	compile_rop			;now do the rop
 	call	compile_mtoc_wrap
 
-	pop	si
+	pop	bx				;get back subroutine start address
+	call	mtoc_end_subroutine
+
+	;there is no need to check SOURCE_PRESENT because bitblt_dispatch only
+	; calls blt18 if that is already the case.
+	call	compile_mtoc_src1
+
+	;determine how many bytes per colour to process
+	mov	cx,[pxbytes]
+	xor	si,si
+blt18_colour_byte_loop:
+	push	cx
+	call	compile_mtoc_src2
 	pop	cx
+	inc	si
 	loop	blt18_colour_byte_loop
 
 	call	compile_mtoc_loop
@@ -107,7 +107,7 @@ blt_mtoc_prep	PROC	NEAR
 
 	test	word ptr device_flags,DEVFLAG_DST_SCREEN
 	je	@F
-	mov	ax,DestyOrg		 ; compute the starting address
+	mov	ax,DestyOrg		; compute the starting address
 	mul	word ptr dst_width_bytes
 	add	ax,DestxOrg		;fixed for bitness in bitblt_prep_final
 	adc	dx,0
@@ -116,7 +116,47 @@ blt_mtoc_prep	PROC	NEAR
 	SET_BANK
 @@:	ret
 
-blt_mtoc_prep	ENDP			;
+blt_mtoc_prep	ENDP
+
+;
+;	mtoc_begin_subroutine
+;
+;	Indicate that we are beginning the body of a subroutine.
+;	Basically all we have to do is create a near JMP to go around
+;	the subroutine until it's ready to be called. The destination of
+;	the JMP will be fixed up in mtoc_end_subroutine.
+;
+
+PUBLIC	mtoc_begin_subroutine
+mtoc_begin_subroutine	PROC	NEAR
+
+	mov	al,I_JMP_NEAR
+	stosb
+	lea	di,[di+2]		;leave two bytes for the dest
+	ret
+
+mtoc_begin_subroutine	ENDP
+
+;
+;	mtoc_end_subroutine
+;
+;	Generate the RETN instruction to end the subroutine body, and
+;	go back and fix up the JMP destination from the beginning to
+;	point at the new instruction pointer.
+;	Entry requirement: BX points at the END of the JMP instruction!
+;
+
+PUBLIC	mtoc_end_subroutine
+mtoc_end_subroutine	PROC	NEAR
+
+	mov	al,I_RET_NEAR
+	stosb
+	mov	si,di
+	sub	si,bx			;calculate delta for near JMP
+	mov	es:[bx-2],si		;slot it into the JMP instruction
+	ret
+
+mtoc_end_subroutine	ENDP
 
 ;
 ;	compile_mtoc_src1
@@ -181,10 +221,13 @@ mtoc_src2_template:
 mtoc_src2_fix2:
 	xor	al,0FFH 		;0FFH will become fgcolor
 mtoc_src2_fix3:
+	call	compile_mtoc_src2	;this will become our compiled sub
+mtoc_src2_fix1:
 
 MTOC_SRC2_LEN = $ - mtoc_src2_template
 MTOC_SRC2_FIXUP2 = $ - mtoc_src2_fix2 + 1
 MTOC_SRC2_FIXUP3 = $ - mtoc_src2_fix3 + 1
+MTOC_SRC2_FIXUP1 = $ - mtoc_src2_fix1
 
 PUBLIC	compile_mtoc_src2
 compile_mtoc_src2	PROC	NEAR
@@ -200,6 +243,13 @@ compile_mtoc_src2	PROC	NEAR
 	xor	ah,al
 	mov	es:[di - MTOC_SRC2_FIXUP2],ah
 	mov	es:[di - MTOC_SRC2_FIXUP3],al
+
+	;fixup the near call:
+	lea	ax,[di - MTOC_SRC2_FIXUP1]
+	neg	ax
+	add	ax,bx				;BX has the subroutine address
+	mov	es:[di - MTOC_SRC2_FIXUP1 - 2],ax
+
 	ret
 
 compile_mtoc_src2	ENDP			;
