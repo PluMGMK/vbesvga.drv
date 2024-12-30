@@ -44,6 +44,7 @@
 
         externA         __AHINCR            ; in KERNEL
         externA         __AHSHIFT           ; in KERNEL
+	externA  	__WinFlags          ; in KERNEL
 
         externFP        OutputDebugString   ; in KERNEL
 
@@ -52,7 +53,10 @@ ifdef EXCLUSION
         externFP        unexclude_far           ; redraw cursor
 endif
 
+	externFP	rgb_to_ipc_seq		; in RGB2IPC.ASM
+
 sBegin  Data
+	externW		ColourFormat	; in VGA.ASM
 sEnd  Data
 
 HUGE_RLE = 1
@@ -78,6 +82,8 @@ sBegin DIMapSeg
         assumes cs,DIMapSeg
         assumes ds,Data
         assumes es,nothing
+
+	externNP check_palette_trans	; in BMC_MAIN.ASM
 
 ifdef XDEBUG
 
@@ -206,6 +212,9 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
         localW  fn_decode_abs           ; function to output a abs scan
         localW  fn_decode_rle           ; function to output a solid scan
         localW  fn_next_scan            ; function to jump in Y
+	localW	fn_stos			; function to store one pixel of xlated colour
+	localW	fn_rep_stos		; function to store CX pixels of xlated colours
+	localW	fn_rep_stos_pair	; function to store CX pixels of two xlated colours
 
         localW  scan_start              ; start of current scan
 
@@ -213,11 +222,26 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
         localW  yExt                    ; blt height
 
         localV  ClipRect, %(size RECT)
-        localV  color_xlat,256          ;translate table
+        localV  color_xlat,1024         ;translate table
 
+	localW	colour_format
+
+	localB	use_palette_trans	;non-zero iff device uses a palette
         localB  cur_bank
 cBegin
         cld
+
+	; stick this on the stack since we will be using DS for the bitmap
+	mov	ax,seg ColourFormat
+	mov	ds,ax
+	assumes	ds,Data
+	mov	ax,[ColourFormat]
+	mov	[colour_format],ax
+
+	; check if we're supposed to use palette translation
+	call	check_palette_trans
+	assumes	ds,nothing		;check_palette_trans changes DS
+	mov	[use_palette_trans],ah	; RC_PALETTE is in upper byte!
 
         call    RleBltInit
         jnc     RleBltStart
@@ -304,14 +328,14 @@ RleBltDelta:
         jnz     RleBltDeltaXY
 
 RleBltDeltaX:
-        add     di,ax
+        call	adv_dest
         jmp     short RleBltNext
 
 RleBltDeltaXY:
         mov     cl,ah
         xor     ch,ch               ; cx = deltaY
         mov     ah,ch               ; ax = deltaX
-        add     di,ax               ; adjust curX
+        call	adv_dest            ; adjust curX
 ;
         mov     dx,DstY
         sub     dx,cx               ; adjust curY
@@ -326,7 +350,7 @@ RleBltDeltaYLoop:
         call    [fn_next_scan]
         loop    RleBltDeltaYLoop
         mov     scan_start,di       ; save start of scan
-        add     di,ax               ; get back curX
+        call	adv_dest            ; get back curX
         jmp     RleBltNext
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -470,11 +494,29 @@ rle_init_huge:
         mov     ax,[si].bmFillBytes
         mov     FillBytes,ax
 
-        mov     al,[si].bmBitsPixel
-        cmp     al,1
+        mov     ax,word ptr [si].bmPlanes
+        cmp     ah,1
         je      rle_init_simulate       ; let gdi handle mono bitmaps
-        cmp     al,8
+        cmp     ax,[colour_format]
         jne     rle_init_fail           ; fail other formats
+
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
+;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
+	shr	ax,8+3			; change bpp in AH to Bpp in AX
+	mov	bx,ax
+	dec	bx			; 1 Bpp --> offset zero
+	shl	bx,1			; convert index to offset
+	mov	ax,cs:stos_colour_table[bx]
+	mov	[fn_stos],ax
+	mov	ax,__WinFlags
+	test	ax,WF_CPU386 OR WF_CPU486
+	jz	@F
+	add	bx,8			; address second half of table
+@@:	; CS: prefixes required to avoid dreaded phase error between passes
+	mov	ax,cs:rep_stos_colour_table[bx]
+	mov	dx,cs:rep_stos_colpair_table[bx]
+	mov	[fn_rep_stos],ax
+	mov	[fn_rep_stos_pair],dx
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -611,19 +653,31 @@ xlate_have_num_colors:
         mov     cx,ax
         add     si,wptr [si].biSize     ; DS:SI --> color table in DIB
 
+	cmp	[use_palette_trans],0	; device uses palette?
+	jz	xlate_no_palette
+
         xor     bl,bl                   ; Bl will range from 0-255
         xor     dx,dx                   ; DX is ident mapping error
 xlate_next_color:
         lodsw                           ; get palette index from GDI
-        stosb                           ; store it on the stack
+        stosw                           ; store it on the stack
         sub     al,bl                   ; test for a 1<-->1 translate
         add     dx,ax                   ; accumulate the error
+	mov	ax,0FF00h		; indicate a palette index in the upper word
+	stosw
         inc     bl
         loop    xlate_next_color
 
         or      dx,dx
         jz      create_color_table_exit
+	jmp	set_xlat_flag
 
+xlate_no_palette:
+	mov	bl,20h			; we want 32 bits per colour in the output table
+	mov	bh,11b			; RGBQUAD --> 4 bytes input, need to swap red and blue
+	call	rgb_to_ipc_seq
+
+set_xlat_flag:
         or      BltFlags,RLE_XLAT       ; not the identity table, set the bit
 
 create_color_table_exit:
@@ -765,6 +819,42 @@ next_scan_bitmap_wrap:
 next_scan   endp
 
 ;--------------------------Private-Routine-------------------------------;
+; load_xlated_colour
+;
+; Entry:
+;	AL	- colour index
+;       SS:BX   - colour table (four bytes each)
+; Return:
+;       DX:AX	- translated physical colour
+; Error Returns:
+;       none
+; Registers Preserved:
+;       AX,BX,DX,DS,ES,SI
+; Registers Destroyed:
+;       CX,FLAGS,DI
+; Calls:
+;       none
+; History:
+;       Mon 26-Mar-1990 -by-  Todd Laney [ToddLa]
+;-----------------------------------------------------------------------;
+        assumes ds,nothing
+        assumes es,nothing
+
+        public  load_xlated_colour
+load_xlated_colour   proc near
+
+	push	bx	; save this
+	xor	ah,ah	; ensure AX == index
+	shl	ax,2	; convert index to offset in pcolour table
+	add	bx,ax	; get the offset of the colour in SS
+	mov	ax,ss:[bx]
+	mov	dx,ss:[bx+2]
+	pop	bx	; restore base pointer of table
+        ret
+
+load_xlated_colour   endp
+
+;--------------------------Private-Routine-------------------------------;
 ; decode_abs_8
 ;
 ; Entry:
@@ -799,7 +889,7 @@ decode_abs_8_clip_huge:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8_huge
 
-        add     di,ax
+        call	adv_dest
 
 @@:     add     si,ax
         jnc     @f
@@ -809,8 +899,9 @@ decode_abs_8_clip_huge:
 
 @@:     jcxz    @f
         call    decode_abs_8_huge
-        add     di,dx
-        add     si,dx
+	mov	ax,dx
+        call	adv_dest
+        add     si,ax
         jnc     @f
         mov     ax,ds
         add     ax,__AHINCR
@@ -821,12 +912,13 @@ decode_abs_8_clip:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8
 
-        add     di,ax
+        call	adv_dest
         add     si,ax
         jcxz    @f
         call    decode_abs_8
-        add     di,dx
-        add     si,dx
+        mov     ax,dx
+        call	adv_dest
+        add     si,ax
 @@:     ret
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -860,7 +952,7 @@ decode_abs_8_clip_xlat_huge:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8_xlat_huge
 
-        add     di,ax               ; update dest
+        call	adv_dest            ; update dest
 
 @@:     add     si,ax
         jnc     @f
@@ -870,8 +962,9 @@ decode_abs_8_clip_xlat_huge:
 
 @@:     jcxz    @f
         call    decode_abs_8_xlat_huge
-        add     di,dx
-        add     si,dx
+	mov	ax,dx
+        call	adv_dest
+        add     si,ax
         jnc     @f
         mov     ax,ds
         add     ax,__AHINCR
@@ -881,12 +974,13 @@ decode_abs_8_clip_xlat_huge:
 decode_abs_8_clip_xlat:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8_xlat
-        add     di,ax               ; update dest
+        call	adv_dest            ; update dest
         add     si,ax
         jcxz    @f
         call    decode_abs_8_xlat
-        add     di,dx
-        add     si,dx
+	mov	ax,dx
+        call	adv_dest            ; update dest
+        add     si,ax
 @@:     ret
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -897,42 +991,23 @@ decode_abs_8_xlat_huge:
         jc      decode_abs_8_xlat_ack
 
 decode_abs_8_xlat:
-decode_abs_8_xlat_start:
-        test    di,0001h
-        jz      @f
-
-        lodsb
-        xlat    ss:[bx]
-        stosb
-
-        dec     cx
-@@:     shr     cx,1
-        jz      decode_abs_8_xlat_end
-
+	push	dx	; save this in case we're called from clip version
 decode_abs_8_xlat_loop:
-        lodsw
+        lodsb
 
-        xchg    al,ah
-        xlat    ss:[bx]
-        xchg    al,ah
-        xlat    ss:[bx]
+        call	load_xlated_colour
+        call	[fn_stos]
 
-        stosw
         loop    decode_abs_8_xlat_loop
 
-decode_abs_8_xlat_end:
-        jnc     decode_abs_8_xlat_exit
-        lodsb
-        xlat    ss:[bx]
-        stosb
-
 decode_abs_8_xlat_exit:
+	pop	dx
         ret
 
 decode_abs_8_xlat_ack:
         sub     cx,ax
         push    ax
-        call    decode_abs_8_xlat_start
+        call    decode_abs_8_xlat
 
         mov     ax,ds
         add     ax,__AHINCR
@@ -940,7 +1015,7 @@ decode_abs_8_xlat_ack:
 
         pop     cx
         jcxz    decode_abs_8_xlat_exit
-        jmps    decode_abs_8_xlat_start
+        jmps    decode_abs_8_xlat
 
 decode_abs8  endp
 
@@ -982,7 +1057,7 @@ decode_abs_4_clip:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_4
 
-        add     di,ax               ; advance dest
+        call	adv_dest            ; advance dest
 
         shr     ax,1                ; test for a odd nibble clip!
         jnc     decode_abs_4_clip_even
@@ -996,8 +1071,10 @@ decode_abs_4_clip:
 @@:	lodsb			; Remember to get the extra nibble
         jcxz    decode_abs_4_clip_exit
         and     al,0Fh
-        xlat    ss:[bx]
-        stosb
+	push	dx
+	call	load_xlated_colour
+        call	[fn_stos]
+	pop	dx
         loop    decode_abs_4_clip_out
         ret
 
@@ -1016,7 +1093,8 @@ decode_abs_4_clip_out:
         adc     ax,si
         push    ax
         call    decode_abs_4
-        add     di,dx
+	mov	ax,dx
+        call	adv_dest
         mov     ax,si
         pop     si
         cmp     si,ax
@@ -1044,16 +1122,24 @@ decode_abs_4_start:
         shr     cx,1
         jcxz    decode_abs_4_no_loop
 
+	push	dx	; save this in case we're called from clip version
 decode_abs_4_loop:
         lodsb
         mov     ah,al
-        and     al,0Fh
-        xlat    ss:[bx]
-        xchg    al,ah
         shr     al,4
-        xlat    ss:[bx]
-        stosw
+
+        push	ax
+	call	load_xlated_colour
+        call	[fn_stos]
+	pop	ax
+
+        xchg    al,ah
+        and     al,0Fh
+	call	load_xlated_colour
+        call	[fn_stos]
+
         loop    decode_abs_4_loop
+	pop	dx
 
 decode_abs_4_no_loop:
         pop     ax
@@ -1066,8 +1152,10 @@ decode_abs_exit:
 decode_abs_4_odd:
         lodsb
         shr     al,4
-        xlat    ss:[bx]
-        stosb
+	push	dx	; save this in case we're called from clip version
+	call	load_xlated_colour
+        call	[fn_stos]
+	pop	dx
         ret
 
 decode_abs_4_ack:
@@ -1119,23 +1207,29 @@ decode_rle8  proc near
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 decode_rle_8_clip_xlat:
-        xlat    ss:[bx]
+        call	load_xlated_colour
 decode_rle_8_clip:
+	push	bx
+	push	dx
         push    ax
         call    clip_rle
-        add     di,ax
+        call	adv_dest
+	mov	bx,dx	; save second clip retval in BX
         pop     ax
+	pop	dx
         jcxz    @f
-        REPSTOSB
-        add     di,dx
-@@:     ret
+        call	[fn_rep_stos]
+	mov	ax,bx
+        call	adv_dest
+@@:	pop	bx
+	ret
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 decode_rle_8_xlat:
-        xlat    ss:[bx]
+        call	load_xlated_colour
 decode_rle_8:
-        REPSTOSB
+        call	[fn_rep_stos]
         ret
 
 decode_rle8  endp
@@ -1171,20 +1265,22 @@ decode_rle4  proc near
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 decode_rle_4_clip_xlat:
+	; translation is unconditional as we will always have at least
+	; 256 colours, i.e. more than 16, so it can't be a 1:1 map.
 decode_rle_4_clip:
         push    ax
         call    clip_rle
         jnc     decode_rle_4_not_clipped
 
-        add     di,ax
+        call	adv_dest
 
-@@:     shr     ax,1
         pop     ax
         jnc     @f
         rol     al,4
 @@:     jcxz    @f
         call    decode_rle_4_xlat
-        add     di,dx
+	mov	ax,dx
+        call	adv_dest
 @@:     ret
 
 decode_rle_4_not_clipped:
@@ -1195,26 +1291,39 @@ decode_rle_4_not_clipped:
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 decode_rle_4_xlat:
+	; translation is unconditional as we will always have at least
+	; 256 colours, i.e. more than 16, so it can't be a 1:1 map.
 decode_rle_4:
+	push	bp
+	push	bx
+	push	dx	; save this in case we're called from clip version
+
+	; load this pointer before we trash BP!
+	push	offset decode_rle_4_ret
+	push	[fn_rep_stos_pair]
+
         mov     ah,al
         and     al,0Fh
         shr     ah,4
-        xlat    ss:[bx]
-        xchg    al,ah
-        xlat    ss:[bx]
+	mov	bp,ax	; backup the left colour
+        call	load_xlated_colour
+
+	push	dx
+	push	ax
+	mov	ax,bp	; get back the left colour
+	mov	al,ah	; put it in AL
+        call	load_xlated_colour
+	pop	bx
+	pop	bp
+	; now the right colour is in BP:BX and the left in DX:AX!
 
 decode_rle_4_1:
-        test    di,0001h
-        jz      @f
-        stosb
-        xchg    al,ah
-        dec     cx
-@@:     shr     cx,1
-        rep     stosw
-        adc     cl,cl
-        rep     stosb
+        ret	; this "returns" to fn_rep_stos_pair, which then returns to:
 
 decode_rle_4_ret:
+	pop	dx
+	pop	bx
+	pop	bp
         ret
 
 decode_rle4  endp
@@ -1290,7 +1399,13 @@ clip_rle  proc near
 ;   check the span for being totaly clipped (in X) region 2 or 4
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
         mov     ax,di                   ; get screen pointer
-        sub     ax,scan_start           ; convert into curX
+        sub     ax,scan_start           ; convert into curX in bytes
+
+	push	cx
+	mov	cx,[colour_format]
+	shr	cx,8+3			; convert bpp in DH to Bpp in DX
+	div	cx			; convert into curX in pixels
+	pop	cx
 
         cmp     ax,ClipRect.right       ; check for region-2
         jge     clip_rle_invisible
@@ -1340,6 +1455,346 @@ clip_rle_clipped:
 
 clip_rle  endp
 
+; advance the pointer ES:DI by AX *pixels*
+adv_dest  proc near
+	add	di,ax
+	cmp	colour_format[1],8	; more than 8bpp?
+	jng	@F
+
+	add	di,ax
+	cmp	colour_format[1],16	; more than 16bpp?
+	jng	@F
+
+	add	di,ax
+	cmp	colour_format[1],24	; more than 24bpp?
+	jng	@F
+
+	add	di,ax
+@@:	ret
+adv_dest  endp
+
+;--------------------------Public-Routine------------------------------;
+; stos_colour
+;
+;   Write one pixel of colour in DX:AX
+;
+; Entry:
+;       DX:AX	= physical colour
+;	ES:DI --> colour pattern destination (64*bpp bytes)
+; Returns:
+;       None
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP,BX,DX,SI
+; Registers Destroyed:
+;       AX,CX,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+stos_colour1	proc near
+	stosb
+	ret
+stos_colour1	endp
+
+stos_colour2	proc near
+	stosw
+	ret
+stos_colour2	endp
+
+stos_colour3	proc near
+	stosw
+	mov	al,dl
+	stosb
+	ret
+stos_colour3	endp
+
+stos_colour4	proc near
+	stosw
+	mov	ax,dx
+	stosw
+	ret
+stos_colour4	endp
+
+;--------------------------Public-Routine------------------------------;
+; rep_stos_colour
+;
+;   Write CX pixels of colour in DX:AX
+;
+; Entry:
+;       DX:AX	= physical colour
+;	CX	= number of desired pixels
+;	ES:DI --> colour pattern destination (64*bpp bytes)
+; Returns:
+;       None
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP,BX,DX,SI
+; Registers Destroyed:
+;       AX,CX,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+rep_stos_colour1	proc near
+	REPSTOSB
+	ret
+rep_stos_colour1	endp
+
+rep_stos_colour2	proc near
+	; no need to check alignment because a 16-bit bitmap
+	; will always have pixels on 16-bit boundaries
+	rep	stosw
+@@:	ret
+rep_stos_colour2	endp
+
+rep_stos_colour3	proc near
+	jcxz	@B	; go back to the ret above
+@@:	stosw
+	xchg	al,dl
+	stosb
+	xchg	al,dl
+	loop	@B
+@@:	ret
+rep_stos_colour3	endp
+
+rep_stos_colour4_286	proc near
+	jcxz	@B	; go back to the ret above
+@@:	stosw
+	xchg	ax,dx
+	stosw
+	xchg	ax,dx
+	loop	@B
+@@:	ret
+rep_stos_colour4_286	endp
+
+rep_stos_colour4_386	proc near
+	jcxz	@B	; go back to the ret above
+	.386
+	ror	eax,10h
+	xchg	ax,dx	; stash the upper half of EAX in DX
+	ror	eax,10h
+
+	rep	stosd
+
+	ror	eax,10h
+	xchg	ax,dx	; restore the upper half of EAX from DX
+	ror	eax,10h
+	.8086
+	ret
+rep_stos_colour4_386	endp
+
+;--------------------------Public-Routine------------------------------;
+; rep_stos_colpair
+;
+;   Write CX pixels of alternating colours in DX:AX and BP:BX
+;
+; Entry:
+;       DX:AX	= physical colour for first pixel
+;	BP:BX	= physical colour for second pixel
+;	CX	= number of desired pixels
+;	ES:DI --> colpair pattern destination (64*bpp bytes)
+; Returns:
+;       None
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP,BX,DX,SI
+; Registers Destroyed:
+;       AX,CX,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+rep_stos_colpair1	proc near
+	cmp	al,bl	; colours the same?
+	je	rep_stos_colour1
+
+	mov	ah,bl
+	test	di,1	; check alignment
+	jz	@F
+	stosb
+	xchg	ah,al
+	dec	cx
+@@:	shr	cx,1
+	rep	stosw
+	adc	cl,cl	; get back the bit we shifted out
+	rep	stosb
+
+@@:	ret
+rep_stos_colpair1	endp
+
+rep_stos_colpair2_286	proc near
+	cmp	ax,bx	; colours the same?
+	je	rep_stos_colour2
+
+	mov	dx,ax
+	shr	cx,1
+	; if an even number, go straight to the 32-bit routine
+	jnc	rep_stos_colour4_286
+	; if odd, do one pixel, then swap order and go 32-bit for the rest
+	stosw
+	xchg	ax,dx
+	jmp	rep_stos_colour4_286
+rep_stos_colpair2_286	endp
+
+rep_stos_colpair2_386	proc near
+	cmp	ax,bx	; colours the same?
+	je	rep_stos_colour2
+
+	mov	dx,ax
+	shr	cx,1
+	; if an even number, go straight to the 32-bit routine
+	jnc	rep_stos_colour4_386
+	; if odd, do one pixel, then swap order and go 32-bit for the rest
+	stosw
+	xchg	ax,dx
+	jmp	rep_stos_colour4_386
+rep_stos_colpair2_386	endp
+
+; placing colpair4 before colpair3 to allow short jumps to colour4
+rep_stos_colpair4_286	proc near
+	jcxz	@B	; go back to the ret above (in colpair1)
+
+	cmp	ax,bx	; colours the same?
+	jne	@F
+	cmp	dx,bp
+	je	rep_stos_colour4_286
+
+	shl	cx,1
+@@:	stosw
+	xchg	dx,ax
+	xchg	bx,dx
+	xchg	bp,bx
+	loop	@B
+@@:	ret
+rep_stos_colpair4_286	endp
+
+rep_stos_colpair4_386	proc near
+	jcxz	@B	; go back to the ret above
+
+	cmp	ax,bx	; colours the same?
+	jne	@F
+	cmp	dx,bp
+	je	rep_stos_colour4_386
+
+@@:	.386
+	ror	eax,10h
+	xchg	ax,dx	; stash the upper half of EAX in DX
+	ror	eax,10h
+	ror	ebx,10h
+	xchg	bx,bp	; stash the upper half of EBX in BP
+	ror	ebx,10h
+
+@@:	stosd
+	xchg	eax,ebx
+	stosd
+	xchg	eax,ebx
+	loop	@B
+
+	ror	ebx,10h
+	xchg	bx,bp	; restore the upper half of EBX from BP
+	ror	ebx,10h
+	ror	eax,10h
+	xchg	ax,dx	; restore the upper half of EAX from DX
+	ror	eax,10h
+	.8086
+	ret
+rep_stos_colpair4_386	endp
+
+rep_stos_colpair3	proc near
+	; We want to store DL:AX followed by BPL:BX (BPL is not a thing on IA-32)...
+	; Let's turn it into BX:DX:AX so it can be a nice stream of STOSWs
+	mov	dh,bl
+	xor	bl,bl
+	and	bp,0FFh
+	or	bx,bp
+	xchg	bl,bh
+
+	test	cx,1	; odd number?
+	jz	@F
+	stosw
+	xchg	dl,al
+	stosb
+	; swap order
+	xchg	bh,al	; since we just did XCHG DL,AL above!
+	xchg	bl,ah
+	xchg	dh,dl
+
+@@:	; multiply CX by 3/2
+	mov	bp,cx
+	shr	bp,1
+	add	cx,bp
+
+	; FIXME: this could all end up being misaligned...
+@@:	stosw
+	xchg	dx,ax
+	xchg	bx,dx
+	loop	@B
+	ret
+rep_stos_colpair3	endp
+
+stos_colour_table	label word
+	dw	offset	stos_colour1
+	dw	offset	stos_colour2
+	dw	offset	stos_colour3
+	dw	offset	stos_colour4
+rep_stos_colour_table	label word
+	dw	offset	rep_stos_colour1
+	dw	offset	rep_stos_colour2
+	dw	offset	rep_stos_colour3
+	dw	offset	rep_stos_colour4_286
+	dw	offset	rep_stos_colour1
+	dw	offset	rep_stos_colour2
+	dw	offset	rep_stos_colour3
+	dw	offset	rep_stos_colour4_386
+rep_stos_colpair_table	label word
+	dw	offset	rep_stos_colpair1
+	dw	offset	rep_stos_colpair2_286
+	dw	offset	rep_stos_colpair3
+	dw	offset	rep_stos_colpair4_286
+	dw	offset	rep_stos_colpair1
+	dw	offset	rep_stos_colpair2_386
+	dw	offset	rep_stos_colpair3
+	dw	offset	rep_stos_colpair4_386
+
 sEnd
 end
-
