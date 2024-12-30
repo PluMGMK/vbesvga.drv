@@ -485,7 +485,7 @@ realize_brush   endp
 ; Registers Preserved:
 ;       CX,SI,DI,DS,ES
 ; Registers Destroyed:
-;       CX,FLAGS
+;       FLAGS
 ; Calls:
 ;       None
 ; History:
@@ -999,7 +999,6 @@ realize_hatch   proc near
 
 realize_hatch_actual:
 	push	ds
-	push	cx
 	push	bp
 
 	; A lot of spillage here! It is impossible to keep this many 32-bit
@@ -1019,7 +1018,6 @@ realize_hatch_actual:
 	push	dx
 	push	ax
 
-	pop	cx
 	mov	si,cx			; Compute address of hatch pattern
 	shiftl	si,3
 	lea	si,hatched_brushes[si]	; bx --> hatch pattern to use
