@@ -9,7 +9,7 @@ RES_DIR=.\messages\$(LANG)
 
 # comment this definition out with a "#", if building a non-debugging version
 Debug=-DDEBUG
-Version=-DVGA -DVGA31 -DSysVMin2ndBank 
+Version=-DVGA -DVGA31
 
 MASMOBJ=masm5 -p -w2 -Mx $(Version) $(Debug) -I..\include 
 MASMLST=masm5 -l -p -w2 -Mx $(Version) $(Debug) -I..\include 
@@ -87,8 +87,8 @@ vddvga.386: iclean vddvga.def $(OBJS)
         addhdr vddvga.386
         mapsym32 vddvga
 
-        copy vddvga.386 vbevdd.386 
-        copy vddvga.sym vbevdd.sym 
+        copy vddvga.386 vddvbe.386 
+        copy vddvga.sym vddvbe.sym 
         del vddvga.386            
         del vddvga.sym            
 iclean: 
