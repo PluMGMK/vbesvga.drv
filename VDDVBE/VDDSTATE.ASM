@@ -2486,7 +2486,7 @@ EndProc VDD_State_Internal_Set_MemC_Planar
 ;==============================================================================
 BeginProc VDD_State_Set_Message_Mode, PUBLIC
 
-;;Trace_Out "Set_Mesg #EBX"
+	Trace_Out "Set_Mesg #EBX"
 	pushad
 	bts	[Vid_Flags], bVid_MsgA
 	jc	DEBFAR VS_SMM_Reentered

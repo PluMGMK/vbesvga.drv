@@ -430,6 +430,13 @@ Reg_State_Struc 	ENDS
 
 .errnz	(SIZE Reg_State_Struc) MOD 4	; make sure struc is dword aligned
 
+VBE_Reg_Struc	STRUC
+VBE_VidModeP1	DW	?		; BX value from int 10h 4F02h, plus one!
+; TODO: Add VBE3 CRTC struct here
+VBE_Reg_Struc	ENDS
+
+.ERRE	((SIZE VBE_Reg_Struc) LE  Extended_Reg_Size)
+
 IFDEF CLVGA
 
 CL_ER_START     equ     80h
@@ -764,7 +771,11 @@ DefFlag VT_CLVGA	    21	; Cirrus Logic VGA, 0ECh enable (more regs)
 DefFlag VT_CLVGA_RevC	    22	; Cirrus Logic 610/620 chip set Rev C
 				;   (this bit will only be set, if VT_CLVGA is)
 DefFlag VT_V7VGA	    23	; Video 7 VGA (more regs)
+ifdef	VGA8514
 DefFlag VT_8514 	    24	; IBM 8514
+else
+DefFlag	VT_VBESVGA	    24	; VBE detected, we can run VBE code
+endif
 DefFlag VT_XGAbit	    25	; Set for machines where IBM has redefined the
 				;   meaning of bit 6 of CRT.17h.  Normally
 				;   this bit selects byte/word addressing for

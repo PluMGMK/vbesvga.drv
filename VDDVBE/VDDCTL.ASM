@@ -252,7 +252,11 @@ IFDEF DEBUG
 mVT_trident	equ fVT_TVGA+fVT_TVGA9100
 mVT_ATI 	equ fVT_ATIVGA+fVT_ATIVGA3
 mVT_CLV7	equ fVT_CLVGA+fVT_CLVGA_RevC+fVT_V7VGA
+ifdef	VGA8514
 mVT_IBM 	equ fVT_8514+fVT_XGAbit
+else
+mVT_IBM 	equ fVT_VBESVGA+fVT_XGAbit
+endif
 mVT_paradise	equ fVT_PVGA+fVT_PVGA1F
 mVT_tsenglabs	equ fVT_TLVGA+fVT_TL_ET4000
 
@@ -320,7 +324,7 @@ ENDIF
 	mov	eax, 16 			;   N: force 16 pages
 
 sci_set_vp:
-	Trace_Out 'Video_Pages=#ax'
+	;Trace_Out 'Video_Pages=#ax'
 	mov	[Video_Pages], eax
 
 	xor	dl, dl
@@ -968,6 +972,19 @@ IFDEF VGAMONO
 VSI_Colr:
 ELSE
 	mov	dx,pStatColr
+ENDIF
+
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	; check if VBE modeset is supported
+	int	3
+	mov	ax,4F03h	; get current video mode
+	int	10h
+	cmp	al,4Fh		; function supported?
+	jne	@F
+
+	mov	edx,fVT_VBESVGA
+	jmp	VRI_Exit	; don't detect anything else!
+@@:
 ENDIF
 
 IFDEF	GENVGA

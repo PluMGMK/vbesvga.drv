@@ -532,6 +532,8 @@ BeginProc   VDD_Int_10
 	je	VI10TTY		    	    ;	Y: No TTY to emulate
 	or	ah,ah			    ; Q: Mode setting?
 	jz	SHORT VI10_mode 	    ;	 Y: notify VDD and reflect
+	cmp	ax,4F02h		    ; Q: Mode setting?
+	jz	SHORT VI10_mode 	    ;	 Y: notify VDD and reflect
 	cmp	ah,11h			    ; Q: Mode setting(via char set chg)?
 	jnz	SHORT VI10_Reflect	    ;	N: reflect
 	cmp	al,3			    ; Q: Set char map
@@ -1240,13 +1242,15 @@ BeginProc VDD_Int_10_Mode_Sw_Done
 ; INT 10 trap instead of breakpoint.
 PUBLIC VDD_Int_10_Mode_Change_End
 VDD_Int_10_Mode_Change_End:
+	; this has to happen first to satisfy function contract for
+	; VDD_OEM_Mode_Switch_Done below!
+	VMMCall Get_Cur_VM_Handle
+	SetVDDPtr edi
+
 	call	VDD_OEM_Mode_Switch_Done
 
 	TestMem [Vid_Flags], fVid_SysVMI	; Q: SYS VM initialized?
 	jz	SHORT VIR_exit			;   N: ignore the mode switch
-
-	VMMCall Get_Cur_VM_Handle
-	SetVDDPtr edi
 
 	btr	[edi.VDD_Flags],bVDD_PageChg	; Q: end of page change?
 	jc	SHORT VIR_Change_Done		;   Y: Adjust mem and trapping

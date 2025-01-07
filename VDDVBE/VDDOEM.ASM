@@ -27,6 +27,7 @@ VxD_Data_SEG
 EXTRN	Vid_Flags:DWORD
 EXTRN	VT_Flags:DWORD
 EXTRN	Vid_CB_Off:DWORD
+EXTRN	Vid_Focus_VM:DWORD
 EXTRN	Vid_CRTC_VM:DWORD
 EXTRN	Vid_MemC_VM:DWORD
 
@@ -151,6 +152,10 @@ IFDEF	DEBUG
 EXTRN	VDD_Reg_Dump:NEAR
 ENDIF
 EXTRN	VDD_State_Get_CRTC_Index_Port:NEAR
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+EXTRN	VDD_State_Get_Mode:NEAR
+EXTRN	VDD_State_Set_Mode:NEAR
+ENDIF	;VGA8514
 VxD_Code_ENDS
 
 
@@ -466,29 +471,25 @@ EndProc VDD_OEM_Chk_Cursor
 ;
 ;==============================================================================
 BeginProc VDD_OEM_Mode_Switch_Done
-IF  0	    ; Too much code to put in general VGA VDD - machine speed specific!
-ifdef TLVGA
-	;[this affects ET3000 only]
-	;check if wrong interlaced/non-intl mode 37 just got set
-	;this could happen because Windows in 386-enhanced mode causes the
-	; bios's timing check for whether there is a 45 or 65 MHz clock
-	; present not to work
-	TestMem [edi.VDD_TFlags],fVT_TLVGA	    ;test if ET3000
-	jz	short VIR_4
-	push	eax
-	BEGIN_Touch_1st_Meg
-	cmp	byte ptr ds:[0449h],037h	;check if mode 37 was just set
-	END_Touch_1st_Meg
-	jne	short VIR_2			;if not, do nothing
-	call	tst_45_65		;rets AL=0/1 if have 45 or 65 MHz clock
-					;rets AH=0/1 if intl/non-intl set now
-	cmp	al,ah
-	je	short VIR_2		;if AL=AH, is set right: do nothing
-	call	fix_mode37	;fix params for correct mode 37 (pass AL)
-VIR_2:
-	pop	eax
-VIR_4:
-endif ;TLVGA
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	short msd_not_vbe
+
+	Assert_Client_Ptr ebp
+	int	3
+	mov	ax,[ebp.Client_AX]
+	cmp	al,4Fh			;Q: attempted VBE modeset?
+	je	short @F		;   Y: go check status
+	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;N: indicate non-VBE mode
+	ret
+
+@@:	test	ah,ah			;Q: was modeset successful?
+	jnz	short msd_not_vbe	;   N: do nothing
+	mov	ax,[ebp.Client_BX]	;   Y: get the mode
+	inc	ax			; Store mode+1 so zero always means "invalid"
+	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
+
+msd_not_vbe:
 ENDIF
 	ret
 EndProc VDD_OEM_Mode_Switch_Done
@@ -570,6 +571,108 @@ VSRR_TurnOnVGA:
 	mov	ax,6				;set misc I/O back to VGA
 	mov	dx,4ae8h
 	out	dx,ax
+
+ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	oce_not_vbe
+
+	; if the VM we're switching to is in a NON-VBE MODE, then use
+	; int 10h AH=00h to reset the mode and ensure the device is
+	; in a VGA-compatible state
+	int	3
+	xor	cl,cl
+	push	ebp
+	push	ebx
+	; ensure we have a valid client pointer to use for modeset calls
+	cmp	ebx,[Vid_Msg_Pseudo_VM]
+	je	short @F
+	test	ebx,ebx
+	jnz	short oce_have_vm
+@@:	; if the VDD or message mode is getting control of CRTC, then
+	; the system VM is appropriate for this call
+	VMMcall	Get_Sys_VM_Handle
+	; tell the System VM it's already in a modeset to avoid running
+	; a load of code that will endup sending it an fg notification
+	; and undoing all the work we've done here!
+	push	edi
+	SetVDDPtr edi
+	bts	[edi.VDD_Flags],bVDD_ModeSet
+	; use CL to indicate if we need to reset this flag afterwards
+	cmc	;set CF iff sysVM wasn't already in a modeset
+	setc	cl
+	pop	edi
+oce_have_vm:
+	mov	ebp,[ebx.CB_Client_Pointer]
+	pop	ebx
+
+	mov	ax,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
+	dec	ax			; we stored mode+1
+	cmp	ax,-1			; so now -1 means "invalid"
+	jnz	short set_vbe_mode
+	; determine the non-VBE mode from the saved state...
+	call	VDD_State_Get_Mode
+	test	ah,ah			;Q: valid mode?
+	jnz	short @F		;   N: skip modeset
+	; then call the BIOS to reset the VGA to that mode!
+	; can't use VDD_State_Set_Mode because it may be swapped out
+	; at this point!
+	Push_Client_State
+	VMMcall Begin_Nest_Exec 	; Get ready for software ints
+	mov	[ebp.Client_AX], AX	; Set mode
+	mov	eax,10h
+	VMMcall Exec_Int
+	VMMcall End_Nest_Exec		; All done with software ints
+	Pop_Client_State
+@@:	pop	ebp
+	; now check if we need to unset the modeset flag on the sysVM:
+	test	cl,cl
+	jz	oce_not_vbe	; if not, continue on...
+
+	push	ebx
+	push	edi
+	VMMcall	Get_Sys_VM_Handle
+	SetVDDPtr edi
+	btr	[edi.VDD_Flags],bVDD_ModeSet
+	pop	edi
+	pop	ebx
+	jmp	short oce_not_vbe
+
+set_vbe_mode:
+	; if VM knows how to restore their own state, then skip
+	TestMem [edi.VDD_Flags], fVDD_CanRestore
+	jnz	short @F
+
+	; just use the BIOS to set the mode...
+	Push_Client_State
+	VMMcall Begin_Nest_Exec 	; Get ready for software ints
+	mov	[ebp.Client_AX], 4F02h	; Set mode
+	or	ah,80h			; Preserve RAM (prevent PFaults)
+	mov	[ebp.Client_BX], AX
+	; TODO: handle VBE3.0 custom CRTC struct
+	mov	eax,10h
+	VMMcall Exec_Int
+	VMMcall End_Nest_Exec		; All done with software ints
+	Pop_Client_State
+
+@@:	pop	ebp
+	; now check if we need to unset the modeset flag on the sysVM:
+	test	cl,cl
+	jz	short @F		; if not, we're finished
+	push	ebx
+	push	edi
+	VMMcall	Get_Sys_VM_Handle
+	SetVDDPtr edi
+	btr	[edi.VDD_Flags],bVDD_ModeSet
+	pop	edi
+	pop	ebx
+
+@@:	; we're done, the state is fully restored
+	pop	edx
+	stc
+	ret
+
+oce_not_vbe:
 ENDIF	;VGA8514
 
 IFDEF Handle_VGAEnable
