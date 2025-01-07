@@ -27,17 +27,24 @@ This screenshot showcases the True Colour rendering capability, in the Windows-X
 
 ## Building
 
+Thanks to @lss4 for [pointing out some omissions](https://github.com/PluMGMK/vbesvga.drv/issues/19) in the setup process!
+
+Note that the only step below which requires Windows is the initial installation of Visual C++ - the build process itself is purely DOS-based and can be automated using a batch file (or a Dosbox configuration file on a modern system!).
+
 ### `vbesvga.drv` (needed in both Standard and 386 Enhanced Mode)
 
 * Install both the [Win16 DDK](http://www.win3x.org/win3board/viewtopic.php?t=2776) and [a contemporary version of Visual C++](http://www.win3x.org/win3board/viewtopic.php?t=1375)
+* Obtain a copy of `EXE2BIN.EXE` (e.g. from FreeDOS, or from the Open Watcom compiler) and place it somewhere in your `PATH`
 * Place the `VBESVGA` folder from this repository in the DDK hierarchy, at `286/DISPLAY/8PLANE/VBESVGA`
-* Ensure `286\TOOLS` from the DDK and `MSVC\BIN` from Visual C++ are in your `PATH`
+* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
+* In addition, ensure `286\TOOLS` from the DDK is in your `PATH` and `286\INC` is in your `INCLUDE` variable
 * Go to the `VBESVGA\mak` folder and run `make vbesvga.mak`; this should create the file `VBESVGA.DRV` which can be loaded by Windows
 
 ### `vddvbe.386` (needed only in 386 Enhanced Mode)
 
 * Place the `VDDVBE` folder from this repository in the DDK hierarchy, at `386/VDDVBE`
-* Ensure `386\TOOLS` from the DDK and `MSVC\BIN` from Visual C++ are in your `PATH`
+* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
+* In addition, ensure `386\TOOLS` from the DDK is in your `PATH`
 * Go to the `VDDVBE` folder and run `nmake`; this should create the file `VDDVBE.386` which can be loaded by Windows
 
 ### Tip for using the DDK on a modern system
@@ -116,3 +123,38 @@ When Windows boots, the driver queries the BIOS for available modes, and automat
 The driver searches for linear modes first, and if it can't find any (or the system can't support them), it goes back and looks for bank-switching modes. If it can't find any mode matching the above criteria, it will switch the display back to text mode, print an error message and return to DOS.
 
 Note that this automatic search is currently the only way the driver selects modes: you cannot give it a specific VESA mode number to use.
+
+### Having trouble finding compatible modes?
+
+Ideally the driver would be able to list out all the modes it tries, and indicate what makes each one (un)suitable. But this would make the `FindMode` function even more convoluted, possibly to the point of needing a rewrite!
+
+In the meantime, the `VIDMODES.COM` tool included in the latest release can list the available modes on your system to give some idea of what settings to try. Example output:
+```
+Your card: 
+(C) 1988-2018, Advanced Micro Devices, Inc. NAVI14 01.00
+
+Available modes:
+0110: 640*480*16
+0111: 640*480*16
+0113: 800*600*16
+0114: 800*600*16
+0116: 1024*768*16
+0117: 1024*768*16
+0119: 1280*1024*16
+011A: 1280*1024*16
+0165: 1280*960*16
+0166: 1280*960*32
+0121: 640*480*32
+0122: 800*600*32
+0123: 1024*768*32
+0124: 1280*1024*32
+0145: 1400*1050*16
+0146: 1400*1050*32
+0175: 1600*1200*16
+0176: 1600*1200*32
+01D2: 1920*1080*16
+01D4: 1920*1080*32
+01D8: 1280*720*16
+01D9: 1280*720*32
+```
+Note that this lists the total depths, so further experimentation may be needed to find the correct significant depth.
