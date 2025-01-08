@@ -1145,7 +1145,13 @@ BeginProc VDD_Int_10_Mode_Switch
 	inc	[ebp.Client_IP] 		; inc past the brkpt
 	SetVDDPtr edi
 	cmp	[ebp.Client_AH],05
-	jz	short VI10_Page_Change
+	jz	VI10_Page_Change
+
+	bt	[edi.VDD_Flags],bVDD_ModeSet	; Q: Already doing mode set?
+	jnc	short VDD_Int_10_Mode_Change_Start
+	; if we're already modesetting, then skip over the second breakpoint!
+	mov	eax,(VIS_jmp-1) - (VIS_start_bp+1)
+	add	[ebp.Client_IP],ax
 
 ; This entry point is used by the INT 10h trapping code
 PUBLIC VDD_Int_10_Mode_Change_Start

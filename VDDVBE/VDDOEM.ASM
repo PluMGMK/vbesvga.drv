@@ -476,7 +476,6 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	jz	short msd_not_vbe
 
 	Assert_Client_Ptr ebp
-	int	3
 	mov	ax,[ebp.Client_AX]
 	cmp	al,4Fh			;Q: attempted VBE modeset?
 	je	short @F		;   Y: go check status
@@ -522,6 +521,59 @@ BeginProc VDD_OEM_VGA_Off
 	ret
 
 EndProc VDD_OEM_VGA_Off
+
+ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+
+;******************************************************************************
+;
+;   VDD_OEM_Set_Mode_Nested
+;
+;   DESCRIPTION:    use int10h to set the VBE/VGA mode, pre-setting modeset
+;		    flag to ensure that we don't accidentally trap the call,
+;		    or anything that happens inside it.
+;
+;   ENTRY:	    AX = desired mode
+;		    CF = set to use VBE modeset, clear to use old BIOS
+;		    EBP -> Client register structure
+;		    EDI -> VDD CB data
+;
+;   EXIT:	    none
+;
+;   USES:	    ECX, EDX, Flags
+;
+;==============================================================================
+BeginProc VDD_OEM_Set_Mode_Nested
+
+	setc	cl			; save carry flag
+	Push_Client_State
+
+	test	cl,cl			; carry flag was set?
+	jnz	@F
+	mov	[ebp.Client_AX], AX	; Set mode (AH=0)
+	jmp	smn_regs_setup
+
+@@:	mov	[ebp.Client_AX], 4F02h	; Set mode
+	mov	[ebp.Client_BX], AX
+	; TODO: handle VBE3.0 custom CRTC struct
+
+smn_regs_setup:
+	; go through the ORIGINAL int10 vector so we don't trap and
+	; muck around with any state that we're trying to preserve!
+	VMMcall Begin_Nest_V86_Exec 	; Get ready for software ints
+
+	; set the modeset flag so that nothing inside the V86 exec
+	; will get trapped back into the VDD's modeset routine!
+	SetFlag	[edi.VDD_Flags],fVDD_ModeSet
+	mov	eax,10h
+	VMMcall Exec_Int
+	ClrFlag	[edi.VDD_Flags],fVDD_ModeSet
+
+	VMMcall End_Nest_Exec		; All done with software ints
+	Pop_Client_State
+
+	ret
+
+EndProc VDD_OEM_Set_Mode_Nested
 ENDIF
 
 
@@ -581,7 +633,6 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; int 10h AH=00h to reset the mode and ensure the device is
 	; in a VGA-compatible state
 	int	3
-	xor	cl,cl
 	push	ebp
 	push	ebx
 	; ensure we have a valid client pointer to use for modeset calls
@@ -592,18 +643,9 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 @@:	; if the VDD or message mode is getting control of CRTC, then
 	; the system VM is appropriate for this call
 	VMMcall	Get_Sys_VM_Handle
-	; tell the System VM it's already in a modeset to avoid running
-	; a load of code that will endup sending it an fg notification
-	; and undoing all the work we've done here!
-	push	edi
-	SetVDDPtr edi
-	bts	[edi.VDD_Flags],bVDD_ModeSet
-	; use CL to indicate if we need to reset this flag afterwards
-	cmc	;set CF iff sysVM wasn't already in a modeset
-	setc	cl
-	pop	edi
 oce_have_vm:
 	mov	ebp,[ebx.CB_Client_Pointer]
+	SetVDDPtr ecx			; so we can set the modeset flag
 	pop	ebx
 
 	mov	ax,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
@@ -615,59 +657,29 @@ oce_have_vm:
 	test	ah,ah			;Q: valid mode?
 	jnz	short @F		;   N: skip modeset
 	; then call the BIOS to reset the VGA to that mode!
-	; can't use VDD_State_Set_Mode because it may be swapped out
-	; at this point!
-	Push_Client_State
-	VMMcall Begin_Nest_Exec 	; Get ready for software ints
-	mov	[ebp.Client_AX], AX	; Set mode
-	mov	eax,10h
-	VMMcall Exec_Int
-	VMMcall End_Nest_Exec		; All done with software ints
-	Pop_Client_State
-@@:	pop	ebp
-	; now check if we need to unset the modeset flag on the sysVM:
-	test	cl,cl
-	jz	oce_not_vbe	; if not, continue on...
-
-	push	ebx
 	push	edi
-	VMMcall	Get_Sys_VM_Handle
-	SetVDDPtr edi
-	btr	[edi.VDD_Flags],bVDD_ModeSet
+	mov	edi,ecx			; get the state pointer
+	; CF is clear from "test" above so this will do non-VBE modeset
+	call	VDD_OEM_Set_Mode_Nested
 	pop	edi
-	pop	ebx
+@@:	pop	ebp
 	jmp	short oce_not_vbe
 
 set_vbe_mode:
+	push	edi
+	mov	edi,ecx
+
 	; if VM knows how to restore their own state, then skip
 	TestMem [edi.VDD_Flags], fVDD_CanRestore
 	jnz	short @F
 
 	; just use the BIOS to set the mode...
-	Push_Client_State
-	VMMcall Begin_Nest_Exec 	; Get ready for software ints
-	mov	[ebp.Client_AX], 4F02h	; Set mode
-	or	ah,80h			; Preserve RAM (prevent PFaults)
-	mov	[ebp.Client_BX], AX
-	; TODO: handle VBE3.0 custom CRTC struct
-	mov	eax,10h
-	VMMcall Exec_Int
-	VMMcall End_Nest_Exec		; All done with software ints
-	Pop_Client_State
-
-@@:	pop	ebp
-	; now check if we need to unset the modeset flag on the sysVM:
-	test	cl,cl
-	jz	short @F		; if not, we're finished
-	push	ebx
-	push	edi
-	VMMcall	Get_Sys_VM_Handle
-	SetVDDPtr edi
-	btr	[edi.VDD_Flags],bVDD_ModeSet
-	pop	edi
-	pop	ebx
+	stc	; use VBE modeset
+	call	VDD_OEM_Set_Mode_Nested
 
 @@:	; we're done, the state is fully restored
+	pop	edi
+	pop	ebp
 	pop	edx
 	stc
 	ret

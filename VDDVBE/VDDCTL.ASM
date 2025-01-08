@@ -976,7 +976,6 @@ ENDIF
 
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; check if VBE modeset is supported
-	int	3
 	mov	ax,4F03h	; get current video mode
 	int	10h
 	cmp	al,4Fh		; function supported?
