@@ -669,16 +669,18 @@ fnptrs_setup_done:
 	shl	di,1
 	rcl	si,1
 	int	31h
-	jc	setup_done
+	jnc	@F
+	jmp	setup_done
 
-	; Allocate selectors for front and back buffer
+@@:	; Allocate selectors for front and back buffer
 	mov	di,cx
 	mov	si,bx
 	mov	bx,dx	; get the offset of the bitmap structure stashed before
 	cCall	AllocSelector,<es:[bx].bmBits.sel>
 	test	ax,ax
-	jz	setup_done
-	mov	[BackBufSel],ax
+	jnz	@F
+	jmp	setup_done
+@@:	mov	[BackBufSel],ax
 
 	; Set the selector to the base of the back buffer.
 	cCall	SetSelectorBase,<ax,si,di>
@@ -724,6 +726,30 @@ fnptrs_setup_done:
 	assumes	es,Code
 	cCall	SetSelectorBase,<ax,[VESALinearBuf.hi],[VESALinearBuf.lo]>
 	assumes	es,nothing			; C function stomps it
+
+	; Lastly clear the back buffer so stale data doesn't get thrown up
+	; as Windows is booting...
+	.386
+	push	eax
+	push	ecx
+	push	edi
+	mov	es,[BackBufSel]
+	xor	eax,eax
+	mov	ecx,[BackBufSize]
+	mov	edi,eax
+	shr	ecx,1
+	jnc	@F
+	stosb
+@@:	shr	ecx,1
+	jnc	@F
+	stosw
+@@:	rep	stos dword ptr es:[edi]
+; 386 bug. 32-bit string instruction must be followed by a 32-bit instruction.
+	db	67h,90h
+	pop	edi
+	pop	ecx
+	pop	eax
+	.286
 
 setup_done:
 cEnd
