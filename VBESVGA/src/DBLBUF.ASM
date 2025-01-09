@@ -537,6 +537,11 @@ cBegin
 	jz	@F
 	jmp	setup_done
 
+@@:	; has user force-disabled double buffering?
+	cmp	[desired_fps],4
+	jnb	@F
+	jmp	setup_done
+
 @@:	; Calculate the relevant period
 	mov	ax,1000		; milliseconds per second
 	div	[desired_fps]	; AL := milliseconds per frame, AH := remainder

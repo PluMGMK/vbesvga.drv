@@ -75,7 +75,7 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`Depth` | 8 - 24 | Significant bits per pixel of the desired video mode ("significant" means that padding bits are excluded, so for example if you choose 24, both 24-bit and 32-bit modes will qualify) | 24 |
 |`fontsize` | `small` or `large` | Choose whether to use 96dpi or 120dpi fonts | `small` |
 |`dacdepth` | 6 or 8 | Significant bits to use per colour in 256-colour modes | 6 |
-|`DoubleBufRefreshRate` | 4 - 255 | Number of times per second to swap buffers if [double-buffering](#linear-modes-and-double-buffering) is enabled | 60 |
+|`DoubleBufRefreshRate` | 0 - 255 | Number of times per second to swap buffers if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value less than 4 **disables** double-buffering | 60 |
 |`PMIDcheck` | `disable`, `none`, `sum` or `sanity` | See [below](#protected-mode-interface) | `sum` |
 
 ### Protected-Mode Interface
@@ -107,6 +107,8 @@ In general, the VBE modes used by this driver involve a framebuffer larger than 
 When using a linear framebuffer, the driver also attempts to use [Double Buffering](https://wiki.osdev.org/Double_Buffering), which improves performance by ensuring that GDI operations never have to touch video RAM directly. However, it involves allocating two copies of the framebuffer in system RAM, which is quite expensive (especially given that Windows 3.1 usually can't take advantage of more than a quarter of a GiB). If it can't allocate this much RAM, it falls back to direct VRAM access.
 
 Basically, if you're using 386 Enhanced Mode (or Standard Mode without `EMM386`), with a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust the refresh rate using the `DoubleBufRefreshRate=` setting in `SYSTEM.INI`!
+
+If you suspect there are problems with Double Buffering, you can force-disable it by setting `DoubleBufRefreshRate=0` (or any value less than 4). This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
 
 ## Mode selection
 

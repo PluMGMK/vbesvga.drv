@@ -97,7 +97,9 @@ fail_reason	dw	offset general_fail
 bad_width	db	'Width < 640 is not allowed',13,10,'$'
 bad_height	db	'Height < 480 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
-bad_framerate	db	'Refresh rate must be in range 4-255 fps inclusive',13,10,'$'
+;bad_framerate	db	'Refresh rate must be in range 4-255 fps inclusive',13,10,'$'
+bad_framerate	db	'Refresh rate must be in less than 256 fps',13,10
+		db	'(Note that values less than 4 fps disable double buffering)',13,10,'$'
 general_fail	db	'Unsuitable settings for current driver / hardware',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
@@ -403,8 +405,8 @@ enable_read_profile	PROC	NEAR
 	lea	bx,fps_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,60,ds,cx>
-	cmp	al,4
-	rcl	ah,1	
+	;cmp	al,4
+	;rcl	ah,1	
 	test	ah,ah	; AH is non-zero if user went over 255 OR below 4
 	jz	@F
 	mov	[fail_reason],offset bad_framerate
