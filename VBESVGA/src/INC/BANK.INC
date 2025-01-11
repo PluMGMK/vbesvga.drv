@@ -46,7 +46,9 @@ far_set_bank_select proc far
 ;
 	xor	bx,bx			; BH = 0 = "set", BL = 0 = window 0
 	xor	dh,dh			; DX = DL = bank number (gran. units)
+	push	es			; some firmware trashes ES (e.g. VMware)
 	call	VESABankSwitch
+	pop	es
 ;
 	LeaveCrit  a			; Okay to interrupt now
 
@@ -95,7 +97,9 @@ set_bank_select proc    near
 ;
 	xor	bx,bx			; BH = 0 = "set", BL = 0 = window 0
 	xor	dh,dh			; DX = DL = bank number (gran. units)
+	push	es			; some firmware trashes ES (e.g. VMware)
 	call	VESABankSwitch
+	pop	es
 ;
 	LeaveCrit  a			; Okay to interrupt now
 
