@@ -270,7 +270,6 @@ VScreen_Height		DW	0
 Vmode			DW	0
 VScreen_Depth		DB	0
 
-EXTRN	enable_216:WORD
 EXTRN   dac_size:BYTE
 externB bank_select
 
@@ -834,6 +833,8 @@ assumes ds,Data
 ;	PARMS:
 ;	ds	Data
 
+;	FIXME: this is all hardware-specific stuff, can probably remove!
+
 PUBLIC	set_board_flags
 set_board_flags 	PROC	NEAR
 
@@ -908,9 +909,6 @@ board_flag_no_splitbank:
 	cmp	ax,07764H			;HT216 rev E
         jne     short board_flag_no_216
 board_flag_yes_216:
-	cmp	enable_216,1
-	jne	short board_flag_no_216
-	or	bl,BOARD_FLAG_ENABLE_216
 board_flag_no_216:
 	mov	Video_Board_Flags,bl
 	ret

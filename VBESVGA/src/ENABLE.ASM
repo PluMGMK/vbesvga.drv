@@ -83,8 +83,7 @@ dpi_size	dw	96
 Profile_read	dw	0
 aszSystemIni	db	"system.ini",0
 aszCurDrvFName	db	MAXFNAMELEN DUP(0)
-PUBLIC	enable_216
-enable_216      dw      0
+prefer_bank     dw      0
 
 SYSINI	STRUC
     SYSINI_CMPSTR	DW	0
@@ -137,12 +136,12 @@ sysini_dacstruc        LABEL   BYTE
 SYSINI	<dac_depth_6,1,2>
 SYSINI	<dac_depth_8,1,0>
 
-Enable216_member	db	"Enable216_features",0
-Enable216_on		db	"1",0
-Enable216_off		db	"0",0
-sysini_216struc        LABEL   BYTE
-SYSINI	<Enable216_on,1,1>
-SYSINI	<Enable216_off,1,0>
+PreferBank_member	db	"PreferBankedModes",0
+PreferBank_on		db	"1",0
+PreferBank_off		db	"0",0
+sysini_bankstruc       LABEL   BYTE
+SYSINI	<PreferBank_on,1,1>
+SYSINI	<PreferBank_off,1,0>
 
 	externW ScreenSelector		; screen selector
         externW ScratchSel              ; the free selector
@@ -370,6 +369,30 @@ enable_read_profile	PROC	NEAR
 	call	enable_find_substring
 	call	SetupPMInt
 
+@@:	lea	ax,boot_category
+        push    ds
+        push    ax
+	lea	ax,PreferBank_member
+        push    ds
+        push    ax
+	push	ds				;this is the default as well
+        push    ax
+        lea     ax,aszCurDrvFName
+        push    ds
+        push    ax
+        push    MAXFNAMELEN
+	lea	ax,aszSystemIni 		;ptr to "system.ini" string
+        push    ds                              ;long ptr
+        push    ax
+	call	GetPrivateProfileString
+
+	mov	ax,0			       ;default return value
+	mov	bx,2				;number different modes
+        lea     si,aszCurDrvFName
+	lea	bp,sysini_bankstruc
+        call    enable_find_substring
+	mov	prefer_bank,ax
+
 	; TODO: Use EDID settings as default
 	lea	ax,boot_category
 	lea	bx,width_member
@@ -413,12 +436,14 @@ enable_read_profile	PROC	NEAR
 	jmp	enable_read_profile_fail
 @@:	mov	desired_fps,al
 
-	; Try Linear=1 first
-	cCall	FindMode,<1>
+	; Linear = AX = 1 iff prefer_bank == 0
+	mov	ax,[prefer_bank]
+	xor	ax,1
+	cCall	FindMode,<ax>
 	test	ax,ax
 	jz	@F
-	; OK, fallback to Linear=0
-	cCall	FindMode,<0>
+	; OK, try banked if linear failed or vice versa
+	cCall	FindMode,<[prefer_bank]>
 	test	ax,ax
 	jz	@F
 	jmp	enable_read_profile_fail
@@ -471,30 +496,6 @@ enable_read_profile	PROC	NEAR
 	lea	bp,sysini_dacstruc
         call    enable_find_substring
 	mov	dac_size,al
-
-@@:	lea	ax,boot_category
-        push    ds
-        push    ax
-	lea	ax,Enable216_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,0			       ;default return value
-	mov	bx,2				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_216struc
-        call    enable_find_substring
-	mov	enable_216,ax
 
 enable_read_profile_done:
 	push	es

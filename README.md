@@ -77,6 +77,7 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`dacdepth` | 6 or 8 | Significant bits to use per colour in 256-colour modes | 6 |
 |`DoubleBufRefreshRate` | 0 - 255 | Number of times per second to swap buffers if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value less than 4 **disables** double-buffering | 60 |
 |`PMIDcheck` | `disable`, `none`, `sum` or `sanity` | See [below](#protected-mode-interface) | `sum` |
+|`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
 
 ### Protected-Mode Interface
 
