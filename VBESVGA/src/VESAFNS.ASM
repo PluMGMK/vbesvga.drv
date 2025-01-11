@@ -254,8 +254,7 @@ OFF_VESA_MODEL	equ $-VESAModeStruct
 VESAMemModel	db ?	; see VESA_MEM_*
 VESABankSize	db ?	; in kiB
 VESAImagePages	db ?
-OFF_VBE3	equ $-VESAModeStruct
-VESAVBE3p0	db ?	; 1 if VBE 3.0, zero if less
+		db ?	; supposedly 1 if VBE 3.0, zero if less
 OFF_VESA_RDEPTH	equ $-VESAModeStruct
 VESARFieldSize	db ?
 VESARFieldPos	db ?
@@ -1095,10 +1094,12 @@ jnelp:	; extra label to allow for short JNE instructions
 	test	ax,VESA_ATTR_LINEAR
 	jz	FindMode_loop	; NEXT!
 	; Set the "linear" flag in the mode number
-	or	cx,VESA_FLAG_LINEAR
+	or	ch,high VESA_FLAG_LINEAR
 	; And make sure vesa_gdi_fixup gets the right data!
-	cmp	byte ptr es:[di.OFF_VBE3],0
-	jz	FindMode_attrsOK
+	cmp	[VESAMajVer],3
+	; VBE 2.0 and lower didn't specify separate bitnesses for linear and
+	; banked versions of the same mode
+	jb	FindMode_attrsOK
 	mov	ax,es:[di.OFF_VESA_SLLIN]
 	mov	es:[di.OFF_VESA_SLL],ax
 	; And also the depth-checking code below
