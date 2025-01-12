@@ -166,6 +166,12 @@ PUBLIC TL_Switches
 TL_Switches   db  0
 ENDIF
 
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+VBE_Int10_Buf	dd ?
+VBE_Int10_Off	dw ?
+VBE_Int10_Seg	dw ?
+ENDIF	;VGA8514
+
 VxD_DATA_ENDS
 
 
@@ -219,7 +225,7 @@ IFDEF	TLVGA
 	out	dx, al
 	shr	ch, 4
 	mov	[TL_Switches], ch
-	jmp	short sci_exit
+	jmp	sci_exit
 
 sci_not_tlvga:
 ENDIF	;TLVGA
@@ -285,6 +291,28 @@ ENDIF	;VGAMONO
 	mov	byte ptr [edi.VDD_Stt.C_CT400],7Ch
 	mov	byte ptr [edi.VDD_Stt.C_CTTempFE],07h
 ENDIF	;CTVGA
+
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	VOSCI_NotVBE
+	; create a dual-use buffer in conventional memory that we can use to:
+	; * get mode info from int 10h
+	; * pass CRTC Info block to int 10h if needed
+	VMMCall _Allocate_Global_V86_Data_Area, <VESAModeSize, 0>
+.ERRE	((SIZE VBE3_CRTCInfoBlock) LE VESAModeSize)	; buffer has to fit either of these (not together)
+	or	eax, eax
+	jnz	SHORT alloc_ok
+Debug_Out "ERROR: Could not allocate global VM data area for communication with int 10h"
+	VMMCall Fatal_Memory_Error
+alloc_ok:
+	mov	[VBE_Int10_Buf],eax
+	mov	dx,ax
+	and	dx,0Fh
+	shr	eax,4
+	mov	[VBE_Int10_Seg],ax
+	mov	[VBE_Int10_Off],dx
+VOSCI_NotVBE:
+ENDIF	;VGA8514
 
 sci_exit:
 	clc
@@ -426,6 +454,42 @@ EndProc VDD_OEM_Query_Access
 ;
 ;==============================================================================
 BeginProc VDD_OEM_Chk_CRTC, PUBLIC
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	short chkcrtc_not_vbe
+
+	mov	ax,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
+	cmp	ax,[edi.VDD_SttCopy.V_Extend.VBE_VidModeP1]
+	je	short @F
+
+	; different modes --> there's been a change!
+	stc
+	ret
+
+@@:	; check for a difference in the CRTC structure if applicable
+	dec	ax
+	bt	ax,bVESA_UCRTC
+	jnc	short chkcrtc_not_vbe	; no change if same mode
+
+	push	esi
+	push	edi
+	push	ecx
+	lea	esi,[edi.VDD_Stt.V_Extend.VBE_CRTC]
+	lea	edi,[edi.VDD_SttCopy.V_Extend.VBE_CRTC]
+	mov	ecx,(size VBE3_CRTCInfoBlock) SHR 2
+.errnz	(size VBE3_CRTCInfoBlock) AND 3
+	repe	cmpsd
+	pop	ecx
+	pop	edi
+	pop	esi
+	je	short chkcrtc_not_vbe	; no difference in CRTC Info Block
+
+	; there's a change!
+	stc
+	ret
+
+chkcrtc_not_vbe:
+ENDIF
 
 	clc
 	ret
@@ -467,13 +531,13 @@ EndProc VDD_OEM_Chk_Cursor
 ;
 ;EXIT:	none
 ;
-;USES:	Flags
+;USES:	Flags, EAX, ECX, ESI
 ;
 ;==============================================================================
 BeginProc VDD_OEM_Mode_Switch_Done
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
-	jz	short msd_not_vbe
+	jz	msd_not_vbe
 
 	Assert_Client_Ptr ebp
 	mov	ax,[ebp.Client_AX]
@@ -483,10 +547,68 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	ret
 
 @@:	test	ah,ah			;Q: was modeset successful?
-	jnz	short msd_not_vbe	;   N: do nothing
+	jnz	msd_not_vbe		;   N: do nothing
 	mov	ax,[ebp.Client_BX]	;   Y: get the mode
+
 	inc	ax			; Store mode+1 so zero always means "invalid"
 	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
+	dec	ax
+
+	bt	ax,bVESA_UCRTC		;Q: custom CRTC info block?
+	jnc	short @F		;   N: skip this bit
+
+	push	edi
+	push	eax
+	mov	ax,(Client_ES SHL 8) + Client_DI
+	VMMCall	Map_Flat
+	mov	esi,eax
+	lea	edi,[edi.VDD_Stt.V_Extend.VBE_CRTC]
+	mov	ecx,(size VBE3_CRTCInfoBlock) SHR 2
+.errnz	(size VBE3_CRTCInfoBlock) AND 3
+	Begin_Touch_1st_Meg
+	rep	movsd
+	End_Touch_1st_Meg
+	pop	eax
+	pop	edi
+
+@@:	; get the mode info struct
+	VMMcall	Begin_Nest_V86_Exec
+	Push_Client_State
+	mov	[ebp.Client_AX],4F01h	; Get mode info
+	mov	[ebp.Client_CX],ax	; mode number
+	mov	ax,[VBE_Int10_Off]
+	mov	[ebp.Client_DI],ax
+	mov	ax,[VBE_Int10_Seg]
+	mov	[ebp.Client_ES],ax
+	mov	eax,10h
+	VMMcall	Exec_Int
+
+	cmp	[ebp.Client_AX],4Fh	;Q: Successful?
+	je	short @F		;   Y: go ahead
+	mov	ax,[ebp.Client_CX]
+Debug_Out "Could not get mode info for #AX"
+
+	; failsafe: unconditional access to all memory in range A0000h-C0000h
+	mov	[edi.VDD_Stt.V_Extend.VBE_WinSize],80h
+	mov	[edi.VDD_Stt.V_Extend.VBE_WinASeg],0A000h
+	mov	[edi.VDD_Stt.V_Extend.VBE_LinearBuf],0A0000h
+	jmp	short msd_got_info
+
+@@:	Begin_Touch_1st_Meg
+	; copy window size and segment
+	mov	esi,[VBE_Int10_Buf]
+.errnz	VESAWinASeg-VESAWinSize-2
+	mov	eax,dword ptr [esi.VESAWinSize]
+.errnz	VBE_WinASeg-VBE_WinSize-2
+	mov	dword ptr [edi.VDD_Stt.V_Extend.VBE_WinSize],eax
+	; copy linear buffer location
+	mov	eax,[esi.VESALinearBuf]
+	mov	[edi.VDD_Stt.V_Extend.VBE_LinearBuf],eax
+	End_Touch_1st_Meg
+msd_got_info:
+	; done with the interrupt
+	Pop_Client_State
+	VMMcall	End_Nest_Exec
 
 msd_not_vbe:
 ENDIF
@@ -548,21 +670,41 @@ BeginProc VDD_OEM_Set_Mode_Nested
 	Push_Client_State
 
 	test	cl,cl			; carry flag was set?
-	jnz	@F
+	jnz	short @F
 	mov	[ebp.Client_AX], AX	; Set mode (AH=0)
-	jmp	smn_regs_setup
+	jmp	short smn_regs_setup
 
 @@:	mov	[ebp.Client_AX], 4F02h	; Set mode
 	mov	[ebp.Client_BX], AX
-	; TODO: handle VBE3.0 custom CRTC struct
+
+	bt	ax,bVESA_UCRTC
+	jnc	smn_regs_setup
+
+	; set CRTC Info Block pointer
+	mov	ax,[VBE_Int10_Off]
+	mov	[ebp.Client_DI],ax
+	mov	ax,[VBE_Int10_Seg]
+	mov	[ebp.Client_ES],ax
+
+	; copy the info block into the buffer
+	push	esi
+	push	edi
+	lea	esi,[edi.VDD_Stt.V_Extend.VBE_CRTC]
+	mov	edi,[VBE_Int10_Buf]
+	mov	ecx,(size VBE3_CRTCInfoBlock) SHR 2
+.errnz	(size VBE3_CRTCInfoBlock) AND 3
+	Begin_Touch_1st_Meg
+	rep	movsd
+	End_Touch_1st_Meg
+	pop	edi
+	pop	esi
 
 smn_regs_setup:
-	; go through the ORIGINAL int10 vector so we don't trap and
-	; muck around with any state that we're trying to preserve!
 	VMMcall Begin_Nest_V86_Exec 	; Get ready for software ints
 
 	; set the modeset flag so that nothing inside the V86 exec
-	; will get trapped back into the VDD's modeset routine!
+	; will get trapped back into the VDD's modeset routine and
+	; muck around with any state that we're trying to preserve!
 	SetFlag	[edi.VDD_Flags],fVDD_ModeSet
 	mov	eax,10h
 	VMMcall Exec_Int
@@ -627,7 +769,7 @@ VSRR_TurnOnVGA:
 ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 
 	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
-	jz	oce_not_vbe
+	jz	short oce_not_vbe
 
 	; if the VM we're switching to is in a NON-VBE MODE, then use
 	; int 10h AH=00h to reset the mode and ensure the device is

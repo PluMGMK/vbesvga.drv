@@ -1189,8 +1189,8 @@ VI10_ChkSvRam:
         mov     ax,[ebp.Client_AX]
 	cmp	ah,4Fh
 	jne	SHORT @F
-	bt	[ebp.Client_BX],15	    ; Q: Save RAM during mode set?
-	jc	SHORT VI10_SetSvRAMBit	    ;   Y: Remember RAM saved
+	bt	[ebp.Client_BX],bVESA_PreserveMem; Q: Save RAM during mode set?
+	jc	SHORT VI10_SetSvRAMBit	    	;   Y: Remember RAM saved
 @@:     cmp     ah,11h
 	je	SHORT VI10_SetSvRAMBit
 	or	al, al				; Q: Save RAM during mode set?

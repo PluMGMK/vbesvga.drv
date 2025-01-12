@@ -430,9 +430,78 @@ Reg_State_Struc 	ENDS
 
 .errnz	(SIZE Reg_State_Struc) MOD 4	; make sure struc is dword aligned
 
+; CRT Controller Info Block (taken straight from VBE 3.0 spec)
+VBE3_CRTCInfoBlock	struc
+CRTC_HorzTotal		dw ?		; Horizontal total in pixels
+CRTC_HorzSyncStart	dw ?		; Horizontal sync start in pixels
+CRTC_HorzSyncEnd	dw ?		; Horizontal sync end in pixels
+CRTC_VertTotal		dw ?		; Vertical total in lines
+CRTC_VertSyncStart	dw ?		; Vertical sync start in lines
+CRTC_VertSyncEnd	dw ?		; Vertical sync end in lines
+CRTC_Flags		dw ?		; Flags (Interlaced, Double Scan etc.)
+CRTC_PixelClock		dd ?		; Pixel clock in units of Hz
+CRTC_RefreshRate	dw ?		; Refresh rate in units of 0.01 Hz
+			db 40 dup (?)	; reserved
+VBE3_CRTCInfoBlock	ends
+
+; VBE mode info struct - we won't store the full thing, but we
+; need to know where all the fields are to get the info we want!
+VESAModeStruct	STRUC
+VESAModeAttrs	dw ?
+VESAWinAAttrs	db ?
+VESAWinBAttrs	db ?
+VESAGranularity	dw ?	; in kiB
+VESAWinSize	dw ?	; in kiB
+VESAWinASeg	dw ?
+VESAWinBSeg	dw ?
+VESABankSwitch	dd ?
+VESAScanLineLen	dw ?	; in bytes
+VESAWidth	dw ?	; in pixels
+VESAHeight	dw ?	; in pixels
+VESACharCellW	db ?	; in pixels
+VESACharCellH	db ?	; in pixels
+VESAMemPlanes	db ?
+VESABPP		db ?	; bits per pixel, must be at least 8
+VESABanks	db ?
+VESAMemModel	db ?	; see VESA_MEM_*
+VESABankSize	db ?	; in kiB
+VESAImagePages	db ?
+		db ?	; supposedly 1 if VBE 3.0, zero if less
+VESARFieldSize	db ?
+VESARFieldPos	db ?
+VESAGFieldSize	db ?
+VESAGFieldPos	db ?
+VESABFieldSize	db ?
+VESABFieldPos	db ?
+VESAAFieldSize	db ?
+VESAAFieldPos	db ?
+VESADirectMode	db ?	; Bit 0 = programmable ramp, 1 = usable alpha channel
+VESALinearBuf	dd ?	; 32-bit Physical Address
+VESAOSMem	dd ?	; Off-Screen Memory
+VESAOSMemSize	dw ?	; in kiB
+VESAScanLineLin	dw ?	; same as VESAScanLineLen but for linear modes
+VESAImgsBanked	db ?
+VESAImgsLinear	db ?
+VESALRFieldSize	db ?
+VESALRFieldPos	db ?
+VESALGFieldSize	db ?
+VESALGFieldPos	db ?
+VESALBFieldSize	db ?
+VESALBFieldPos	db ?
+VESALAFieldSize	db ?
+VESALAFieldPos	db ?
+VESAMaxPixClock	dd ?	; in Hz
+VESAModeScratch	db 190 dup (?)
+VESAModeStruct	ENDS
+
+VESAModeSize	equ	SIZE VESAModeStruct
+
 VBE_Reg_Struc	STRUC
 VBE_VidModeP1	DW	?		; BX value from int 10h 4F02h, plus one!
-; TODO: Add VBE3 CRTC struct here
+VBE_WinSize	DW	?		; in kiB
+VBE_WinASeg	DW	?
+VBE_LinearBuf	DD	?
+VBE_CRTC	DB	(SIZE VBE3_CRTCInfoBlock) DUP (?)
 VBE_Reg_Struc	ENDS
 
 .ERRE	((SIZE VBE_Reg_Struc) LE  Extended_Reg_Size)
@@ -791,6 +860,17 @@ DefFlag VT_TLVGA	    29	; Running on Tseng Labs VGA (more regs!)
 DefFlag VT_TL_ET4000	    30	; Tseng Labs ET4000 VGA
 DefFlag VT_RsrvC6C7	    31	; Reserve C6 & C7 as ROM without a signature
 EndFlagSet fVT, 32
+
+;
+; VESA Mode Number Bitfields
+;
+StartFlagSet fVESA
+DefFlag	VESA_SVGA	     8	; This is an SVGA mode
+DefFlag	VESA_UCRTC	    11	; Use custom CRTCInfoBlock
+DefFlag	VESA_VBEAFInit	    13	; VBE/AF initializes accelerator hardware
+DefFlag	VESA_Linear	    14	; Use linear framebuffer
+DefFlag	VESA_PreserveMem    15	; Preserve contents of VRAM
+EndFlagSet fVESA,16
 
 ;
 ; VDD global flag definitions for [Vid_Flags]  (fVid_ &  bVid_)
