@@ -1,1 +1,1 @@
-INT3	equ	1
+;INT3	equ	1
