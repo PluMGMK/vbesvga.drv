@@ -3055,6 +3055,44 @@ EndProc VDD_State_Get_Mode
 ;==============================================================================
 BeginProc VDD_State_Get_Mem_Mapping, PUBLIC
 
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	short VS_GMM_NotVBE
+
+	mov	ax,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
+	test	ax,ax
+	jz	short VS_GMM_NotVBE	; not in VBE mode!
+
+	TestMem	[edi.VDD_Flags],<fVDD_ModeSet>
+	; if VM is modesetting, then trust the misc register for now...
+	jnz	short VS_GMM_NotVBE
+
+	; use the WinA segment and window size to define available pages
+	mov	ax,[edi.VDD_Stt.V_Extend.VBE_WinSize]
+	; convert kiB in AX to pages (4-kiB units) in AH
+	shl	ax,(8-2)
+	; upper byte of seg index is page index:
+	mov	al,byte ptr [edi.VDD_Stt.V_Extend.VBE_WinASeg+1]
+	ret
+
+@@:	; linear mode - check if the buffer is below the 1-MiB boundary:
+	mov	eax,[edi.VDD_Stt.V_Extend.VBE_LinearBuf]
+	cmp	eax,100000h
+
+	; linear buffer in extended memory: there shouldn't be any reason
+	; to access the low-memory buffers; so just fall back to the misc
+	; register (because if it's wrong we don't really care...
+	jnb	short VS_GMM_NotVBE
+
+@@:	; linear buffer in low memory - assume it extends as far as C0000h...
+	shr	eax,12	; convert address to page number
+	mov	ah,0C0h	; page for C0000h
+	sub	ah,al	; convert to page count
+	ret
+
+VS_GMM_NotVBE:
+ENDIF	;VGA8514
+
 	push	ecx
 	mov	eax,010A0h
 	or	ebx,ebx
