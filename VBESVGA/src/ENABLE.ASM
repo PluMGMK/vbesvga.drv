@@ -393,6 +393,30 @@ enable_read_profile	PROC	NEAR
         call    enable_find_substring
 	mov	prefer_bank,ax
 
+	lea	ax,boot_category
+        push    ds
+        push    ax
+	lea	ax,dac_member
+        push    ds
+        push    ax
+	push	ds				;this is the default as well
+        push    ax
+        lea     ax,aszCurDrvFName
+        push    ds
+        push    ax
+        push    MAXFNAMELEN
+	lea	ax,aszSystemIni 		;ptr to "system.ini" string
+        push    ds                              ;long ptr
+        push    ax
+	call	GetPrivateProfileString
+
+	mov	ax,2			       ;default return value
+	mov	bx,2				;number different modes
+        lea     si,aszCurDrvFName
+	lea	bp,sysini_dacstruc
+        call    enable_find_substring
+	mov	dac_size,al
+
 	; TODO: Use EDID settings as default
 	lea	ax,boot_category
 	lea	bx,width_member
@@ -472,30 +496,6 @@ enable_read_profile	PROC	NEAR
 	lea	bp,sysini_fontstruc
 	call	enable_find_substring
         mov     dpi_size,ax
-
-@@:	lea	ax,boot_category
-        push    ds
-        push    ax
-	lea	ax,dac_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,2			       ;default return value
-	mov	bx,2				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_dacstruc
-        call    enable_find_substring
-	mov	dac_size,al
 
 enable_read_profile_done:
 	push	es
