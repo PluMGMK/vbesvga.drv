@@ -59,11 +59,12 @@ incDevice = 1				;Include control for gdidefs.inc
 
 	externA		__NEXTSEG	; offset to next segment
 
-sBegin	Code
+sBegin	Data
 
-	externB		info_table_base	; in VGA.ASM
+public	raster_flags
+	raster_flags	dw ?
 
-sEnd	Code
+sEnd	Data
 
 createSeg _DIMAPS,DIMapSeg,word,public,code
 
@@ -74,19 +75,6 @@ sBegin	DIMapSeg
 	externNP	SetDeviceBitmapBits	; in BMC_ETI.ASM
 	externNP	GetDeviceBitmapBits	; in BMC_ITE.ASM
 	externNP	RleBlt			; in RLD.ASM
-
-; Grab the global Raster flags and check if the PALETTE flag is set.
-; Destroys DS, and returns AX = dpRaster & RC_PALETTE.
-; ZF is also set accordingly.
-public	check_palette_trans
-check_palette_trans	proc near
-	mov	ax, seg info_table_base
-	mov	ds, ax
-	assumes	ds, Code
-	mov	ax,[info_table_base.dpRaster]
-	and	ax,RC_PALETTE
-	ret
-check_palette_trans	endp
 
 	assumes	ds, Data		; this is a CProc after all!
 	assumes	es, nothing
@@ -99,7 +87,8 @@ WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	cld
 
 	; check if we're supposed to use palette translation
-	call	check_palette_trans
+	mov	ax,[raster_flags]
+	and	ax,RC_PALETTE
 	mov	[use_palette_trans],ah	; RC_PALETTE is in upper byte!
 
 	lds	si, lp_dest_dev 	; DS:SI points to internal BM struc

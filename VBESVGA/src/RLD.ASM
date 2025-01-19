@@ -37,6 +37,7 @@
         .xlist
         include cmacros.inc
         incLogical=1
+	incDevice = 1				;Include control for gdidefs.inc
         include gdidefs.inc
         include display.inc
         include macros.mac
@@ -57,6 +58,7 @@ endif
 
 sBegin  Data
 	externW		ColourFormat	; in VGA.ASM
+	externW		raster_flags	; in BMC_MAIN.ASM
 sEnd  Data
 
 HUGE_RLE = 1
@@ -82,8 +84,6 @@ sBegin DIMapSeg
         assumes cs,DIMapSeg
         assumes ds,Data
         assumes es,nothing
-
-	externNP check_palette_trans	; in BMC_MAIN.ASM
 
 ifdef XDEBUG
 
@@ -239,8 +239,8 @@ cBegin
 	mov	[colour_format],ax
 
 	; check if we're supposed to use palette translation
-	call	check_palette_trans
-	assumes	ds,nothing		;check_palette_trans changes DS
+	mov	ax,[raster_flags]
+	and	ax,RC_PALETTE
 	mov	[use_palette_trans],ah	; RC_PALETTE is in upper byte!
 
         call    RleBltInit

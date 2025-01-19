@@ -29,6 +29,7 @@
 	.xlist
         include cmacros.inc
 incDrawMode=1
+incDevice=1
 	include	gdidefs.inc
 	include	display.inc
 	include	macros.mac
@@ -65,6 +66,8 @@ sBegin Data
 
 	externW		ColourFormat
 
+	externW		raster_flags		; in BMC_MAIN.ASM
+
         externB         PaletteTranslationTable
         externB         bank_select_byte
 sEnd
@@ -75,8 +78,6 @@ sBegin DIMapSeg
 	assumes cs,DIMapSeg
 	assumes ds,Data
 	assumes es,nothing
-
-	externNP	check_palette_trans	; in BMC_MAIN.ASM
 
 ;
 ;   the following table is used to determine the init function
@@ -275,12 +276,12 @@ let_gdi_do_it:
         jmp     discreen_ret            ; error return
 
 device_is_enabled:
-	call	check_palette_trans
-        assumes ds,nothing
+	test	[raster_flags],RC_PALETTE
 	jz	@F
 	or	[fbFlags],DEV_PALETTE
 
 @@:     lds     si,lpbi                 ; DS:SI --> BITMAPINFO
+        assumes ds,nothing
 
 ;----------------------------------------------------------------------------;
 ; is the DIB a RLE DIB, if so call rle_to_screen
@@ -315,8 +316,8 @@ not_encoded:
         cmp     bptr es:[di].bkMode,3       ; NEWTRANSPARENT mode?
         jne     discreen_not_transparent
 
-        mov     bx,bptr es:[di].bkColor.lo  ; get BkColor
-        mov     cx,bptr es:[di].bkColor.hi
+        mov     bx,es:[di].bkColor.lo       ; get BkColor
+        mov     cx,es:[di].bkColor.hi
         or      dl,dl                       ; are we in background mode?
         jz      discreen_not_background     ; no, nothing to do
 

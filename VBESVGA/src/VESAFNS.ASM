@@ -119,6 +119,7 @@ sBegin	Data
 externW	ScreenSelector
 externW	ColourFormat
 EXTRN	dac_size:byte
+externD	setramdac
 
 ; From INT10.ASM
 externW	int10h_ds
@@ -358,14 +359,15 @@ sEnd	Code
 createSeg _PALETTE,PaletteSeg,word,public,CODE
 sBegin	PaletteSeg
 
+; from TRN_PAL.ASM
+externFP setramdac_vga
+
 ;
-;	setramdac
+;	setramdac_vbe
 ;	PARMS:
 ;	ax	index to 1st palette entry
 ;	cx	count of indices to program
 ;	ds:si	-> 256 double words  (ds MUST!! be driver data segment)
-;
-;	TODO: fallback to port I/O if VBE < 2.0
 ;
 
 .286
@@ -373,8 +375,8 @@ assumes  cs,PaletteSeg
 assumes  ds,Data
 assumes  es,nothing
 
-PUBLIC	setramdac
-setramdac	PROC	FAR
+PUBLIC	setramdac_vbe
+setramdac_vbe	PROC	FAR
 
 	push	es
 	push	di
@@ -396,11 +398,15 @@ setramdac	PROC	FAR
 	jz	@F
 	CALL_PMINT
 
-setramdac_exit:
+setramdac_vbe_exit:
 	; restore original byte order
 	call	switcheroo
 	pop	di
 	pop	es
+
+	; success?
+	cmp	ax,VBE_INT10_FN
+	jne	setramdac_need_vga
         ret
 
 @@:
@@ -423,7 +429,7 @@ setramdac_exit:
 
 	test	ax,ax
 	mov	ax,(ERR_REAL_ALLOC SHL 8) + VBE_INT10_FN
-	jz	setramdac_exit
+	jz	setramdac_vbe_exit
 
 @@:
 	mov	ax,[RMPaletteSeg]
@@ -445,9 +451,18 @@ setramdac_exit:
 	pop	di
 
 	call	DoInt10h
-	jmp	setramdac_exit
+	jmp	setramdac_vbe_exit
 
-setramdac	ENDP
+setramdac_need_vga:
+	; VBE cannot be used to set RAMDAC, so fall back to VGA implementation
+	; by updating the function pointer and jumping to it
+	mov	[setramdac.lo],offset setramdac_vga
+	; get back the index into AX
+	mov	ax,dx
+	; go to the VGA function
+	jmp	[setramdac]
+
+setramdac_vbe	ENDP
 
 ; At least some BIOS implementations expect a big-endian list of colours, i.e.
 ; where blue is the LSB, whereas Windows gives red as the LSB (which also agrees
@@ -1483,8 +1498,11 @@ vesa_gdi_fixup	proc near
 	; setup double-buffering if possible / necessary
 	test	[Vmode],VESA_FLAG_LINEAR
 	jz	@F
+
+	push	si
 	mov	si,es	; setup_double_buf requires pointer in SI:DI, not ES:DI
 	call	setup_double_buf
+	pop	si
 
 @@:	ret
 vesa_gdi_fixup	endp
@@ -1517,10 +1535,10 @@ set_dacsize	PROC	NEAR
 
 	mov	ax,(VBE_INT10_FN SHL 8) + VBE_DACSIZE
 	test	bx,bx
-	mov	bx,6		; just go set it to six
+	mov	bh,6		; just go set it to six
 	jz	common_vesafun
 
-	mov	bx,8		; prepare to set to eight
+	mov	bx,800h		; prepare to set (BL=0) to eight (BH=8)
 	cmp	[dac_size],2	; does the user not want 8-bit DAC?
 	jne	common_vesafun	; they do, go set it
 

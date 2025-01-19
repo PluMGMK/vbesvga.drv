@@ -84,7 +84,6 @@ FILE_VGA	EQU	1
 	externFP AllocDSToCSAlias	; change a DS selector to CS
 	externFP FreeSelector		; free the selector
 	externFP GetProfileInt		; Kernel!GetProfileInt
-	externFP setramdac
 
 ifndef lo
 ; The following structure should be used to access high and low
@@ -271,6 +270,7 @@ Vmode			DW	0
 VScreen_Depth		DB	0
 
 EXTRN   dac_size:BYTE
+externD	setramdac
 externB bank_select
 
 globalW ScreenSelector,0                ;the screen selector

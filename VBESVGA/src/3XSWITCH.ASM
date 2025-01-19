@@ -53,6 +53,8 @@ sBegin  Data
 	externB adPalette
 	externW is_protected
 	externB	info_table_base
+        externD setramdac
+	externW raster_flags
 sEnd	Data
 
 createSeg _INIT,InitSeg,word,public,CODE
@@ -68,7 +70,6 @@ createSeg _PALETTE,PaletteSeg,word,public,CODE
 sBegin	PaletteSeg
 	assumes cs,PaletteSeg
 	externFP	SetPalette	; in TRN_PAL.ASM
-        externFP        setramdac
 sEnd
 
 STOP_IO_TRAP    equ 4000h               ; stop io trapping
@@ -115,7 +116,7 @@ WriteAux    <'devtofg'>
         mov     bx,1                    ;attempt to set 8 bit dac mode
         call    far_set_dacsize
 
-	test	[info_table_base.dpRaster],RC_PALETTE
+	test	[raster_flags],RC_PALETTE
 	jz	@F
 
 	mov	cx,256			; number of entries to program

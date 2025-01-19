@@ -50,8 +50,6 @@ sEnd    Data
 
 	??_out	Control
 
-EXTRN	setramdac:FAR
-
 createSeg _BLUEMOON,BlueMoonSeg,word,public,CODE
 sBegin	BlueMoonSeg
 assumes cs,BlueMoonSeg

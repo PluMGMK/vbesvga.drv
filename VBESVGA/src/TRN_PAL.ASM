@@ -30,7 +30,6 @@ incDrawMode = 1				; include the drawmode definitions
 	externFP exclude_far
 	externFP unexclude_far
 	externFP far_set_bank_select
-	externFP setramdac
 ;
 sBegin	Data
 ;
@@ -55,6 +54,10 @@ sBegin	Data
 
 PUBLIC	dac_size
 dac_size	DB	0,0	  ;byte quantity but maintain word alignment
+PUBLIC	setramdac	; function pointer, defaulting to VBE implementation
+setramdac	LABEL	DWORD
+		DW	offset setramdac_vbe
+		DW	seg setramdac_vbe
 
 sEnd    Data
 ;
@@ -621,6 +624,55 @@ update_colors_exit:
 
 	xor	ax,ax			; show success
 cEnd
+
+; from VESAFNS.ASM
+externFP setramdac_vbe
+
+;
+;	setramdac_vga
+;	PARMS:
+;	ax	index to 1st palette entry
+;	cx	count of indices to program
+;	ds:si	-> 256 double words  (ds MUST!! be driver data segment)
+;
+
+.286
+assumes  ds,Data
+assumes  es,nothing
+
+PUBLIC	setramdac_vga
+setramdac_vga	PROC	FAR
+
+	mov	dx,3c8h 		;Color palette write mode index reg.
+        out     dx,al
+        inc     dx
+
+        mov     bl,al                   ; bl = current index
+        mov     bh,cl                   ; bh = count
+        add     bh,bl                   ; bh = end
+
+        mov     cl,dac_size             ;0 for 8 bit dacs, 2 for 6 bit dacs
+
+setramdac_vga_loop:
+        lodsb
+	shr	al,cl
+	out	dx,al
+	lodsb
+	shr	al,cl
+	out	dx,al
+        lodsb
+	shr	al,cl
+	out	dx,al
+        inc     si                      ;step past reserved byte
+
+        inc     bl
+        cmp     bl,bh
+        jne     setramdac_vga_loop
+
+setramdac_vga_exit:
+        ret
+
+setramdac_vga	ENDP
 
 ;--------------------------------------------------------------------------
 ; SetPalette - new windows 3.0 function which sets the values in the ramdac
