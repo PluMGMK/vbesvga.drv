@@ -26,51 +26,24 @@ getvendor:
 	lea	dx,newline
 	int	21h
 
-	; FIXME: this int2F service isn't implemented in Dosbox!
 	lds	si,[lpVendr]
-	mov	ax,1225h	; get length of ASCIZ string
-	int	2Fh
-
-	mov	ah,40h		; WRITE
-	mov	bx,1		; stdout
-	; CX set from above
-	dec	cx
-	mov	dx,si
-	int	21h
+	call	prtz
 
 	; Write a space
 	mov	ah,2		; write character to stdout
 	mov	dl,' '
 	int	21h
 
-	; FIXME: this int2F service isn't implemented in Dosbox!
 	lds	si,cs:[lpProd]
-	mov	ax,1225h	; get length of ASCIZ string
-	int	2Fh
-
-	mov	ah,40h		; WRITE
-	mov	bx,1		; stdout
-	; CX set from above
-	dec	cx
-	mov	dx,si
-	int	21h
+	call	prtz
 
 	; Write a space
 	mov	ah,2		; write character to stdout
 	mov	dl,' '
 	int	21h
 
-	; FIXME: this int2F service isn't implemented in Dosbox!
 	lds	si,cs:[lpPrev]
-	mov	ax,1225h	; get length of ASCIZ string
-	int	2Fh
-
-	mov	ah,40h		; WRITE
-	mov	bx,1		; stdout
-	; CX set from above
-	dec	cx
-	mov	dx,si
-	int	21h
+	call	prtz
 
 	push	cs
 	pop	ds		; back to tiny model...
@@ -141,6 +114,21 @@ getvendor:
 	mov	ax,4C01h	; EXIT with failure
 	int	21h
 
+; Print ASCIZ string
+; In:	DS:SI (string)
+; Out:	SI points past end of string
+; Kill: AX, DL
+;
+prtz	proc	near
+	mov	ah,2		; write character to stdout
+@@:	lodsb
+	test	al,al
+	jz	@F
+	mov	dl,al
+	int	21h
+	jmp	@B
+@@:	ret
+prtz	endp
 
 ; Print hex nibble
 ; In:	AL (low nibble)
