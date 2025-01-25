@@ -661,18 +661,24 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 ;
 ;   ENTRY:	    AX = desired mode
 ;		    CF = set to use VBE modeset, clear to use old BIOS
-;		    EBP -> Client register structure
 ;		    EDI -> VDD CB data
 ;
 ;   EXIT:	    none
 ;
-;   USES:	    ECX, EDX, Flags
+;   USES:	    EAX, ECX, EDX, Flags
 ;
 ;==============================================================================
 BeginProc VDD_OEM_Set_Mode_Nested
 
 	setc	cl			; save carry flag
 	Push_Client_State
+	push	ebp
+
+	push	ebx
+	VMMCall	Get_Cur_VM_Handle
+	mov	ebp,[ebx.CB_Client_Pointer]
+	SetVDDPtr edx
+	pop	ebx
 
 	test	cl,cl			; carry flag was set?
 	jnz	short @F
@@ -780,7 +786,6 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; int 10h AH=00h to reset the mode and ensure the device is
 	; in a VGA-compatible state
 	int	3
-	push	ebp
 	push	ebx
 	; ensure we have a valid client pointer to use for modeset calls
 	cmp	ebx,[Vid_Msg_Pseudo_VM]
@@ -791,7 +796,6 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; the system VM is appropriate for this call
 	VMMcall	Get_Sys_VM_Handle
 oce_have_vm:
-	mov	ebp,[ebx.CB_Client_Pointer]
 	SetVDDPtr ecx			; so we can set the modeset flag
 	pop	ebx
 
@@ -809,8 +813,7 @@ oce_have_vm:
 	; CF is clear from "test" above so this will do non-VBE modeset
 	call	VDD_OEM_Set_Mode_Nested
 	pop	edi
-@@:	pop	ebp
-	jmp	short oce_not_vbe
+@@:	jmp	short oce_not_vbe
 
 set_vbe_mode:
 	push	edi
@@ -826,7 +829,6 @@ set_vbe_mode:
 
 @@:	; we're done, the state is fully restored
 	pop	edi
-	pop	ebp
 	pop	edx
 	stc
 	ret
