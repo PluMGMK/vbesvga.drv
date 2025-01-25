@@ -154,7 +154,8 @@ ENDIF
 EXTRN	VDD_State_Get_CRTC_Index_Port:NEAR
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 EXTRN	VDD_State_Get_Mode:NEAR
-EXTRN	VDD_State_Set_Mode:NEAR
+EXTRN	VDD_Proc_BGrnd_INT2F:NEAR
+EXTRN	VDD_Proc_FGrnd_INT2F:NEAR
 ENDIF	;VGA8514
 VxD_Code_ENDS
 
@@ -542,11 +543,39 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	Assert_Client_Ptr ebp
 	mov	ax,[ebp.Client_AX]
 	cmp	al,4Fh			;Q: attempted VBE modeset?
-	je	short @F		;   Y: go check status
+	je	short msd_vbe_mode	;   Y: go check status
 	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;N: indicate non-VBE mode
+
+	; if a windowed VM has switched into a VGA mode, then the BIOS may
+	; have reprogrammed some registers we know nothing about. So let's
+	; check if the focus VM is in a "non-VGA-compatible" mode, and, if
+	; so, schedule a foreground notification.
+	TestMem [edi.VDD_Flags], fVDD_Win	; Q: Windowed VM?
+	jz	SHORT msd_nowin			;   N: No stuff for Windowed VMs
+
+	push	edi
+	push	ebx
+	mov	ebx,[Vid_Focus_VM]
+	SetVDDPtr edi
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
+	jz	short @F
+	TestMem	[edi.VDD_Stt.V_Extend.VBE_ModeAttrs],fVModeAttr_NonVGA
+	jz	short @F
+
+	cmp	[edi.VDD_NotifyEvent], 0	;Q: bgrnd notify pending?
+	jne	short @F			;   Y: just wait for it
+	mov	esi, OFFSET32 VDD_OEM_Bounce_VM	;   N: schedule event
+	VMMCall Schedule_VM_Event		;	 to notify VM
+	mov	[edi.VDD_NotifyEvent], esi
+
+@@:	pop	ebx
+	pop	edi
+
+msd_nowin:
 	ret
 
-@@:	test	ah,ah			;Q: was modeset successful?
+msd_vbe_mode:
+	test	ah,ah			;Q: was modeset successful?
 	jnz	msd_not_vbe		;   N: do nothing
 	mov	ax,[ebp.Client_BX]	;   Y: get the mode
 
@@ -716,17 +745,41 @@ smn_regs_setup:
 	; set the modeset flag so that nothing inside the V86 exec
 	; will get trapped back into the VDD's modeset routine and
 	; muck around with any state that we're trying to preserve!
-	SetFlag	[edi.VDD_Flags],fVDD_ModeSet
+	push	[edx.VDD_Flags]
+	SetFlag	[edx.VDD_Flags],fVDD_ModeSet
 	mov	eax,10h
 	VMMcall Exec_Int
-	ClrFlag	[edi.VDD_Flags],fVDD_ModeSet
+	pop	[edx.VDD_Flags]
 
 	VMMcall End_Nest_Exec		; All done with software ints
+	pop	ebp
 	Pop_Client_State
 
 	ret
 
 EndProc VDD_OEM_Set_Mode_Nested
+
+;******************************************************************************
+;
+;   VDD_OEM_Bounce_VM
+;
+;   DESCRIPTION:    send VM a background notification immediately followed by
+;		    foreground notification
+;
+;   ENTRY:	    EBX = VM Handle
+;
+;   EXIT:	    EDI -> VDD_CB_Struc
+;
+;   USES:	    EAX, ECX, ESI, EDI, Flags
+;
+;==============================================================================
+BeginProc VDD_OEM_Bounce_VM
+
+	call	VDD_Proc_BGrnd_INT2F
+	call	VDD_Proc_FGrnd_INT2F
+	ret
+
+EndProc VDD_OEM_Bounce_VM
 ENDIF
 
 
