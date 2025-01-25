@@ -1890,6 +1890,7 @@ BeginProc VDD_Jump_To_Ring0
 IFNDEF VGA8514
 	cmp	ebx, [Vid_MemC_VM]
 	je	short @F
+	SetVDDPtr edi
 	call	VDD_State_Set_MemC_Owner
 @@:
 ENDIF
