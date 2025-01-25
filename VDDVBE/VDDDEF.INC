@@ -500,6 +500,7 @@ VBE_Reg_Struc	STRUC
 VBE_VidModeP1	DW	?		; BX value from int 10h 4F02h, plus one!
 VBE_WinSize	DW	?		; in kiB
 VBE_WinASeg	DW	?
+VBE_ModeAttrs	DW	?
 VBE_LinearBuf	DD	?
 VBE_CRTC	DB	(SIZE VBE3_CRTCInfoBlock) DUP (?)
 VBE_Reg_Struc	ENDS
@@ -871,6 +872,25 @@ DefFlag	VESA_VBEAFInit	    13	; VBE/AF initializes accelerator hardware
 DefFlag	VESA_Linear	    14	; Use linear framebuffer
 DefFlag	VESA_PreserveMem    15	; Preserve contents of VRAM
 EndFlagSet fVESA,16
+
+;
+; VESA Mode Attribute Bitfields
+;
+StartFlagSet fVModeAttr
+DefFlag	VModeAttr_HWSupport	0
+DefFlag	VModeAttr_OptInfo	1
+DefFlag	VModeAttr_BIOSOutput	2
+DefFlag	VModeAttr_Colour	3
+DefFlag	VModeAttr_Graphics	4
+DefFlag	VModeAttr_NonVGA	5
+DefFlag	VModeAttr_NoBankSwitch	6
+DefFlag	VModeAttr_LinearSupport	7
+DefFlag	VModeAttr_DoubleScan	8
+DefFlag	VModeAttr_Interlaced	9
+DefFlag	VModeAttr_HWTripleBuf	10
+DefFlag	VModeAttr_HWStereo	11
+DefFlag	VModeAttr_DualStartAddr	12
+EndFlagSet fVModeAttr,16
 
 ;
 ; VDD global flag definitions for [Vid_Flags]  (fVid_ &  bVid_)

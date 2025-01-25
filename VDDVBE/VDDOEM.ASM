@@ -592,6 +592,8 @@ Debug_Out "Could not get mode info for #AX"
 	mov	[edi.VDD_Stt.V_Extend.VBE_WinSize],80h
 	mov	[edi.VDD_Stt.V_Extend.VBE_WinASeg],0A000h
 	mov	[edi.VDD_Stt.V_Extend.VBE_LinearBuf],0A0000h
+	; default mode attributes
+	mov	[edi.VDD_Stt.V_Extend.VBE_ModeAttrs],fVModeAttr_HWSupport + fVModeAttr_Colour + fVModeAttr_Graphics + fVModeAttr_NonVGA + fVModeAttr_LinearSupport
 	jmp	short msd_got_info
 
 @@:	Begin_Touch_1st_Meg
@@ -601,6 +603,9 @@ Debug_Out "Could not get mode info for #AX"
 	mov	eax,dword ptr [esi.VESAWinSize]
 .errnz	VBE_WinASeg-VBE_WinSize-2
 	mov	dword ptr [edi.VDD_Stt.V_Extend.VBE_WinSize],eax
+	; copy mode attributes
+	mov	ax,[esi.VESAModeAttrs]
+	mov	[edi.VDD_Stt.V_Extend.VBE_ModeAttrs],ax
 	; copy linear buffer location
 	mov	eax,[esi.VESALinearBuf]
 	mov	[edi.VDD_Stt.V_Extend.VBE_LinearBuf],eax
