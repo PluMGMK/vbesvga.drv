@@ -844,6 +844,23 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	dec	ax			; we stored mode+1
 	cmp	ax,-1			; so now -1 means "invalid"
 	jnz	short set_vbe_mode
+
+	; Vid_CRTC_VM still has the old owner, so check if they're in
+	; a VGA-incompatible mode - if not, we can save some effort...
+	push	ebx
+	mov	ebx,[Vid_CRTC_VM]
+	SetVDDPtr ecx
+	pop	ebx
+	cmp	[ecx.VDD_Stt.V_Extend.VBE_VidModeP1],0
+	; previous owner is also in a non-VBE mode, so just program
+	; the CRTC registers as normal!
+	jz	short oce_not_vbe
+
+	TestMem	[ecx.VDD_Stt.V_Extend.VBE_ModeAttrs],fVModeAttr_NonVGA
+	; if it's NOT VGA-incompatible, then we should be able to
+	; program the CRTC registers as normal!
+	jz	short oce_not_vbe
+
 	; determine the non-VBE mode from the saved state...
 	call	VDD_State_Get_Mode
 	test	ah,ah			;Q: valid mode?
