@@ -839,18 +839,6 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; int 10h AH=00h to reset the mode and ensure the device is
 	; in a VGA-compatible state
 	int	3
-	push	ebx
-	; ensure we have a valid client pointer to use for modeset calls
-	cmp	ebx,[Vid_Msg_Pseudo_VM]
-	je	short @F
-	test	ebx,ebx
-	jnz	short oce_have_vm
-@@:	; if the VDD or message mode is getting control of CRTC, then
-	; the system VM is appropriate for this call
-	VMMcall	Get_Sys_VM_Handle
-oce_have_vm:
-	SetVDDPtr ecx			; so we can set the modeset flag
-	pop	ebx
 
 	mov	ax,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
 	dec	ax			; we stored mode+1
@@ -861,27 +849,23 @@ oce_have_vm:
 	test	ah,ah			;Q: valid mode?
 	jnz	short @F		;   N: skip modeset
 	; then call the BIOS to reset the VGA to that mode!
-	push	edi
-	mov	edi,ecx			; get the state pointer
-	; CF is clear from "test" above so this will do non-VBE modeset
+	; set the MSB of AL to indicate we want to preserve VRAM
+	or	al,80h
+	; CF is clear from "or" above so this will do non-VBE modeset
 	call	VDD_OEM_Set_Mode_Nested
-	pop	edi
 @@:	jmp	short oce_not_vbe
 
 set_vbe_mode:
-	push	edi
-	mov	edi,ecx
-
 	; if VM knows how to restore their own state, then skip
 	TestMem [edi.VDD_Flags], fVDD_CanRestore
 	jnz	short @F
 
 	; just use the BIOS to set the mode...
+	or	ah,high fVESA_PreserveMem
 	stc	; use VBE modeset
 	call	VDD_OEM_Set_Mode_Nested
 
 @@:	; we're done, the state is fully restored
-	pop	edi
 	pop	edx
 	stc
 	ret
