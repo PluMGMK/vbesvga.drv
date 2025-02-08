@@ -156,6 +156,7 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 EXTRN	VDD_State_Get_Mode:NEAR
 EXTRN	VDD_Proc_BGrnd_INT2F:NEAR
 EXTRN	VDD_Proc_FGrnd_INT2F:NEAR
+EXTRN	VDD_VM_Mem_Lock_SaveMem_Page:NEAR
 ENDIF	;VGA8514
 VxD_Code_ENDS
 
@@ -680,6 +681,8 @@ EndProc VDD_OEM_VGA_Off
 
 ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 
+
+
 ;******************************************************************************
 ;
 ;   VDD_OEM_Set_Mode_Nested
@@ -698,6 +701,22 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 ;
 ;==============================================================================
 BeginProc VDD_OEM_Set_Mode_Nested
+
+; When we call the BIOS to set the mode, it mucks around with a bunch of stuff
+; we don't actually want to change at all. An ugly "solution" is to back up
+; everything we can think of right here. I really don't like it because there's
+; probably some stuff I haven't thought of, and this may just keep growing.
+; But at least it's static so it won't be dynamically eating pages...
+VIDEO_BDA_SIZE	equ 96
+VIDEO_BDA_START	equ 449h
+
+VxD_DATA_SEG
+Backup_Font_Page0	db P_SIZE dup (?)
+Backup_State		db size Reg_State_struc dup (?)
+Backup_MemState		db size Mem_State_struc dup (?)
+Backup_Video_BDA	db VIDEO_BDA_SIZE dup (?)
+Backup_Font_Saved	db 0
+VxD_DATA_ENDS
 
 	setc	cl			; save carry flag
 	Push_Client_State
@@ -740,21 +759,125 @@ BeginProc VDD_OEM_Set_Mode_Nested
 	pop	esi
 
 smn_regs_setup:
-	VMMcall Begin_Nest_V86_Exec 	; Get ready for software ints
+	; since we're asking the *currently running* VM, effectively,
+	; to set the mode "on behalf of" the new CRTC owner, which is
+	; a *different VM*, we need to back up as much of the state
+	; as possible to prevent weird / unexpected side effects!
+	int	3
 
+	movzx	eax,[edx.VDD_fontpages]
+	push	eax
+	push	esi
+	push	edi
+	cld
+	mov	edi,edx
+
+	mov	[Backup_Font_Saved],0	; assume we're not saving it
+	test	al,1			;Q: font page 0 in use?
+	jz	short @F		;   N: OK, int10 won't mess up fonts...
+	xor	edx,edx			;   Y: prepare to lock the page it's saved on (first page in plane2)
+	lea	esi,[edi.VDD_MStt.MSS_plane2]
+	call	VDD_VM_Mem_Lock_SaveMem_Page
+	jc	short @F		; skip on failure
+
+	mov	edx,edi
+	mov	esi,[esi.MSS_Plane_Addr]
+	lea	edi,Backup_Font_Page0
+	mov	ecx,P_SIZE SHR 2
+	rep	movsd
+	mov	edi,edx
+
+	; pop these (pushed by Lock_SaveMem_Page)
+	pop	ecx
+	pop	eax
+	VMMCall _PageUnLock,<eax,1,ecx,0>
+	mov	[Backup_Font_Saved],1	; we managed to save it :)
+@@:
+	; backup the unconditional stuff
+	mov	edx,edi
+	lea	esi,[edx.VDD_Stt]
+	lea	edi,[Backup_State]
+	mov	ecx,(size Reg_State_struc) SHR 2
+.errnz (size Reg_State_struc) AND 3
+	rep	movsd
+
+	lea	esi,[edx.VDD_MStt]
+	lea	edi,[Backup_MemState]
+	mov	ecx,(size Mem_State_struc) SHR 2
+.errnz (size Mem_State_struc) AND 3
+	rep	movsd
+
+	mov	esi,VIDEO_BDA_START
+	lea	edi,[Backup_Video_BDA]
+	mov	ecx,VIDEO_BDA_SIZE SHR 2
+.errnz VIDEO_BDA_SIZE AND 3
+	Begin_Touch_1st_Meg
+	rep	movsd
+	End_Touch_1st_Meg
+
+	VMMcall Begin_Nest_V86_Exec 	; Get ready for software ints
 	; set the modeset flag so that nothing inside the V86 exec
 	; will get trapped back into the VDD's modeset routine and
 	; muck around with any state that we're trying to preserve!
 	push	[edx.VDD_Flags]
 	SetFlag	[edx.VDD_Flags],fVDD_ModeSet
-	mov	eax,10h
+	TestMem	[edx.VDD_Flags],fVDD_Win
+	jz	short @F
+	SetFlag	[edx.VDD_Flags],fVDD_ModeChange
+@@:	mov	eax,10h
 	VMMcall Exec_Int
 	pop	[edx.VDD_Flags]
-
 	VMMcall End_Nest_Exec		; All done with software ints
+
+	mov	edi,edx
+	cmp	[Backup_Font_Saved],0	;Q: font page 0 saved?
+	jz	short @F		;   N: don't restore it
+	xor	edx,edx			;   Y: prepare to lock the page it's saved on (first page in plane2)
+	lea	esi,[edi.VDD_MStt.MSS_plane2]
+	call	VDD_VM_Mem_Lock_SaveMem_Page
+	jc	short @F		; skip on failure
+
+	mov	edx,edi
+	mov	edi,[esi.MSS_Plane_Addr]
+	lea	esi,Backup_Font_Page0
+	mov	ecx,P_SIZE SHR 2
+	rep	movsd
+	mov	edi,edx
+
+	; pop these (pushed by Lock_SaveMem_Page)
+	pop	ecx
+	pop	eax
+	VMMCall _PageUnLock,<eax,1,ecx,0>
+@@:
+	; restore the unconditional stuff
+	mov	edx,edi
+	lea	edi,[edx.VDD_Stt]
+	lea	esi,[Backup_State]
+	mov	ecx,(size Reg_State_struc) SHR 2
+.errnz (size Reg_State_struc) AND 3
+	rep	movsd
+
+	lea	edi,[edx.VDD_MStt]
+	lea	esi,[Backup_MemState]
+	mov	ecx,(size Mem_State_struc) SHR 2
+.errnz (size Mem_State_struc) AND 3
+	rep	movsd
+
+	mov	edi,VIDEO_BDA_START
+	lea	esi,[Backup_Video_BDA]
+	mov	ecx,VIDEO_BDA_SIZE SHR 2
+.errnz VIDEO_BDA_SIZE AND 3
+	Begin_Touch_1st_Meg
+	rep	movsd
+	End_Touch_1st_Meg
+
+	pop	edi
+	pop	esi
+	pop	eax
+	mov	[edx.VDD_fontpages],al
+
 	pop	ebp
 	Pop_Client_State
-
 	ret
 
 EndProc VDD_OEM_Set_Mode_Nested
@@ -838,8 +961,6 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; if the VM we're switching to is in a NON-VBE MODE, then use
 	; int 10h AH=00h to reset the mode and ensure the device is
 	; in a VGA-compatible state
-	int	3
-
 	mov	ax,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
 	dec	ax			; we stored mode+1
 	cmp	ax,-1			; so now -1 means "invalid"
