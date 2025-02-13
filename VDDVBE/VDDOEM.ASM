@@ -551,12 +551,16 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; have reprogrammed some registers we know nothing about. So let's
 	; check if the focus VM is in a "non-VGA-compatible" mode, and, if
 	; so, schedule a foreground notification.
-	TestMem [edi.VDD_Flags], fVDD_Win	; Q: Windowed VM?
+	; For some reason, the "windowed" flag isn't set if a VM is *starting
+	; up* in windowed mode, so just check whether or not the VM has focus
+	; instead!
+	mov	eax,[Vid_Focus_VM]
+	cmp	eax,ebx				; Q: Modesetting VM has focus?
 	jz	SHORT msd_nowin			;   N: No stuff for Windowed VMs
 
 	push	edi
 	push	ebx
-	mov	ebx,[Vid_Focus_VM]
+	mov	ebx,eax
 	SetVDDPtr edi
 	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
 	jz	short @F
