@@ -55,6 +55,7 @@ sBegin  Data
 	externB	info_table_base
         externD setramdac
 	externW raster_flags
+	externW	Vmode
 sEnd	Data
 
 createSeg _INIT,InitSeg,word,public,CODE
@@ -63,6 +64,7 @@ assumes cs,InitSeg
 	externFP	farsetmode
 	externFP	far_start_dblbuf
 	externFP	far_stop_dblbuf
+	externFP	own_all_pages
 sEnd
 
 
@@ -126,6 +128,10 @@ WriteAux    <'devtofg'>
 
 @@:
 	call	init_hw_regs
+	test	[Vmode],4000h		;linear mode?
+	jz	@F			; if so, no need to spam lower memory
+	call	own_all_pages
+@@:
 	mov	[enabled_flag],0ffh	; is now enabled.
 	call	far_start_dblbuf
 ;	 mov	 screen_busy,1
