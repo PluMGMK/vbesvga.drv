@@ -79,6 +79,7 @@ FILE_VGA	EQU	1
 
 	externA	 __NEXTSEG		; an import from the kernel
 	externA  __WinFlags		; LSB set in protected mode
+	externA	 __A000			; selector for linear range A0000h-AFFFFh
         externFP AllocSelector          ; create a new selector
 	externFP AllocCSToDSAlias	; change a CS selector to DS
 	externFP AllocDSToCSAlias	; change a DS selector to CS
@@ -272,6 +273,8 @@ VScreen_Depth		DB	0
 EXTRN   dac_size:BYTE
 externD	setramdac
 externB bank_select
+externD	VDDEntry
+externD	MemSize				; in VESAFNS.ASM
 
 globalW ScreenSelector,0                ;the screen selector
 globalW ScratchSel,0			;have a scratch selector
@@ -406,6 +409,9 @@ NumOfLines	db	0	; number of lines in text mode
 ; Runtime adjustable "colour format" (msbyte = bits/pel; lsbyte = # planes)
 public	ColourFormat
 ColourFormat	dw	COLOR_FORMAT
+
+; Essentially useless byte required to satisfy function contract with VDD
+shadow_mem_status db	0
 
 sEnd	Data
 page
@@ -604,6 +610,31 @@ C1_TRANSPARENT  equ     0001h           ;driver supports transparency in BitBlt
 
 page
 
+; destroys AX,CX,ES
+public	own_all_pages
+own_all_pages	proc far
+	assumes	ds,Data
+	; make sure the VDD knows we own the entire range A0000-AFFFFh, even if
+	; we're not using it because we're in a linear mode - do this by simply
+	; filling the entire range with zeros.
+	push	di
+
+	mov	cx,8000h	;default to filling the full 16 pages
+	cmp	[MemSize.hi],0
+	jnz	@F
+	mov	cx,[MemSize.lo]
+	shr	cx,1		;divide by two to get #words
+@@:	mov	ax,__A000
+	mov	es,ax
+	xor	ax,ax
+	mov	di,ax
+	cld
+	rep	stosw
+
+	pop	di
+	ret
+own_all_pages	endp
+
 ;---------------------------Public-Routine------------------------------;
 ; physical_enable
 ;
@@ -676,9 +707,7 @@ physical_enable proc near
 	;some of these pushes and pops probably aren't necessary
 	push	di
 	push	si
-	push	ds
 	call	setmode
-	pop	ds
 
 
 	mov	bx,1			;attempt to set 8 bit DAC mode
@@ -709,9 +738,31 @@ physical_enable proc near
 	
 	mov	ax,is_protected
 	and	ax,(WF_PMODE OR WF_WIN386)
-	cmp	ax,(WF_PMODE OR WF_WIN386)
-	jnz	phys_enable_ok		;not in protected mode
-	mov	ax,STOP_IO_TRAP		
+	test	ax,WF_PMODE
+	jz	phys_enable_ok		;not in protected mode
+
+	; check if we have a VDD entry pointer (EGAINIT should have set it)
+	cmp	[VDDEntry.sel],0
+	jz	novdd
+	; call it to set the latch position - we put it at the end of the last
+	; *visible* page of VRAM in the range A0000h-AFFFFh, so that VDD knows
+	; what pages are visible!
+	mov	ax,0Ch			;VDDsetaddresses
+	xor	bx,bx			;assume last address is FFFFh
+	cmp	[MemSize.hi],0		;are we showing less than 64k of VRAM?
+	jnz	@F			; if so, pick the last address 
+	mov	bx,[MemSize.lo]		; in the entire visible range
+@@:	dec	bx			;size --> last address
+	or	bx,0FFFh		;round up to end of page
+	xor	dx,dx			;no flags
+	lea	si,shadow_mem_status
+	call	[VDDEntry]
+
+	test	[Vmode],4000h		;linear mode?
+	jz	@F			; if so, no need to spam lower memory
+	call	own_all_pages
+@@:
+novdd:	mov	ax,STOP_IO_TRAP		
 	int	2fh		
 ;
 phys_enable_ok:
@@ -805,8 +856,8 @@ phdi_exit:
 	
 	mov	ax,is_protected
 	and	ax,(WF_PMODE OR WF_WIN386)
-	cmp	ax,(WF_PMODE OR WF_WIN386)
-	jnz	phys_disable_ret	;we are in real mode
+	test	ax,WF_PMODE
+	jz	phys_disable_ret	;we are in real mode
 	mov	ax,START_IO_TRAP
 	int	2fh			;start i/o trapping
 ;
