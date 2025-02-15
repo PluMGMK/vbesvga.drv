@@ -69,17 +69,20 @@ sb_period_ms	dw ?	; swap_buffers period in milliseconds
 public	desired_fps
 desired_fps	db 60
 
-externW		cursor_funcs		; in CURSOR.ASM
-externW		cursor_xdraw		; in CURSOR.ASM
-externW		cursor_ydraw		; in CURSOR.ASM
-externW		save_screen_y		; in SWCURS.ASM
-externW		save_screen_x		; in SWCURS.ASM
-externW		save_screen_yclip	; in SWCURS.ASM
-externW		save_screen_xclip	; in SWCURS.ASM
-externD		save_screen_longaddr	; in SWCURS.ASM
-externW		save_screen_height	; in SWCURS.ASM
-externW		save_screen_width	; in SWCURS.ASM
-externW		swcursor_data		; in SWCURS.ASM
+externW	cursor_funcs		; in CURSOR.ASM
+externW	cursor_xdraw		; in CURSOR.ASM
+externW	cursor_ydraw		; in CURSOR.ASM
+externW	save_screen_y		; in SWCURS.ASM
+externW	save_screen_x		; in SWCURS.ASM
+externW	save_screen_yclip	; in SWCURS.ASM
+externW	save_screen_xclip	; in SWCURS.ASM
+externD	save_screen_longaddr	; in SWCURS.ASM
+externW	save_screen_height	; in SWCURS.ASM
+externW	save_screen_width	; in SWCURS.ASM
+externW	swcursor_data		; in SWCURS.ASM
+
+externW	ScreenSelector		; in VGA.ASM
+externD	MemSize			; in VESAFNS.ASM
 
 ; cursor functions for "double-buffering cursor" implementation
 dbcursor_funcs	DW	dbcursor_set, dbcursor_move, dbcursor_check
@@ -513,7 +516,6 @@ TimeKillEvent_name	db "timeKillEvent",0
 ;	addresses and allocating memory for the back-buffer
 ; Entry:
 ;	DS	= Data
-;	SI:DI	= int_phys_device structure
 ;	The driver must be setup to use a linear framebuffer
 ; Returns:
 ;	BackBufSel,FrontBufSel,VramSel populated, pointing at respective buffers
@@ -551,7 +553,6 @@ cBegin
 	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
 	; this will allow us to schedule fast timer events in a way that's
 	; completely independent of USER.EXE, so it's a lot cleaner.
-	xchg	dx,di		; hold onto our pointer
 	mov	ax,1684h	; get VxD entry point
 	mov	bx,0442h	; VTDAPI
 	xor	di,di		; NULL default return value
@@ -559,10 +560,9 @@ cBegin
 	int	2Fh
 	mov	ax,es
 	test	ax,ax		; Still NULL?
-	xchg	dx,di		; get back our pointer
 	jz	@F
 
-	mov	[VTDAPIEntry.off],dx
+	mov	[VTDAPIEntry.off],di
 	mov	[VTDAPIEntry.sel],es
 
 	; use our internal implementations of the MMSYSTEM time functions
@@ -642,11 +642,9 @@ fnptrs_setup_done:
 	; Allocate the back buffer memory. Use DPMI directly, since
 	; GlobalAlloc/GlobalLock would allocate a whole bunch of selectors
 	; which we don't actually need!
-	mov	es,si
 	mov	ax,501h				; Allocate memory block
-	mov	bx,es:[di].bmWidthPlanes.hi
-	mov	cx,es:[di].bmWidthPlanes.lo
-	mov	dx,di				; Stash this offset
+	mov	bx,[MemSize.hi]
+	mov	cx,[MemSize.lo]
 
 	; set BackBufSize while we're at it
 	mov	[BackBufSize.lo],cx
@@ -680,8 +678,7 @@ fnptrs_setup_done:
 @@:	; Allocate selectors for front and back buffer
 	mov	di,cx
 	mov	si,bx
-	mov	bx,dx	; get the offset of the bitmap structure stashed before
-	cCall	AllocSelector,<es:[bx].bmBits.sel>
+	cCall	AllocSelector,<[ScreenSelector]>
 	test	ax,ax
 	jnz	@F
 	jmp	setup_done
