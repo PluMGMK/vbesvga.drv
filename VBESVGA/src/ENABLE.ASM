@@ -148,8 +148,6 @@ SYSINI	<PreferBank_off,1,0>
 
 	externB	desired_fps		; in DBLBUF.ASM
 
-	externW	raster_flags		; in BMC_MAIN.ASM
-
 sEnd	Data
 
 
@@ -514,10 +512,6 @@ enable_read_profile_done:
         mov     es:[si].dpLogPixelsY,ax
 
 	call	vesa_gdi_fixup		;fixup GDI info table
-
-	; keep a copy of the raster flags in Data, as InitSeg is discardable!
-	mov	ax,es:[si].dpRaster
-	mov	[raster_flags],ax
 
         xor     bx,bx
         mov     es,bx                   ;invalidate es before freeing

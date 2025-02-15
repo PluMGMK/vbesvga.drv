@@ -119,6 +119,7 @@ sBegin	Data
 externW	ScreenSelector
 externW	ColourFormat
 EXTRN	dac_size:byte
+externW	raster_flags		; in BMC_MAIN.ASM
 externD	setramdac
 
 ; From INT10.ASM
@@ -169,6 +170,9 @@ RMPaletteSeg	dw 0
 ; Scan line length for ease of access in certain parts of the driver...
 public	MemWidth
 MemWidth	dw ?
+; Total framebuffer size for the same purpose
+public	MemSize
+MemSize		dd ?
 
 sEnd	Data
 
@@ -1491,19 +1495,22 @@ vesa_gdi_fixup	proc near
         mov     ax,wptr es:[di].bmPlanes
 	mov	[ColourFormat],ax
 
-	; and the MemWidth
+	; and the MemWidth / Size
 	mov	ax,es:[di].bmWidthBytes
+	mov	bx,es:[di].bmWidthPlanes.lo
+	mov	cx,es:[di].bmWidthPlanes.hi
 	mov	[MemWidth],ax
+	mov	[MemSize.lo],bx
+	mov	[MemSize.hi],cx
+
+	; keep a copy of the raster flags in Data, as InitSeg is discardable!
+	mov	ax,es:[si].dpRaster
+	mov	[raster_flags],ax
 
 	; setup double-buffering if possible / necessary
 	test	[Vmode],VESA_FLAG_LINEAR
 	jz	@F
-
-	push	si
-	mov	si,es	; setup_double_buf requires pointer in SI:DI, not ES:DI
 	call	setup_double_buf
-	pop	si
-
 @@:	ret
 vesa_gdi_fixup	endp
 
@@ -1587,6 +1594,7 @@ common_vesafun:
 	; segments - and anyway, this way it's easier for the VxD to trap it!
 	int	10h
 	ret
+
 setmode	endp
 
 ;--------------------------------------------------------------------------;
