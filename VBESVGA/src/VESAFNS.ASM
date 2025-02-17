@@ -8,6 +8,49 @@
 ;	BIOS functions.
 ;
 
+; We probably don't need to move these into the common VESADEFS.INC...
+; VESA Capabilities
+VESA_CAP_DAC_8BSWITCH	= 00000001b
+VESA_CAP_NONVGA		= 00000010b
+VESA_CAP_DAC_BLANKPROG	= 00000100b
+VESA_CAP_VBEAF		= 00001000b
+VESA_CAP_CALL_EDA	= 00010000b
+VESA_CAP_HWCURSOR	= 00100000b
+VESA_CAP_HWCLIP		= 01000000b
+VESA_CAP_TRANSBLT	= 10000000b
+
+; VESA Mode Number Bitfields
+VESA_FLAG_SVGA		= 0000000100000000b
+VESA_FLAG_UCRTC		= 0000100000000000b
+VESA_FLAG_VBEAFINIT	= 0010000000000000b
+VESA_FLAG_LINEAR	= 0100000000000000b
+VESA_FLAG_PRESERVEMEM	= 1000000000000000b
+
+; VESA Mode Attributes
+VESA_ATTR_HWSUPPORT	= 0000000000000001b
+VESA_ATTR_OPTINFO	= 0000000000000010b
+VESA_ATTR_BIOS_OP	= 0000000000000100b
+VESA_ATTR_COLOUR	= 0000000000001000b
+VESA_ATTR_GRAPHICS	= 0000000000010000b
+VESA_ATTR_NONVGA	= 0000000000100000b
+VESA_ATTR_NOBANKSWITCH	= 0000000001000000b
+VESA_ATTR_LINEAR	= 0000000010000000b
+VESA_ATTR_DBLSCAN	= 0000000100000000b
+VESA_ATTR_INTERLACED	= 0000001000000000b
+VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
+VESA_ATTR_HWSTEREO	= 0000100000000000b
+VESA_ATTR_DUAL		= 0001000000000000b
+
+; VESA Mode Memory Models
+VESA_MEM_TEXT	= 0
+VESA_MEM_CGA	= 1
+VESA_MEM_HGC	= 2
+VESA_MEM_EGA	= 3
+VESA_MEM_PACKED	= 4
+VESA_MEM_SEQ256	= 5
+VESA_MEM_DIRECT	= 6	; no palette switching
+VESA_MEM_YUV	= 7	; no... :(
+
 incDevice = 1				;Include control for gdidefs.inc
 
 	.xlist
@@ -56,49 +99,6 @@ GMEM_LOWER      =   GMEM_NOT_BANKED
 GHND    =    GMEM_MOVEABLE+GMEM_ZEROINIT
 GPTR    =    GMEM_FIXED+GMEM_ZEROINIT
 
-; We probably don't need to move these into the common VESADEFS.INC...
-; VESA Capabilities
-VESA_CAP_DAC_8BSWITCH	= 00000001b
-VESA_CAP_NONVGA		= 00000010b
-VESA_CAP_DAC_BLANKPROG	= 00000100b
-VESA_CAP_VBEAF		= 00001000b
-VESA_CAP_CALL_EDA	= 00010000b
-VESA_CAP_HWCURSOR	= 00100000b
-VESA_CAP_HWCLIP		= 01000000b
-VESA_CAP_TRANSBLT	= 10000000b
-
-; VESA Mode Number Bitfields
-VESA_FLAG_SVGA		= 0000000100000000b
-VESA_FLAG_UCRTC		= 0000100000000000b
-VESA_FLAG_VBEAFINIT	= 0010000000000000b
-VESA_FLAG_LINEAR	= 0100000000000000b
-VESA_FLAG_PRESERVEMEM	= 1000000000000000b
-
-; VESA Mode Attributes
-VESA_ATTR_HWSUPPORT	= 0000000000000001b
-VESA_ATTR_OPTINFO	= 0000000000000010b
-VESA_ATTR_BIOS_OP	= 0000000000000100b
-VESA_ATTR_COLOUR	= 0000000000001000b
-VESA_ATTR_GRAPHICS	= 0000000000010000b
-VESA_ATTR_NONVGA	= 0000000000100000b
-VESA_ATTR_NOBANKSWITCH	= 0000000001000000b
-VESA_ATTR_LINEAR	= 0000000010000000b
-VESA_ATTR_DBLSCAN	= 0000000100000000b
-VESA_ATTR_INTERLACED	= 0000001000000000b
-VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
-VESA_ATTR_HWSTEREO	= 0000100000000000b
-VESA_ATTR_DUAL		= 0001000000000000b
-
-; VESA Mode Memory Models
-VESA_MEM_TEXT	= 0
-VESA_MEM_CGA	= 1
-VESA_MEM_HGC	= 2
-VESA_MEM_EGA	= 3
-VESA_MEM_PACKED	= 4
-VESA_MEM_SEQ256	= 5
-VESA_MEM_DIRECT	= 6	; no palette switching
-VESA_MEM_YUV	= 7	; no... :(
-
 ; Protected Mode Interface struct (taken straight from VBE 3.0 spec)
 PMInfoBlock	struc
 Signature	dd ?	; PM Info Block Signature, always "PMID"
@@ -121,6 +121,7 @@ externW	ColourFormat
 EXTRN	dac_size:byte
 externW	raster_flags		; in BMC_MAIN.ASM
 externD	setramdac
+externD	VDDEntry
 
 ; From INT10.ASM
 externW	int10h_ds
@@ -166,6 +167,10 @@ PMIntEntry	FARPOINTER <?,?>
 ; Real-Mode buffer for palette entries (if needed)
 RMPaletteSel	dw 0
 RMPaletteSeg	dw 0
+
+; Low-memory display buffer selector for VDD hack...
+public	DummyLoMemSel
+DummyLoMemSel	dw 0
 
 ; Scan line length for ease of access in certain parts of the driver...
 public	MemWidth
@@ -235,7 +240,7 @@ VESAWinAAttrs	db ?
 VESAWinBAttrs	db ?
 VESAGranularity	dw ?	; in kiB, hopefully == 64
 VESAWinSize	dw ?	; in kiB, hopefully == 64
-VESAWinASeg	dw ?
+VESAWinASeg	dw ?	; copy of ScreenSelector in CS, for bank switching!
 VESAWinBSeg	dw ?
 public	VESABankSwitch
 VESABankSwitch	FARPOINTER <?,?>
@@ -332,7 +337,6 @@ BankSwitchPMInt	endp
 ; This function emulates bank-switching for linear modes.
 ; It allows me to start programming support for linear modes,
 ; while still fully stress-testing the bank-switching code paths.
-; Unfortunately, the performance doesn't seem to be any better...
 BankSwitchSoft	proc far
 	; Since we're calling a Win16 API function, save these:
 	push	dx
@@ -1283,7 +1287,7 @@ FindMode_checksels:
 
 @@:
 	xor	di,di	; all good!
-	jmp	short FindMode_done
+	jmp	FindMode_done
 
 FindMode_setuplin:
 ifdef	INT3
@@ -1310,7 +1314,27 @@ endif
 	mov	[VESALinearBuf.lo],cx
 	mov	[VESALinearBuf.hi],bx
 
-	; Create a selector that will be used to access 64k at a time
+	; IF we're in a linear mode AND the VDD is loaded, then we need to
+	; "artificially" touch the pages in the low-memory (banked) buffer
+	; (usually A0000h-AFFFFh) to make sure it knows we own them.
+	cmp	[VDDEntry.sel],0
+	jz	@F
+
+	mov	ax,[VESAWinASeg]
+	cmp	[PMIntEntry.sel],0
+	jz	do_segtosel
+
+	.286p			; for LAR instruction
+	lar	cx,ax
+	jz	selvalid	; ZF if it's a valid selector
+do_segtosel:
+	.286
+	xor	cx,cx		; want a data segment
+	call	SegToSel
+selvalid:
+	mov	[DummyLoMemSel],ax
+
+@@:	; Create a selector that will be used to access 64k at a time
 	; (we can copy __A000 and then change its base dynamically)
 	cCall	AllocSelector,<__A000>
 	mov	es,[CodeSel]	; ES gets stomped when we call the C function

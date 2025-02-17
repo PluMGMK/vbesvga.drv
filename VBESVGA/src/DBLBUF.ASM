@@ -43,9 +43,6 @@ VramSel	dw ?
 ; Handle to back-buffer memory block
 BackBufDPMIHdl	dd ?
 
-; How much data to transfer when swapping buffers
-BackBufSize	dd ?
-
 ; VTDAPI entry point (preferred to MMSYSTEM if available)
 VTDAPIEntry	dd ?
 
@@ -353,7 +350,7 @@ swap_buffers	proc near
 @@no_cursor:
 	; done with the cursor altogether (or had none in the first place),
 	; so just chug through the rest of the buffer copy and we're done
-	mov	ecx,[BackBufSize]
+	mov	ecx,[MemSize]
 	; account for any progress made so far
 	sub	ecx,edi
 	jnz	@@copy_loop
@@ -646,10 +643,6 @@ fnptrs_setup_done:
 	mov	bx,[MemSize.hi]
 	mov	cx,[MemSize.lo]
 
-	; set BackBufSize while we're at it
-	mov	[BackBufSize.lo],cx
-	mov	[BackBufSize.hi],bx
-
 	; we need twice this much memory - one for the true back-buffer,
 	; and again for the write-through front buffer!
 	shl	cx,1
@@ -666,8 +659,8 @@ fnptrs_setup_done:
 	; the back buffer in use for as long as Windows is running...
 	; (It is a LOT of physical memory, so we don't want to lose it!)
 	mov	ax,600h				; Lock linear region
-	mov	di,[BackBufSize.lo]
-	mov	si,[BackBufSize.hi]
+	mov	di,[MemSize.lo]
+	mov	si,[MemSize.hi]
 	; again, we need to double it
 	shl	di,1
 	rcl	si,1
@@ -689,8 +682,8 @@ fnptrs_setup_done:
 
 	; And set its limit - SetSelectorBase should have returned the same
 	; value in AX again
-	mov	dx,[BackBufSize.lo]
-	mov	cx,[BackBufSize.hi]
+	mov	dx,[MemSize.lo]
+	mov	cx,[MemSize.hi]
 	; Limit == size-1
 	sub	dx,1
 	sbb	cx,0
@@ -712,8 +705,8 @@ fnptrs_setup_done:
 	; Set the selector to the base of the front buffer.
 	; It's the second half of the large memory block we
 	; just allocated, of which the base is in SI:DI
-	add	di,[BackBufSize.lo]
-	adc	si,[BackBufSize.hi]
+	add	di,[MemSize.lo]
+	adc	si,[MemSize.hi]
 	cCall	SetSelectorBase,<ax,si,di>
 
 	; Now copy the selector again, to make one for the VRAM buffer
@@ -737,7 +730,7 @@ fnptrs_setup_done:
 	push	edi
 	mov	es,[BackBufSel]
 	xor	eax,eax
-	mov	ecx,[BackBufSize]
+	mov	ecx,[MemSize]
 	mov	edi,eax
 	shr	ecx,1
 	jnc	@F
@@ -779,8 +772,8 @@ cBegin
 	mov	ax,601h				; Unlock linear region
 	mov	bx,si
 	mov	cx,di
-	mov	si,[BackBufSize.hi]
-	mov	di,[BackBufSize.lo]
+	mov	si,[MemSize.hi]
+	mov	di,[MemSize.lo]
 	shl	di,1
 	rcl	si,1
 	int	31h
@@ -830,7 +823,7 @@ cBegin
 	push	edi
 	mov	es,[FrontBufSel]
 	xor	eax,eax
-	mov	ecx,[BackBufSize]
+	mov	ecx,[MemSize]
 	mov	edi,eax
 	shr	ecx,1
 	jnc	@F

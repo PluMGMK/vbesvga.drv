@@ -1033,3 +1033,66 @@ GET_BANK macro
 	xor	dh,dh
 	pop	ds
         endm
+
+;---------------------------------Macro---------------------------------;
+; OWN_ALL_PAGES
+;
+; touches every visible page in the low-memory VRAM buffer so VDD knows
+; we own them, even when we normally use an extended-memory linear buffer
+; implemented as a macro to avoid extra far calls in VGA and 3XSWITCH
+;
+; usage
+;
+;     OWN_ALL_PAGES
+;
+; Entry:
+;       LatchAddx and DummyLoMemSel have been populated
+; Returns:
+;	none
+; Error Returns:
+;	none
+; Registers Destroyed:
+;	AX,ES,FLAGS
+; Registers Preserved:
+;	BX,CX,DX,SI,DI,BP,DS
+; History:
+;       See Git
+;-----------------------------------------------------------------------;
+
+IFNDEF	VESA_MEM_TEXT
+        externW DummyLoMemSel	; in VESAFNS.ASM
+ENDIF
+IFNDEF	FILE_VGA
+        externW LatchAddx	; in VGA.ASM
+ENDIF
+
+OWN_ALL_PAGES macro
+	local	oap_done
+	local	oap_check
+	local	oap_next
+
+	mov	ax,[DummyLoMemSel]
+	test	ax,ax
+	jz	oap_done
+
+	.386
+	mov	es,ax
+	push	ebx
+	push	ecx
+	db	66h,0Fh,03h,0C8h;lsl ecx,ax
+	movzx	ebx,[LatchAddx]
+	shl	ebx,2		; convert Planar addx to Chain4
+oap_check:
+	cmp	ebx,ecx		; beyond end of segment?
+	ja	oap_next	; skip it...
+	; put in a DWORD at the end of the page to touch all four planes
+	mov	dword ptr es:[ebx],0
+oap_next:
+	sub	ebx,1000h	; previous page
+	jnc	oap_check
+	pop	ecx
+	pop	ebx
+
+oap_done:
+	.286
+        endm

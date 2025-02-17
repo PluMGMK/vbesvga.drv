@@ -410,8 +410,11 @@ NumOfLines	db	0	; number of lines in text mode
 public	ColourFormat
 ColourFormat	dw	COLOR_FORMAT
 
+; Remember where we put the latch save address
+public	LatchAddx
+LatchAddx	dw	0
 ; Essentially useless byte required to satisfy function contract with VDD
-shadow_mem_status db	0
+ShadowMemStatus db	0
 
 sEnd	Data
 page
@@ -610,31 +613,6 @@ C1_TRANSPARENT  equ     0001h           ;driver supports transparency in BitBlt
 
 page
 
-; destroys AX,CX,ES
-public	own_all_pages
-own_all_pages	proc far
-	assumes	ds,Data
-	; make sure the VDD knows we own the entire range A0000-AFFFFh, even if
-	; we're not using it because we're in a linear mode - do this by simply
-	; filling the entire range with zeros.
-	push	di
-
-	mov	cx,8000h	;default to filling the full 16 pages
-	cmp	[MemSize.hi],0
-	jnz	@F
-	mov	cx,[MemSize.lo]
-	shr	cx,1		;divide by two to get #words
-@@:	mov	ax,__A000
-	mov	es,ax
-	xor	ax,ax
-	mov	di,ax
-	cld
-	rep	stosw
-
-	pop	di
-	ret
-own_all_pages	endp
-
 ;---------------------------Public-Routine------------------------------;
 ; physical_enable
 ;
@@ -747,22 +725,28 @@ physical_enable proc near
 	; call it to set the latch position - we put it at the end of the last
 	; *visible* page of VRAM in the range A0000h-AFFFFh, so that VDD knows
 	; what pages are visible!
+	.386
 	mov	ax,0Ch			;VDDsetaddresses
-	xor	bx,bx			;assume last address is FFFFh
-	cmp	[MemSize.hi],0		;are we showing less than 64k of VRAM?
-	jnz	@F			; if so, pick the last address 
-	mov	bx,[MemSize.lo]		; in the entire visible range
-@@:	dec	bx			;size --> last address
-	or	bx,0FFFh		;round up to end of page
+	push	ebx
+	mov	ebx,[MemSize]
+	; since VBE framebuffers are always in Chain4 mode, what the VDD
+	; considers a "page" is actually four pages --> so divide by four
+	shr	ebx,2
+	dec	ebx			;convert buffer length to last address
+	test	ebx,0FFFF0000h		;more than 64k dwords?
+	jz	@F
+	mov	bx,-1			;just tell it we're taking all 16 pages
+@@:	or	bx,0FFFh		;round up to end of page
 	xor	dx,dx			;no flags
-	lea	si,shadow_mem_status
+	lea	si,ShadowMemStatus
 	call	[VDDEntry]
+	mov	[LatchAddx],bx
+	pop	ebx
 
-	test	[Vmode],4000h		;linear mode?
-	jz	@F			; if so, no need to spam lower memory
-	call	own_all_pages
-@@:
-novdd:	mov	ax,STOP_IO_TRAP		
+	OWN_ALL_PAGES
+
+novdd:	.286
+	mov	ax,STOP_IO_TRAP		
 	int	2fh		
 ;
 phys_enable_ok:
