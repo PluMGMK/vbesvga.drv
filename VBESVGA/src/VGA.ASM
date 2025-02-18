@@ -257,12 +257,6 @@ page
 
 sBegin	Data
 
-PUBLIC	Video_Board_Id, Video_Memory_Banks, Video_Board_Flags
-
-Video_Board_Id		DW	0
-Video_Memory_Banks	DB	0
-Video_Board_Flags	DB	0
-
 PUBLIC	VScreen_Width, VScreen_Height, VScreen_Depth, Vmode
 
 VScreen_Width		DW	0
@@ -725,33 +719,30 @@ physical_enable proc near
 	; call it to set the latch position - we put it at the end of the last
 	; *visible* page of VRAM in the range A0000h-AFFFFh, so that VDD knows
 	; what pages are visible!
-	.386
 	mov	ax,0Ch			;VDDsetaddresses
-	push	ebx
-	mov	ebx,[MemSize]
-	; since VBE framebuffers are always in Chain4 mode, what the VDD
-	; considers a "page" is actually four pages --> so divide by four
-	shr	ebx,2
-	dec	ebx			;convert buffer length to last address
-	test	ebx,0FFFF0000h		;more than 64k dwords?
+	mov	bx,[MemSize.lo]
+	mov	cx,[MemSize.hi]		;TODO: implement bank awareness in VDD
+	; NOTE: we are in Chain4 mode, but the VDD will enter planar mode to
+	; save the latches, so the saving will (in theory) be at an address
+	; four times higher than the one we spec here. But what really matters
+	; is that we mark ALL our pages as visible, in Chain4 mode, so VDD won't
+	; try to steal them based on some putative LRU value!
+	dec	bx			;convert buffer length to last address
+	test	cl,cl			;more than 64k bytes?
 	jz	@F
 	mov	bx,-1			;just tell it we're taking all 16 pages
 @@:	or	bx,0FFFh		;round up to end of page
-	xor	dx,dx			;no flags
+	xor	dx,dx			;no flags - TODO: bank flag for VDD
 	lea	si,ShadowMemStatus
 	call	[VDDEntry]
 	mov	[LatchAddx],bx
-	pop	ebx
 
 	OWN_ALL_PAGES
 
-novdd:	.286
-	mov	ax,STOP_IO_TRAP		
+novdd:	mov	ax,STOP_IO_TRAP		
 	int	2fh		
 ;
 phys_enable_ok:
-	call	set_board_flags
-	call	set_cursor_addr
         mov     ax,1                    ;indicate success
         ret
 
@@ -855,141 +846,6 @@ phys_disable_ret:
 
 physical_disable endp
 page
-
-assumes ds,Data
-
-;	set_board_flags
-;
-;	This routine sets some global data variables having to do with
-;	the board that is installed and running. These flags can be checked
-;	by other driver calls to see what sort of hardware support the
-;	video board supplies. For example -- bitblt may wish to use
-;	splitbank addressing if it is available.
-;	PARMS:
-;	ds	Data
-
-;	FIXME: this is all hardware-specific stuff, can probably remove!
-
-PUBLIC	set_board_flags
-set_board_flags 	PROC	NEAR
-
-;	I will assume either 512K or 1Meg of memory
-
-	mov	dl,3				;set bank 3
-	SET_BANK	; call	far_set_both_banko
-
-	mov	ax,ScreenSelector
-	mov	es,ax
-	mov	ax,es:[0]
-	push	ax
-
-	mov	bx,2
-	mov	ax,55AAH
-	mov	byte ptr es:[0],al
-	mov	byte ptr es:[1],ah
-	mov	al,es:[0]
-	cmp	al,0AAH
-	jne	sbf0
-	mov	al,es:[1]
-	cmp	al,55H
-	jne	sbf0
-
-	mov	ax,00FFH
-	mov	byte ptr es:[0],al
-	mov	byte ptr es:[1],ah
-	mov	al,es:[0]
-	cmp	al,0FFH
-	jne	sbf0
-	mov	al,es:[1]
-	cmp	al,00H
-	jne	sbf0
-	shl	bx,1
-
-sbf0:	pop	ax
-	mov	es:[0],ax
-	mov	Video_Memory_Banks,bl
-
-	mov	dx,03C4H
-	mov	al,08FH
-	out	dx,al
-	inc	dx
-	in	al,dx
-	mov	ah,al
-
-	dec	dx
-	mov	al,08EH
-	out	dx,al
-	inc	dx
-	in	al,dx
-	mov	Video_Board_Id,ax
-
-	sub	bx,bx
-	cmp	ax,07151H			;VRAMII rev B id
-        je      short board_flag_yes_splitbank
-	cmp	ax,07152H			;VRAMII rev C and D id
-	je	short board_flag_yes_splitbank
-	cmp	ax,07760H			;HT216 rev B and C
-	je	short board_flag_yes_splitbank
-	cmp	ax,07763H			;HT216 rev B, C, and D
-	je	short board_flag_yes_splitbank
-	cmp	ax,07764H			;HT216 rev E
-        jne     short board_flag_no_splitbank
-board_flag_yes_splitbank:
-	or	bl,BOARD_FLAG_SPLITBANK
-board_flag_no_splitbank:
-	cmp	ax,07760H			;HT216 rev B and C
-	je	short board_flag_yes_216
-	cmp	ax,07763H			;HT216 rev B, C, and D
-	je	short board_flag_yes_216
-	cmp	ax,07764H			;HT216 rev E
-        jne     short board_flag_no_216
-board_flag_yes_216:
-board_flag_no_216:
-	mov	Video_Board_Flags,bl
-	ret
-
-set_board_flags 	ENDP
-
-
-
-;	set_cursor_addr
-;
-;	This routine sets the address from which the hardware will fetch
-;	the cursor data. The hardware cursor also needs a kick to bring
-;	it back on again when switching in from a DOS session.
-;	PARMS:
-;       ds      Data
-
-PUBLIC	far_set_cursor_addr
-far_set_cursor_addr	PROC	FAR
-
-	call	set_cursor_addr
-	ret
-
-far_set_cursor_addr	ENDP
-
-PUBLIC	set_cursor_addr
-set_cursor_addr 	PROC	NEAR
-
-	mov	dx,VGAREG_SQ_ADDR		;set the cursor bank to be
-	mov	al,VGAREG_SQ_INTERFACE		; the last available bank
-	out	dx,al				; in video memory
-	inc	dx
-	in	al,dx
-	mov	ah,Video_Memory_Banks		;NOTE: the hardware forces the
-	dec	ah				; data to come from offset
-	shl	ah,5				; 192K (= 3 * 64K) within a
-	and	ax,609FH			; 256K bank. But we do have a
-	or	al,ah				; choice of the 256 byte
-	out	dx,al				; boundary within a 64K page
-
-	dec	dx				;I choose the last 256 bytes
-	mov	ax,VGAREG_SQ_POINTER_ADDRESS	; of a 64K page.
-	mov	ah,0FFH
-        out     dx,ax
-	ret
-
-set_cursor_addr 	ENDP
 
 
 	assumes ds,Data

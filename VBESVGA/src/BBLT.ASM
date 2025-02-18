@@ -204,8 +204,6 @@ bitblt_prep_rop_etal	PROC	NEAR
 	mov	local_enable_flag,al
 	mov	al,bank_select
 	mov	global_bank,al
-	mov	al,Video_Board_Flags
-	mov	local_board_flags,al
 
 	les	di,lpDrawMode			;these may not be needed but
 	mov	ax,es:[di].bkColor.lo		; putting them on the stack
