@@ -44,7 +44,6 @@ incDevice = 1				;Include control for gdidefs.inc
 	public		dev_to_background
 
 	EXTRN		far_set_dacsize:FAR
-	EXTRN		far_set_cursor_addr:FAR
 
 sBegin  Data
 	externW ScreenSelector
@@ -132,7 +131,6 @@ WriteAux    <'devtofg'>
 	call	far_start_dblbuf
 ;	 mov	 screen_busy,1
 
-	call	far_set_cursor_addr
         ret
 
 dev_to_foreground	endp

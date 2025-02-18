@@ -377,8 +377,6 @@ WriteAux	<'ExtTOut'>
 	mov	ax,130
 	mov	jak_text_buffer_width,ax
 	xor	ax,ax
-	mov	al,Video_Board_Flags
-	mov	local_board_flags,ax
 	mov	ax,VScreen_Width
 	mov	local_VScreen_Width,ax
 	mov	ax,off_lp_draw_mode

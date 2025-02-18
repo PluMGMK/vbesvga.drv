@@ -207,18 +207,8 @@ WF_SMALLFRAME   =    0200h
 WF_80x87        =    0400h
 
 
-;	Flags for the Video Board set bu set_board_flags in vga.asm
-
-BOARD_FLAG_VRAM 	EQU	10000000B
-BOARD_FLAG_SPLITBANK    EQU     01000000B
-BOARD_FLAG_ENABLE_216	EQU	00100000B
-
 IFNDEF	FILE_VGA
 sBegin  Data
-	EXTRN	Video_Board_Id:WORD
-	EXTRN	Video_Memory_Banks:BYTE
-	EXTRN	Video_Board_Flags:BYTE
-
 	EXTRN VScreen_Width:WORD
 	EXTRN VScreen_Height:WORD
 	EXTRN VScreen_Depth:BYTE

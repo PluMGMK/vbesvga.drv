@@ -467,16 +467,6 @@ real_build_string endp
 	assumes ss,StrStuff
 
 non_justified_text proc near
-IF	JAK_TEXT
-	test	local_board_flags,BOARD_FLAG_ENABLE_216
-	jz	@F
-        test    excel,IS_DEVICE         ; output to real screen?
-        jz      @F                      ; no, skip the bank select
-	test	accel,IS_OPAQUE
-	jz	@F
-	jmp	jak_non_justified_text
-@@:
-ENDIF
 	mov	ColorPhase,0		; clear the left color clip phase
 	test	al,CLIPPED_LEFT
 	jnz	@F
