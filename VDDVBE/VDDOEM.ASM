@@ -902,6 +902,11 @@ EndProc VDD_OEM_Set_Mode_Nested
 ;==============================================================================
 BeginProc VDD_OEM_Bounce_VM
 
+	;if this is not set, then BGrnd function does both
+	SetVDDPtr edi
+	TestMem [edi.VDD_Flags], fVDD_WaitAtt
+	jz	VDD_Proc_BGrnd_INT2F
+
 	call	VDD_Proc_BGrnd_INT2F
 	call	VDD_Proc_FGrnd_INT2F
 	ret
