@@ -74,7 +74,7 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`Height` | 480 - 65535 | Height in scanlines of the desired video mode | 768 |
 |`Depth` | 8 - 24 | Significant bits per pixel of the desired video mode ("significant" means that padding bits are excluded, so for example if you choose 24, both 24-bit and 32-bit modes will qualify) | 24 |
 |`fontsize` | `small` or `large` | Choose whether to use 96dpi or 120dpi fonts | `small` |
-|`dacdepth` | 6 or 8 | Significant bits to use per colour in 256-colour modes | 6 |
+|`dacdepth` | 6, 8 or `auto` | Significant bits to use per colour in 256-colour modes; `auto` means 8 if the BIOS advertises that 8 is supported, 6 otherwise; if 8 is specified then the driver attempts to use 8 regardless of what the BIOS says! | `auto` |
 |`DoubleBufRefreshRate` | 0 - 255 | Number of times per second to swap buffers if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value less than 4 **disables** double-buffering | 60 |
 |`PMIDcheck` | `disable`, `none`, `sum` or `sanity` | See [below](#protected-mode-interface) | `sum` |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |

@@ -96,7 +96,6 @@ fail_reason	dw	offset general_fail
 bad_width	db	'Width < 640 is not allowed',13,10,'$'
 bad_height	db	'Height < 480 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
-;bad_framerate	db	'Refresh rate must be in range 4-255 fps inclusive',13,10,'$'
 bad_framerate	db	'Refresh rate must be in less than 256 fps',13,10
 		db	'(Note that values less than 4 fps disable double buffering)',13,10,'$'
 general_fail	db	'Unsuitable settings for current driver / hardware',13,10,'$'
@@ -132,9 +131,11 @@ SYSINI	<dpi_120,5,120>
 dac_member	db	"dacdepth",0
 dac_depth_6	db	"6",0
 dac_depth_8	db	"8",0
+dac_depth_auto	db	"auto",0
 sysini_dacstruc        LABEL   BYTE
 SYSINI	<dac_depth_6,1,2>
 SYSINI	<dac_depth_8,1,0>
+SYSINI	<dac_depth_auto,4,0FFh>
 
 PreferBank_member	db	"PreferBankedModes",0
 PreferBank_on		db	"1",0
@@ -410,8 +411,8 @@ enable_read_profile	PROC	NEAR
         push    ax
 	call	GetPrivateProfileString
 
-	mov	ax,2			       ;default return value
-	mov	bx,2				;number different modes
+	mov	ax,0FFh			       ;default return value
+	mov	bx,3				;number different modes
         lea     si,aszCurDrvFName
 	lea	bp,sysini_dacstruc
         call    enable_find_substring
