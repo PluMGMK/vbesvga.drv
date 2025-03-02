@@ -179,6 +179,10 @@ MemWidth	dw ?
 public	MemSize
 MemSize		dd ?
 
+; Are we using a 3-byte-per-pixel video mode, or allowed to search for one?
+public	ThreeByte
+ThreeByte	db 0
+
 sEnd	Data
 
 
@@ -274,6 +278,7 @@ VESAGFieldPos	db ?
 OFF_VESA_BDEPTH	equ $-VESAModeStruct
 VESABFieldSize	db ?
 VESABFieldPos	db ?
+OFF_VESA_ADEPTH	equ $-VESAModeStruct
 VESAAFieldSize	db ?
 VESAAFieldPos	db ?
 VESADirectMode	db ?	; Bit 0 = programmable ramp, 1 = usable alpha channel
@@ -1143,25 +1148,42 @@ FindMode_attrsOK:
 	jne	jnelp		; NEXT!
 
 	mov	al,es:[di.OFF_VESA_DEPTH]
-	test	al,7		; is our pixel an integer number of bytes?
-	jnz	jnelp		; NEXT!
-
+	mov	ah,al
 	; Packed pixel?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_PACKED
-	je	@F				; depth is as given
+	je	@F		; depth is as given
 
 	; Direct colour?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_DIRECT
 	; We don't support other models
 	jne	jnelp		; NEXT!
-	mov	al,es:[di.OFF_VESA_RDEPTH]	; depth is sum of R/G/B vals
+
+	; calculate significant and total depth for non-packed mode
+	mov	al,es:[di.OFF_VESA_RDEPTH]	; sig depth is sum of R/G/B vals
 	add	al,es:[di.OFF_VESA_GDEPTH]
 	add	al,es:[di.OFF_VESA_BDEPTH]
+	mov	ah,al				; save significant depth in AH
+	add	al,es:[di.OFF_VESA_ADEPTH]	; get total depth in AL
+
+@@:	; here AL = total depth and AH = significant depth
+	test	al,7		; is our pixel an integer number of bytes?
+baddepth:
+	jnz	jnelp		; NEXT!
+
+	; if the total depth is three bytes, only use it if explicitly allowed
+	cmp	al,24
+	jne	@F
+	cmp	[ThreeByte],1
+	jne	baddepth	; NEXT!
 
 @@:
-	; Is it the right depth?
-	cmp	al,[VScreen_Depth]
-	jne	jnelp		; NEXT!
+	; Is it the right significant depth?
+	cmp	ah,[VScreen_Depth]
+	jne	baddepth	; NEXT!
+
+	; Set the depth field equal to the total depth so we don't confuse
+	; any other logic later on...
+	mov	es:[di.OFF_VESA_DEPTH],al
 
 	; OK, we've found the mode!
 	mov	[Vmode],cx
@@ -1379,6 +1401,15 @@ FindMode_done:
 	shr	al,3	; bits to bytes
 	cbw
 	mov	[pxbytes],ax
+
+	; mark whether or not we end up using a three-byte mode
+	; (in theory this could be used to enable/disable awkward code paths)
+	xor	ah,ah
+	cmp	al,3
+	jne	@F
+	inc	ah
+@@:	mov	[ThreeByte],ah
+
 	mov	dh,[VESAMemModel]
 	xor	dh,VESA_MEM_DIRECT	; zero if NO palette, else non-zero
 	mov	ah,dh

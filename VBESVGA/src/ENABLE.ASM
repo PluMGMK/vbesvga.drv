@@ -121,6 +121,8 @@ depth_member	db	"Depth",0
 
 fps_member	db	"DoubleBufRefreshRate",0
 
+allow3b_member	db	"Allow3ByteMode",0
+
 font_member	db	"fontsize",0
 dpi_96		db	"small",0
 dpi_120 	db	"large",0
@@ -148,6 +150,7 @@ SYSINI	<PreferBank_off,1,0>
         externW ScratchSel              ; the free selector
 
 	externB	desired_fps		; in DBLBUF.ASM
+	externB	ThreeByte		; in VESAFNS.ASM
 
 sEnd	Data
 
@@ -453,13 +456,20 @@ enable_read_profile	PROC	NEAR
 	lea	bx,fps_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,60,ds,cx>
-	;cmp	al,4
-	;rcl	ah,1	
-	test	ah,ah	; AH is non-zero if user went over 255 OR below 4
+	test	ah,ah	; AH is non-zero if user went over 255
 	jz	@F
 	mov	[fail_reason],offset bad_framerate
 	jmp	enable_read_profile_fail
 @@:	mov	desired_fps,al
+
+	lea	ax,boot_category
+	lea	bx,allow3b_member
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+	test	ax,ax
+	jz	@F
+	mov	al,1
+@@:	mov	ThreeByte,al
 
 	; Linear = AX = 1 iff prefer_bank == 0
 	mov	ax,[prefer_bank]

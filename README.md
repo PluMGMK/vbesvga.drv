@@ -78,6 +78,7 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`DoubleBufRefreshRate` | 0 - 255 | Number of times per second to swap buffers if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value less than 4 **disables** double-buffering | 60 |
 |`PMIDcheck` | `disable`, `none`, `sum` or `sanity` | See [below](#protected-mode-interface) | `sum` |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
+|`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits, which are (currently) subject to issues such as #15; disable this to prefer 32-bit modes which give the same colour depth but fewer glitches | 0 |
 
 ### Protected-Mode Interface
 
