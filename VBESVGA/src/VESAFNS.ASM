@@ -1017,21 +1017,17 @@ public	VBEInfoReady
 VBEInfoReady:
 	int	3
 endif
-	; fail fast if the DAC cannot be set as desired
-	cmp	[dac_size],2
-	je	@F	; 6-bit DAC is always possible
+	; set the DAC size to the best available if necessary
+	cmp	[dac_size],-1	; "auto" setting?
+	jne	@F
 
-	test	[VESACaps.lo],VESA_CAP_DAC_8BSWITCH
-	jnz	@F	; we're OK
-
-ifdef	INT3
-public	No8bDAC
-No8bDAC:
-	int	3
-endif
-	WriteAux <'8-bit DAC specified in profile but not supported by card'>
-	mov	di,-1
-	jmp	FindMode_reterr
+	mov	al,byte ptr [VESACaps.lo]
+	not	al
+	and	al,VESA_CAP_DAC_8BSWITCH
+	; now AL == 1 if it CANNOT be switched to 8-bit, 0 if it can
+	shl	al,1	; set to 2 (i.e. 8 minus 6) if applicable
+.errnz	(VESA_CAP_DAC_8BSWITCH - (2 SHR 1))
+	mov	[dac_size],al
 
 @@:
 	push	seg VESAModeStruct
@@ -1096,25 +1092,25 @@ FindMode_loop:
 FindMode_ChkInfo:
 	mov	ax,es:[di.OFF_VESA_ATTRS]
 	; Is it supported by the current hardware?
-	test	ax,VESA_ATTR_HWSUPPORT
+	test	al,low VESA_ATTR_HWSUPPORT
 	jz	FindMode_loop	; NEXT!
 	; Is it graphical (not text)?
-	test	ax,VESA_ATTR_GRAPHICS
+	test	al,low VESA_ATTR_GRAPHICS
 	jz	FindMode_loop	; NEXT!
 	; Is it colour (not BW)?
-	test	ax,VESA_ATTR_COLOUR
+	test	al,low VESA_ATTR_COLOUR
 	jz	FindMode_loop	; NEXT!
 
 	cmp	[bLinear],0
 	jnz	@F
 	; Does it support bank switching?
-	test	ax,VESA_ATTR_NOBANKSWITCH
+	test	al,low VESA_ATTR_NOBANKSWITCH
 jnelp:	; extra label to allow for short JNE instructions
 	jne	FindMode_loop	; NEXT!
 	jmp	FindMode_attrsOK
 @@:
 	; Does it support linear operation?
-	test	ax,VESA_ATTR_LINEAR
+	test	al,low VESA_ATTR_LINEAR
 	jz	FindMode_loop	; NEXT!
 	; Set the "linear" flag in the mode number
 	or	ch,high VESA_FLAG_LINEAR
