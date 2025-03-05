@@ -61,6 +61,8 @@ incDevice	= 1
 	externFP AllocCSToDSAlias
 	externFP GetPrivateProfileString
         externFP GetPrivateProfileInt   ; Kernel!GetProfileInt
+	externFP LoadLibrary
+	externFP GetProcAddress
 
 ifdef PALETTES
 	externFP SetPaletteTranslate    ;in color\ega\vga\palette.asm
@@ -98,7 +100,7 @@ bad_height	db	'Height < 480 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
 bad_framerate	db	'Refresh rate must be in less than 256 fps',13,10
 		db	'(Note that values less than 4 fps disable double buffering)',13,10,'$'
-general_fail	db	'Unsuitable settings for current driver / hardware',13,10,'$'
+general_fail	db	'No usable modes found with requested resolution and bit depth',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
 boot_category   db      "VBESVGA.DRV",0
@@ -151,6 +153,8 @@ SYSINI	<PreferBank_off,1,0>
 
 	externB	desired_fps		; in DBLBUF.ASM
 	externB	ThreeByte		; in VESAFNS.ASM
+	externB	DepthList		; in VESAFNS.ASM
+	externB	EndDepthList		; in VESAFNS.ASM
 
 sEnd	Data
 
@@ -550,12 +554,18 @@ enable_read_profile_fail:
 	; * Print the failure reason
 	; * Invite the user to press a key
 	; * FatalExit, which may not do anything...
+	; * Exit to DOS
 	mov	ax,3	; text mode
 	int	10h
 	mov	dx,[fail_reason]
 	mov	ah,9	; write string to stdout
 	int	21h
-	lea	dx,[press_key]
+	cmp	[VScreen_Depth],0
+	jz	@F
+	; if the settings are fully loaded, then tell the user a little bit about them:
+	call	enable_print_info
+@@:	lea	dx,[press_key]
+	mov	ah,9	; write string to stdout
 	int	21h
 	mov	ah,8	; read character from stdin
 	int	21h
@@ -570,6 +580,143 @@ enable_read_profile_fail:
 	int	21h
 
 enable_read_profile	ENDP
+
+
+;
+;       enable_print_info
+;
+;       This routine is called just before a fatal exit, and imports WSPRINTF
+;	from USER.EXE to quickly print out some troubleshooting info about
+;	the way the driver is currently (mis)configured.
+;	PARMS:
+;	ds	Data
+;
+;       RETURNS:
+;       nothing
+
+user_exe	db "USER.EXE",0
+wsprintf_name	db "_WSPRINTF",0
+info_format	db "Selected resolution: %u*%u",13,10
+		db "Selected bit depth:  %u bits",13,10
+		db "Usable bit depths at this resolution: ",0
+next_format	db ", " ; fallthrough
+first_format	db "%u bits",0
+
+cProc	enable_print_info,<NEAR,PUBLIC,NODATA>
+	localD	wsprintf
+	localV	outbuf,400h
+cBegin
+	; Load USER.EXE so we can use wsprintf function - this has to be
+	; done at runtime, as DISPLAY.DRV cannot depend on DLLs other than
+	; KERNEL!
+	lea	ax,user_exe
+	cCall	LoadLibrary,<cs,ax>
+	cmp	ax,20h	; HINSTANCE_ERROR
+	jnb	@F
+	jmp	print_info_done
+
+@@:	; get the wsprintf pointer
+	lea	dx,wsprintf_name
+	cCall	GetProcAddress,<ax,cs,dx>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	print_info_done
+
+@@:	mov	[wsprintf.off],ax
+	mov	[wsprintf.sel],dx
+
+	; format configuration information
+	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
+	xor	ax,ax
+	mov	al,[VScreen_Depth]
+	push	ax
+	push	[VScreen_Height]
+	push	[VScreen_Width]
+	lea	ax,info_format
+	push	cs
+	push	ax
+	lea	ax,outbuf
+	push	ss
+	push	ax
+	call	[wsprintf]
+	mov	sp,si	; restore stack pointer
+
+	; then print it
+	mov	si,ax	; get length of output string
+	; replace null terminator with dollar terminator
+	mov	byte ptr outbuf[si],'$'
+	push	ds
+	mov	ax,ss
+	mov	ds,ax
+	lea	dx,outbuf
+	mov	ah,9	; write string to stdout
+	int	21h
+	pop	ds
+
+	; now print the usable depths
+	lea	si,DepthList
+	lea	cx,EndDepthList
+	sub	cx,si
+	lodsb
+	test	al,al
+	jz	print_info_none
+
+	lea	bx,first_format
+@@:	; format depth info
+	push	cx
+	mov	di,sp	; save stack pointer since wsprintf is _cdecl!
+	xor	ah,ah
+	push	ax
+	push	cs
+	push	bx
+	lea	bx,outbuf
+	push	ss
+	push	bx
+	call	[wsprintf]
+	mov	sp,di	; restore stack pointer
+	pop	cx
+
+	; then print it
+	mov	di,ax	; get length of output string
+	; replace null terminator with dollar terminator
+	mov	byte ptr outbuf[di],'$'
+	push	ds
+	mov	bx,ss
+	mov	ds,bx
+	lea	dx,outbuf
+	mov	ah,9	; write string to stdout
+	int	21h
+	pop	ds
+
+	; get the next depth from the list
+	lodsb
+	test	al,al
+	lea	bx,next_format
+	loopnz	@B
+	jmp	@F
+
+print_info_none:
+	; print the word "None" to indicate no depths supported for this resolution
+	mov	ah,2	; write character to stdout
+	mov	dl,'N'
+	int	21h
+	mov	dl,'o'
+	int	21h
+	mov	dl,'n'
+	int	21h
+	mov	dl,'e'
+	int	21h
+@@:	; finish the whole thing off with a newline
+	mov	ah,2
+	mov	dl,0Dh
+	int	21h
+	mov	dl,0Ah
+	int	21h
+
+print_info_done:
+	; don't worry about freeing pointers, we're about to crash the
+	; entire system anyway!
+cEnd
 
 
 ;
