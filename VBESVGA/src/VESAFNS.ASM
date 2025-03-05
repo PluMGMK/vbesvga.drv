@@ -179,6 +179,12 @@ MemWidth	dw ?
 public	MemSize
 MemSize		dd ?
 
+; Keep track of available depths so we can give the user some more helpful info
+; if we can't find the exact depth they requested...
+public	DepthList,EndDepthList
+DepthList	db 15 dup (0)
+EndDepthList	label byte
+
 ; Are we using a 3-byte-per-pixel video mode, or allowed to search for one?
 public	ThreeByte
 ThreeByte	db 0
@@ -1189,13 +1195,29 @@ baddepth:
 	jz	baddepth	; NEXT!
 
 @@:
-	; Is it the right significant depth?
-	cmp	ah,[VScreen_Depth]
-	jne	baddepth	; NEXT!
-
 	; Set the depth field equal to the total depth so we don't confuse
 	; any other logic later on...
 	mov	es:[di.OFF_VESA_DEPTH],al
+
+	; At this point, we know the mode is usable, so find a slot and
+	; put its depth on the list
+	lea	bx,[DepthList]
+@@:	cmp	bx,offset EndDepthList
+	jnb	@F		; no more slots available
+
+	mov	al,[bx]
+	cmp	al,ah
+	je	@F		; already on the list
+
+	inc	bx
+	test	al,al		; free slot?
+	jnz	@B		; not free, try next slot
+
+	mov	[bx-1],ah	; fill the slot
+
+@@:	; Is it the right significant depth?
+	cmp	ah,[VScreen_Depth]
+	jne	baddepth	; NEXT!
 
 	; OK, we've found the mode!
 	mov	[Vmode],cx
