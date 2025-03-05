@@ -1158,6 +1158,9 @@ FindMode_attrsOK:
 	; We don't support other models
 	jne	jnelp		; NEXT!
 
+	; save the advertised depth in BL since we'll check it again
+	mov	bl,al
+
 	; calculate significant and total depth for non-packed mode
 	mov	al,es:[di.OFF_VESA_RDEPTH]	; sig depth is sum of R/G/B vals
 	add	al,es:[di.OFF_VESA_GDEPTH]
@@ -1165,16 +1168,25 @@ FindMode_attrsOK:
 	mov	ah,al				; save significant depth in AH
 	add	al,es:[di.OFF_VESA_ADEPTH]	; get total depth in AL
 
+	; Sometimes the firmware doesn't fill out the ADEPTH field, expecting
+	; us to infer the padding from the advertised DEPTH. Check for this
+	; by comparing the calculated total to the advertised depth, and pick
+	; whichever is bigger.
+	cmp	al,bl
+	jae	@F
+	mov	al,bl
+
 @@:	; here AL = total depth and AH = significant depth
 	test	al,7		; is our pixel an integer number of bytes?
+	jz	@F
 baddepth:
-	jnz	jnelp		; NEXT!
+	jmp	FindMode_loop	; NEXT!
 
-	; if the total depth is three bytes, only use it if explicitly allowed
+@@:	; if the total depth is three bytes, only use it if explicitly allowed
 	cmp	al,24
 	jne	@F
-	cmp	[ThreeByte],1
-	jne	baddepth	; NEXT!
+	cmp	[ThreeByte],0
+	jz	baddepth	; NEXT!
 
 @@:
 	; Is it the right significant depth?
