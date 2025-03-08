@@ -992,8 +992,8 @@ copy_4  endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                     BX,DX --    unchanged
-;                     AL,CX --    destroyed
+;                        BX --    unchanged
+;                  AL,CX,DX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_8  proc    near
@@ -1007,9 +1007,28 @@ copy_8  proc    near
         and     dx, ax              ; DX amount to copy later
         sub     cx, dx              ; CX contains amount to copy now
 
-copy_8x_loop:
-        REPMOVSBXLAT es:[di], ds:[si], di, ss:[bx]
+	push	dx		    ; put "amount to copy later" on the stack
+	mov	dl,colour_format[1] ; DL := bits per pixel
+	shr	dl,3		    ; DL := bytes per pixel
 
+copy_8x_loop:
+	lodsb
+	xor	ah,ah
+	xchg	ax,si
+	mov	dh,dl		    ; get #bytes into counter
+	shl	si,2		    ; index into DWORD table
+	add	si,bx
+copy_8x_byte:
+	movs	byte ptr es:[di],ss:[si]
+	test	di,di		    ; wrapped bank?
+	jnz	@F
+	call	next_bank
+@@:	dec	dh
+	jnz	copy_8x_byte
+	mov	si,ax
+	loop	copy_8x_loop
+
+	pop	cx		    ; get back "amount to copy later"
         or      si,si
         jz      copy_8x_wrap
         ret
@@ -1019,9 +1038,11 @@ copy_8x_wrap:
         add     ax,__AHINCR
         mov     ds,ax
 
-        or      cx,dx               ; cx <-- dx, note cx==0!
-        jnz     copy_8x_loop
-        ret
+        jcxz	@F
+	push	cx		    ; fix the stack to go through loop again
+	jmp	copy_8x_loop
+
+@@:	ret
 
 ;----------------------------------------------------------------------------;
 ;   copy_8 without a translate table, and without transparency
