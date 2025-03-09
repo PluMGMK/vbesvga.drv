@@ -1520,7 +1520,8 @@ ce1i8_next_pixel:
 	stosb
 	jmp	ce1i8_dec_counter
 @@:	stosw
-	jna	ce1i8_dec_counter	;flags are still set by CMP above
+	cmp	bl, 30h
+	jb	ce1i8_dec_counter
 	mov	ax, dx			;saved by CWD above
 	and	ax, color_xlate[8].hi
 	xor	ax, color_xlate[0].hi
