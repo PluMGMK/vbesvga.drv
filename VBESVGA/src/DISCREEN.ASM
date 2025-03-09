@@ -54,6 +54,7 @@ WF_CPU486       =    0008h
         externFP        FarDeviceSelectDIB      ; in DIBSEL.ASM
         externFP        StretchBlt              ; in STRETCH.ASM
 	externFP	rgb_to_ipc_seq		; in RGB2IPC.ASM
+	externFP	sum_RGB_alt_far		; in ROBJECT.ASM
 
 ifdef EXCLUSION
 	externFP	exclude_far		; xeclude cursor from blt area
@@ -1008,7 +1009,7 @@ copy_8  proc    near
         sub     cx, dx              ; CX contains amount to copy now
 
 	push	dx		    ; put "amount to copy later" on the stack
-	mov	dl,colour_format[1] ; DL := bits per pixel
+	mov	dl,bptr colour_format[1] ; DL := bits per pixel
 	shr	dl,3		    ; DL := bytes per pixel
 
 copy_8x_loop:
@@ -1118,13 +1119,15 @@ copy_8  endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                        DX --    unchanged
-;                  AL,BX,CX --    destroyed
+;                           --    unchanged
+;               DX,AL,BX,CX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_24 proc    near
 
 copy_24t:
+	mov	bl,bptr colour_format[1]; BL = bits per pixel
+	shr	bl,3			; BL = bytes per pixel
 
 c24_loop:
         xor     dh,dh
@@ -1146,26 +1149,79 @@ c24_get_rgb:
 
 c24_compare:
         xchg    dl,al
+
+	test	fbFlags, DEV_PALETTE
+	jz	@F
         save    <es,cx>
         cCall   DeviceColorMatch, <dx,ax, lpColorInfo>
+	jmp	c24_checktrans
 
+@@:	; this situation is a bit more complicated than DeviceBitmapBits
+	; so we can't use the more efficient rgb_to_ipc_seq... Reasons:
+	; * In DeviceBitmapBits, the input (DIB) can cross a segment
+	;   boundary, but the output (device bitmap) cannot; here both
+	;   can cross a segment boundary, because we're writing directly
+	;   to the firmware-provided framebuffer.
+	; * Here, we may additionally have to deal with transparency.
+	call	sum_RGB_alt_far
+
+c24_checktrans:
         test    fbFlags, MAP_TRANSPARENT
+	mov	bh,bl			; initialize bpp counter
         jnz     c24_transparent_store
 
 c24noconvert:
         stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+	jz	c24_next
+	mov	al,ah
+	stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+	jz	c24_next
+	mov	al,dl
+	stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+	jz	c24_next
+	mov	al,dh
+	stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+c24_next:
         loop    c24_loop
 
 copy_24_exit:
         ret
 
 c24_transparent_store:
-        cmp     al,bk_color
-        je      @f
-        mov     es:[di],al
-@@:     inc     di
-        loop    c24_loop
-        jmp     copy_24_exit
+        cmp     ax,bk_color.lo
+        jne	c24noconvert
+	cmp	dx,bk_color.hi
+	jne	c24noconvert
+	; right, this pixel is the background colour, so skip it
+	xor	bh,bh			; reset bpp counter
+	add	di,bx			; skip bpp bytes
+	jnc	@F
+	call	next_bank		; increment bank if necessary
+@@:	jmp     c24_next
 
 copy_24 endp
 
