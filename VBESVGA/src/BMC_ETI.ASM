@@ -1813,7 +1813,7 @@ copy_e8i8_partial proc near
 ce8i8p_next_byte:
 	call	load_with_seg_check	; Get 1 pel of source data
 	xor	ah, ah
-	shl	ax, 1
+	shl	ax, 2	; four bytes per palette entry
 	mov	bx, dx
 	add	bx, ax
 	xchg	bx, si
