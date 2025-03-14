@@ -1148,10 +1148,10 @@ c24_get_rgb:
         lodsb                           ; al=Red, ah=Green, dl=Blue
 
 c24_compare:
-        xchg    dl,al
 
 	test	fbFlags, DEV_PALETTE
 	jz	@F
+        xchg    dl,al			; swap Red/Blue for DeviceColorMatch
         save    <es,cx>
         cCall   DeviceColorMatch, <dx,ax, lpColorInfo>
 	jmp	c24_checktrans
