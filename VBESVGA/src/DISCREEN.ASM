@@ -751,49 +751,79 @@ next_bank	endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                     BX,DX --    unchanged
-;                     AL,CX --    destroyed
+;                           --    unchanged
+;               BX,DX,AL,CX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_1  proc    near
 
-        mov     bx,wptr color_xlate     ; bl=fg color, bh=bk color
-        xor     bh,bl                   ; bl=fg color, bh=(bk ^ fg)
+	; at this point, "color_xlate" points at the physical background colour
+	; and "color_xlate+4" points at the physical foreground colour
+	mov	ax, color_xlate[0].lo
+	mov	dx, color_xlate[0].hi
+	; get fg XOR bg
+	xor	ax, color_xlate[4].lo
+	xor	dx, color_xlate[4].hi
+	; and stash it at "color_xlate+8" since we have plenty of room
+	mov	color_xlate[8].lo, ax
+	mov	color_xlate[8].hi, dx
 
-        call    get_byte                ; al = first byte
-        mov     dh,al                   ; dh = current byte
-        mov     dl,01h                  ; dl = alignment bit
+	; use both nibbles of BL as counters
+	mov	bl,bptr colour_format[1] ; BL := bits per pixel
+	shl	bl, 1	; BYTES per pixel in upper nibble
 
-        mov     ah,cl                   ; save CX
-        mov     cl,bptr SrcX            ; align first byte
-        and     cl,0111b
-        shl     dx,cl
-        mov     cl,ah                   ; restore CX
+copy_1_next_byte:
+	or	bl, 8	; lower nibble
+	lodsb
+	mov	bh, al
 
-copy_1_loop:
-        shl     dh,1                    ; get the next pel into carry
-        sbb     al,al                   ; al = FF if C, 00 if NC
-        and     al,bh                   ; al = (fg ^ bg) if C, 0 if NC
-        xor     al,bl                   ; al = bg if C, fg if NC
-        stosb                           ; write pixel
-        dec     cx
-        jz      copy_1_done             ; another pel?
+; Note:	this could be made more efficient (fewer insts, no stack spillage)
+;       with 386 registers - should look into making it modal
+copy_1_next_pixel:
+	shl	bh, 1
+	sbb	ax, ax
+	cwd
+	and	ax, color_xlate[8].lo	;if 1 select fg XOR bg
+	xor	ax, color_xlate[0].lo	;if 0 select bg
 
-        rol     dl,1                    ; another bit in current byte?
-        jnc     copy_1_loop
+        stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
 
-        lodsb                           ; get next byte into al
-        mov     dh,al                   ; place in dh for loop
-        or      si,si                   ; did we wrap a seg?
-        jnz     copy_1_loop             ; ..no go do some more
+@@:	cmp	bl, 20h			;byte counter (upper nibble) >= 2?
+	jb	copy_1_dec_counter
+	mov	al,ah
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
 
-        mov     ax,ds                   ; ..yes increment selector
-        add     ax,__AHINCR             ; ..and loop
-        mov     ds,ax
-        jmp     copy_1_loop
+@@:	cmp	bl, 30h			;byte counter (upper nibble) >= 3?
+	jb	copy_1_dec_counter
+	mov	ax,dx
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
 
-copy_1_done:
-        ret
+@@:	cmp	bl, 40h			;byte counter (upper nibble) >= 4?
+	jb	copy_1_dec_counter
+	mov	al,ah
+	stosb
+	test	di,di
+	jnz	copy_1_dec_counter
+	call	next_bank
+
+copy_1_dec_counter:
+	dec	bl
+	test	bl, 0Fh			;is lower nibble zero?
+	loopnz	copy_1_next_pixel
+
+	jcxz	@F
+	jmp	copy_1_next_byte
+
+@@:	ret
 
 ;----------------------------------------------------------------------------;
 ;   copy_1 with transparency
@@ -806,7 +836,7 @@ copy_1t:
         cmp     al,bh                   ; is bk color transp?
         je      @f                      ; yes
         cmp     al,bl                   ; is bk color transp?
-        jne     copy_1                  ; no copy normaly
+        ;jne     copy_1                  ; no copy normaly
         not     ah                      ; yes invert mask
         xchg    bl,bh
 @@:     mov     bh,ah                   ; bl = color, bh = mask
