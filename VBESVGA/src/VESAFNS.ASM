@@ -99,20 +99,6 @@ GMEM_LOWER      =   GMEM_NOT_BANKED
 GHND    =    GMEM_MOVEABLE+GMEM_ZEROINIT
 GPTR    =    GMEM_FIXED+GMEM_ZEROINIT
 
-; Protected Mode Interface struct (taken straight from VBE 3.0 spec)
-PMInfoBlock	struc
-Signature	dd ?	; PM Info Block Signature, always "PMID"
-EntryPoint	dw ?	; Offset of PM entry point within BIOS
-PMInitialize	dw ?	; Offset of PM initialization entry point
-BIOSDataSel	dw ?	; Selector to BIOS data area emulation block
-A0000Sel	dw ?	; Selector to access A0000h physical mem
-B0000Sel	dw ?	; Selector to access B0000h physical mem
-B8000Sel	dw ?	; Selector to access B8000h physical mem
-CodeSegSel	dw ?	; Selector to access code segment as data
-InProtectMode	db ?	; Set to 1 when in protected mode
-Checksum	db ?	; Checksum byte for structure
-PMInfoBlock	ends
-
 
 sBegin	Data
 
@@ -156,14 +142,6 @@ VESAScratch2	db 100h dup (?)
 VESA_INFO_LEN	equ $ - VESAInfoStruct
 BIOS_DATA_LEN	equ 600h
 
-PMIntHandles	label word
-hPMcode		dw 0
-hBIOSdata	dw 0
-; hPMstack	dw 0
-NUM_PMINT_HDLS	equ ($ - PMIntHandles) SHR 1
-
-PMIntEntry	FARPOINTER <?,?>
-
 ; Real-Mode buffer for palette entries (if needed)
 RMPaletteSel	dw 0
 RMPaletteSeg	dw 0
@@ -194,42 +172,6 @@ sEnd	Data
 
 .286
 
-
-;---------------------------------Macro---------------------------------;
-; CALL_PMINT
-;
-; calls the VESA Protected Mode Interface, equivalent to int 10h
-;
-; usage
-;
-;     CALL_PMINT
-;
-; Entry:
-;       DS      = Data
-;	Other registers as per desired int 10h call
-; Returns:
-;	As per desired int 10h call
-; Error Returns:
-;	As per desired int 10h call
-; Registers Destroyed:
-;	As per desired int 10h call
-; Registers Preserved:
-;	As per desired int 10h call
-; History:
-;	see Git
-;-----------------------------------------------------------------------;
-CALL_PMINT	macro
-	; we need to save and restore the stack pointer since the spec
-	; seems to leave undefined whether the PM interface should return
-	; with an IRET or a RETF - i.e. the stack may or may not have
-	; flags on it after PMIntEntry returns...
-	push	bp
-	mov	bp,sp
-	pushf
-	call	[PMIntEntry]
-	mov	sp,bp
-	pop	bp
-	endm
 
 sBegin  Code
 assumes cs,Code
@@ -330,20 +272,9 @@ blue_shl	db 0FFh	; how far left to shift it before ORing in (BFieldPos)
 ; (for whatever reason...)
 BankSwitchInt10	proc far
 	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_BANKSWITCH
-	jmp	DoInt10h
-BankSwitchInt10	endp
-
-BankSwitchPMInt	proc far
-	push	ds
-	mov	ax,seg PMIntEntry
-	mov	ds,ax
-	assumes	ds,Data
-	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_BANKSWITCH
-	CALL_PMINT
-	pop	ds
-	assumes	ds,nothing
+	int	10h
 	ret
-BankSwitchPMInt	endp
+BankSwitchInt10	endp
 
 ; This function emulates bank-switching for linear modes.
 ; It allows me to start programming support for linear modes,
@@ -413,23 +344,6 @@ setramdac_vbe	PROC	FAR
 	xor	bl,bl	; set primary palette
 	mov	ax,(VBE_INT10_FN SHL 8) + VBE_PALENTRIES
 
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	CALL_PMINT
-
-setramdac_vbe_exit:
-	; restore original byte order
-	call	switcheroo
-	pop	di
-	pop	es
-
-	; success?
-	cmp	ax,VBE_INT10_FN
-	jne	setramdac_need_vga
-        ret
-
-@@:
-	; the way less travelled...
 	mov	di,ax
 	cmp	[RMPaletteSel],0
 	jnz	@F
@@ -470,7 +384,17 @@ setramdac_vbe_exit:
 	pop	di
 
 	call	DoInt10h
-	jmp	setramdac_vbe_exit
+
+setramdac_vbe_exit:
+	; restore original byte order
+	call	switcheroo
+	pop	di
+	pop	es
+
+	; success?
+	cmp	ax,VBE_INT10_FN
+	jne	setramdac_need_vga
+        ret
 
 setramdac_need_vga:
 	; VBE cannot be used to set RAMDAC, so fall back to VGA implementation
@@ -515,249 +439,6 @@ externNP	setup_double_buf		; in DBLBUF.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
-;--------------------------------------------------------------------------;
-; SetupPMInt
-;	sets up Protected-Mode Interface to VBE, if needed and available
-; Entry:
-;	DS	= Data
-;	AL	= PMID integrity checking (0=NONE!, 1=checksum, 2=sanity)
-; Returns:
-;	DX:AX	= selector:offset of VBE entry point
-; Error Returns:
-;	DX:AX	= zero
-; Registers Destroyed:
-;	AX,BX,CX,DX,FLAGS
-; Registers Preserved:
-;	SI,DI,BP,DS,ES
-; Calls:
-;	AllocDSToCSAlias
-;	GlobalAlloc
-;	GlobalLock
-;	GlobalUnlock
-;	GlobalFree
-;	FreeSelFromSeg
-; History:
-;	see Git
-;--------------------------------------------------------------------------;
-public	SetupPMInt
-SetupPMInt	proc near
-	test	al,80h	; negative => disable?
-	jnz	@@skip
-	mov	bh,al	; save the integrity-check mode
-
-	mov	ax,__WinFlags
-	test	ax,WF_PMODE
-	jnz	@F
-
-@@skip:
-	xor	ax,ax	; Real Mode, no PM interface!
-@@retnull:
-	cwd
-	ret
-
-@@:
-	push	es
-	push	di
-	push	si
-	push	bp
-
-	mov	ax,__C000
-	mov	es,ax
-	mov	dx,40h		; assume 32k length if not informed otherwise
-	; check if it's an Option ROM
-	cmp	word ptr es:[0],0AA55h
-	jne	@F
-	; if so, get its length in sectors (DH already == 0 from above)
-	mov	dl,byte ptr es:[2]
-@@:
-	shl	dx,9		; convert sectors to bytes
-
-	; scan for the "PMID" signature
-	; it does not have to be DWORD- or even WORD-aligned,
-	; so we just search for 'P' and check the rest when we find it
-	mov	al,'P'
-	mov	cx,dx			; search the full length
-	xor	di,di			; from the beginning
-	sub	cx,size PMInfoBlock	; but don't run off the end!
-	cld
-@@resume:
-	repne	scasb
-	je	@F
-	; jne @@notfound is too long for 286!
-	jmp	@@notfound
-@@:
-	cmp	byte ptr es:[di],'M'
-	jne	@@resume
-	cmp	byte ptr es:[di+1],'I'
-	jne	@@resume
-	cmp	byte ptr es:[di+2],'D'
-	jne	@@resume
-
-	; found it! Now make sure it all checks out...
-	lea	si,[di-1]	; point at the beginning of the structure
-	test	bh,bh		; any integrity checking?
-	jz	@@pmidok
-	cmp	bh,1
-	jna	@@checksum	; go straight to check the sum
-
-	; for BH>1, allow a weaker form of sanity checking
-	; (but fall back to checksum if it fails)
-	cmp	es:[si.BIOSDataSel],0
-	jne	@@checksum
-	cmp	es:[si.A0000Sel],0A000h
-	jne	@@checksum
-	cmp	es:[si.B0000Sel],0B000h
-	jne	@@checksum
-	cmp	es:[si.B8000Sel],0B800h
-	jne	@@checksum
-	cmp	es:[si.CodeSegSel],0C000h
-	jne	@@checksum
-	cmp	es:[si.InProtectMode],0
-	je	@@pmidok
-
-@@checksum:
-	push	cx
-	mov	cx,size PMInfoBlock
-	xor	ax,ax
-@@:
-	lods	byte ptr es:[si]
-	add	ah,al
-	loop	@B
-	pop	cx
-	mov	al,'P'
-	; AH should now be zero, and ZF set
-	jnz	@@resume	; if not, keep looking...
-
-@@pmidok:
-	; use BP since it is not destroyed by kernel calls
-	lea	bp,[di-1]	; point at the beginning of the structure
-	mov	di,dx		; likewise keep length in preserved register
-
-	; now we need to allocate two blocks of memory:
-	; 1. one of length DI==DX to contain a copy of the Video BIOS ROM
-	; 2. one of length 600h to serve as a surrogate IVT+BDA
-	; (the stack is already allocated by SetupInt10h)
-	cCall	GlobalAlloc, <GMEM_FIXED,0,di>	; fixed for CS alias
-	assumes	es,nothing	; kernel call may destroy ES!
-	test	ax,ax
-	jnz	@F
-	; jnz @@retnull_es is too long for 286!
-	jmp	@@retnull_es
-@@:
-	mov	[hPMcode],ax
-
-	; GHND to make it all zero
-	cCall	GlobalAlloc, <GHND,0,BIOS_DATA_LEN>
-	test	ax,ax
-	jnz	@F
-	jmp	@@freehdls
-@@:
-	mov	[hBIOSdata],ax
-
-	; Got 'em, now lock 'em!
-	cCall	GlobalLock, <[hPMcode]>
-	test	dx,dx
-	jnz	@F
-	jmp	@@freehdls
-
-@@:
-	; Get ready to start copying stuff into this buffer...
-	push	ds
-	mov	es,dx
-
-	push	es
-	cCall	GlobalLock, <[hBIOSdata]>
-	pop	es	; kernel call may destroy ES!
-	test	dx,dx
-	jnz	@F
-	jmp	@@unlockpmcode
-@@:
-	mov	si,dx
-
-	; finally, get a CS alias for the PM code...
-	push	es
-	cCall	AllocDSToCSAlias, <es>
-	pop	es	; Win16 API call stomps ES!
-	test	ax,ax
-	jz	@@unlockbiosdata
-ifdef	INT3
-public	PMIntSelReady
-PMIntSelReady:
-	int	3
-endif
-	mov	[PMIntEntry.sel],ax
-
-	; OK, now it's time to fill it all in!
-	mov	ax,__C000
-	mov	ds,ax
-	assumes	ds,nothing
-	mov	cx,di	; we saved the length in DI
-	shr	cx,1	; divide by two to move wordwise
-	mov	dx,si	; we put the BIOS data selector in SI
-
-	xor	si,si	; copy the whole lot from the beginning!
-	xor	di,di
-	cld
-	rep	movsw
-
-	; get back the proper DS
-	pop	ds
-	assumes	ds,Data
-
-	; fill in the selectors as needed
-	mov	es:[bp.BIOSDataSel],dx
-	mov	es:[bp.A0000Sel],__A000
-	mov	es:[bp.B0000Sel],__B000
-	mov	es:[bp.B8000Sel],__B800
-	mov	es:[bp.CodeSegSel],es
-	mov	es:[bp.InProtectMode],1
-
-	; get the initialization function and call it
-	mov	ax,es:[bp.PMInitialize]
-	mov	[PMIntEntry.off],ax
-	call	[PMIntEntry]
-	; now it's been initialized, the actual entry point is usable!
-	mov	ax,es:[bp.EntryPoint]
-	mov	[PMIntEntry.off],ax
-
-	; all done!
-	pop	bp
-	pop	si
-	pop	di
-	mov	dx,es
-	pop	es
-	ret
-
-@@notfound:
-	xor	ax,ax
-@@retnull_es:
-	cwd
-	pop	bp
-	pop	si
-	pop	di
-	pop	es
-	ret
-
-@@unlockbiosdata:
-	cCall	GlobalUnlock, <[hBIOSdata]>
-@@unlockpmcode:
-	pop	es
-	cCall	GlobalUnlock, <[hPMcode]>
-	pop	ds
-
-@@freehdls:
-	mov	cx,NUM_PMINT_HDLS
-	lea	si,PMIntHandles
-	cld
-@@:
-	lodsw
-	test	ax,ax
-	jz	@F
-	cCall	GlobalFree, <ax>
-	loop	@B
-@@:
-	jmp	@@notfound
-SetupPMInt	endp
 
 ;--------------------------------------------------------------------------;
 ; GetVBEInfo
@@ -772,8 +453,6 @@ SetupPMInt	endp
 ; Registers Preserved:
 ;	BX,CX,SI,DI,DS,ES,BP
 ; Calls:
-;	PMIntEntry
-;	- OR -
 ;	DoInt10h
 ;	FixupFarPtr
 ; History:
@@ -792,34 +471,6 @@ cBegin
 	jmp	VBEInfo_Done
 
 @@:
-	cmp	[PMIntEntry.sel],0
-	jz	GetVBEInfo_Real
-
-	push	ds
-	pop	es
-	assumes	es,Data
-	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETINFO
-	lea	di,VESAInfoStruct
-	CALL_PMINT
-
-	; Check if function succeeded
-	cmp	ax,VBE_INT10_FN
-	mov	di,VBE_ERR_FAIL
-	jne	@F
-
-	; Check if the buffer is filled correctly
-	; It should now begin with "VESA"
-	cmp	word ptr [VESASig],"EV"
-	jne	@F
-	cmp	word ptr [VESASig+2],"AS"
-	jne	@F
-
-	; Success!
-	xor	di,di
-@@:
-	jmp	VBEInfo_Done
-
-GetVBEInfo_Real:	; fallback to Real Mode interface
 	assumes	es,nothing
 	; Allocate a Real-Mode memory block to transfer the info
 	cCall	GlobalDosAlloc,<0,VESA_INFO_LEN>	; zero-pad to dword
@@ -950,8 +601,6 @@ cEnd
 ;	AllocCSToDSAlias
 ;	FreeSelector
 ;	
-;	PMIntEntry
-;	- OR -
 ;	DoInt10h
 ;	FixupFarPtr
 ; History:
@@ -1050,16 +699,6 @@ endif
 	jmp	FindMode_reterr
 
 @@:
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-
-	; Protected Mode buffer
-	mov	es,[CodeSel]
-	assumes	es,Code
-	lea	di,VESAModeStruct
-	jmp	FindMode_bufready
-
-@@:
 	; Real Mode buffer
 	cCall	GlobalDosAlloc,<0,VESA_MODE_LEN>	; zero-pad to dword
 	test	ax,ax
@@ -1093,14 +732,8 @@ FindMode_loop:
 
 @@:
 	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	CALL_PMINT
-	jmp	FindMode_ChkInfo
-@@:
 	call	DoInt10h
 
-FindMode_ChkInfo:
 	mov	ax,es:[di.OFF_VESA_ATTRS]
 	; Is it supported by the current hardware?
 	test	al,low VESA_ATTR_HWSUPPORT
@@ -1224,20 +857,11 @@ baddepth:
 	xor	ax,ax		; return success
 
 ModeFound:
-	; if we used the PM interface, then we're done here
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	test	ax,ax		; returning success?
-	jz	FindMode_checksels
-	mov	di,ax		; save return code
-	jmp	FindMode_done
-
-@@:
 	test	ax,ax		; returning success?
 	mov	si,es		; if not, put the DOS buffer in SI
 	jnz	@F
 
-	; otherwise, we have to do a load of translation...
+	; we have to do a load of segment translation...
 	push	ds
 	; Copy the buffer back out...
 	push	es
@@ -1299,48 +923,6 @@ ModeFound:
 	xor	di,di	; all good!
 @@:	jmp	FindMode_done
 
-FindMode_checksels:
-	test	[Vmode],VESA_FLAG_LINEAR
-	jnz	FindMode_setuplin
-
-	; Dodgy PMID implementations may leave us with segments rather than
-	; selectors in some of the essential pointers. Deal with that...
-	.286p			; for LAR instruction
-	mov	ax,[VESAWinASeg]
-	lar	cx,ax
-	jz	@F		; ZF if it's a valid selector
-
-	xor	cx,cx		; want a data segment
-	call	SegToSel
-	mov	[VESAWinASeg],ax
-@@:
-	mov	ax,[VESAWinBSeg]
-	test	ax,ax
-	jz	@F		; if it's zero, we don't care
-	lar	cx,ax
-	jz	@F		; ZF if it's a valid selector
-
-	xor	cx,cx		; want a data segment
-	call	SegToSel
-	mov	[VESAWinBSeg],ax
-@@:
-	mov	ax,[VESABankSwitch.sel]
-	cmp	ax,0C000h	; if it's in C000H, then redirect to PMID seg
-	jne	@F
-	mov	ax,[PMIntEntry.sel]
-	mov	[VESABankSwitch.sel],ax
-@@:
-	lar	cx,ax
-	jz	@F
-
-	; just zero out the bank-switch pointer and fall back to indirect call,
-	; which will be setup below.
-	mov	[VESABankSwitch.sel],0
-
-@@:
-	xor	di,di	; all good!
-	jmp	FindMode_done
-
 FindMode_setuplin:
 ifdef	INT3
 public	FindMode_setuplin
@@ -1373,17 +955,8 @@ endif
 	jz	@F
 
 	mov	ax,[VESAWinASeg]
-	cmp	[PMIntEntry.sel],0
-	jz	do_segtosel
-
-	.286p			; for LAR instruction
-	lar	cx,ax
-	jz	selvalid	; ZF if it's a valid selector
-do_segtosel:
-	.286
 	xor	cx,cx		; want a data segment
 	call	SegToSel
-selvalid:
 	mov	[DummyLoMemSel],ax
 
 @@:	; Create a selector that will be used to access 64k at a time
@@ -1477,10 +1050,6 @@ FindMode_done:
 
 	mov	[VESABankSwitch.sel],seg BankSwitchInt10
 	mov	[VESABankSwitch.off],offset BankSwitchInt10
-
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	mov	[VESABankSwitch.off],offset BankSwitchPMInt
 
 @@:
 	; time to free the selector
