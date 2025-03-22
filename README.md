@@ -76,26 +76,13 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`fontsize` | `small` or `large` | Choose whether to use 96dpi or 120dpi fonts | `small` |
 |`dacdepth` | 6, 8 or `auto` | Significant bits to use per colour in 256-colour modes; `auto` means 8 if the BIOS advertises that 8 is supported, 6 otherwise; if 8 is specified then the driver attempts to use 8 regardless of what the BIOS says! | `auto` |
 |`DoubleBufRefreshRate` | 0 - 255 | Number of times per second to swap buffers if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value less than 4 **disables** double-buffering | 60 |
-|`PMIDcheck` | `disable`, `none`, `sum` or `sanity` | See [below](#protected-mode-interface) | `sum` |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
 |`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits, which are (currently) subject to issues such as #15; disable this to prefer 32-bit modes which give the same colour depth but fewer glitches | 0 |
-
-### Protected-Mode Interface
-
-The VESA BIOS Extensions spec allows graphics firmware to provide an interface for Protected-Mode drivers. This driver attempts to use this interface where possible, to avoid needing to allocate DOS memory blocks to communicate with the BIOS. In theory, as per Page 21 of [the spec](http://www.petesqbsite.com/sections/tutorials/tuts/vbe3.pdf), the driver should search the segment `C000h` for a structure beginning with the signature `PMID` and ending with a valid checksum to determine whether or not this interface is supported. However, some firmwares don't set the checksum correctly, and some firmwares "provide" the interface but don't do the QA to ensure it actually works. To account for this, four options are provided:
-
-|Option |Meaning |
---- | ---
-|`PMIDcheck=sum` | The default: the driver searches for the structure beginning with `PMID` and verifies the checksum |
-|`PMIDcheck=sanity` | A looser setting: the driver searches for `PMID` and makes sure the other values in the structure match the suggested values on Page 21 of the spec; if they don't all match, it falls back to the checksum |
-|`PMIDcheck=none` | NO VERIFICATION: the driver just searches for `PMID` and trusts that whatever comes after it is the correct structure |
-|`PMIDcheck=disable` | The driver doesn't use the Protected-Mode Interface at all, even if it's available: **Try this if Windows hangs/crashes during boot!** |
 
 ### Example configuration
 
 ```
 [VBESVGA.DRV]
-PMIDcheck=sanity
 Width=1920
 Height=1080
 Depth=16
@@ -120,7 +107,7 @@ When Windows boots, the driver queries the BIOS for available modes, and automat
 * Graphics mode (not text)
 * Colour mode (not black & white)
 * Resolution matches what was specified in `SYSTEM.INI`
-* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2, 3 or 4 bytes
+* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2 or 4 bytes (or 3 if `Allow3ByteMode=1`)
 * Either packed-pixel or direct-colour framebuffer
 * Significant bit depth (i.e. red+green+blue but without padding) matches what was specified in `SYSTEM.INI`
 

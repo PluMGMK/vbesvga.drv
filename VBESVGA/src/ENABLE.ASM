@@ -105,17 +105,6 @@ press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
 boot_category   db      "VBESVGA.DRV",0
 
-chk_member	db	"PMIDcheck",0
-chk_disable	db	"disable",0	; allow disabling it if it crashes
-chk_none	db	"none",0
-chk_sum		db	"sum",0
-chk_sanity	db	"sanity",0
-sysini_chkstruc	LABEL	BYTE
-SYSINI	<chk_disable,7,-1>
-SYSINI	<chk_none,4,0>
-SYSINI	<chk_sum,3,1>
-SYSINI	<chk_sanity,6,2>
-
 edid_member	db	"UseEDID",0
 width_member	db	"Width",0
 height_member	db	"Height",0
@@ -167,7 +156,6 @@ assumes cs,InitSeg
 
 
 	externNP FindMode		;from vesafns.asm
-	externNP SetupPMInt		;from vesafns.asm
 	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
 	externB  physical_device	;Device physical data
@@ -354,30 +342,6 @@ enable_read_profile	PROC	NEAR
 @@:	mov     Profile_read,1
 
 	lea	ax,boot_category
-        push    ds
-        push    ax
-	lea	ax,chk_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,1				;default return value = checksum
-	mov	bx,4				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_chkstruc
-	call	enable_find_substring
-	call	SetupPMInt
-
-@@:	lea	ax,boot_category
         push    ds
         push    ax
 	lea	ax,PreferBank_member
