@@ -749,11 +749,15 @@ move_color_table proc	 near
 	lea	di,color_xlate
 	lds	si,lpColorInfo
 
+	mov	ax,ds
+	test	ax,ax
+	jz	@F
+
 	cld
         mov     cx,100h/2
 	rep	movsw
 
-	popf
+@@:	popf
         pop     si
 	pop	di
 	pop	ds
