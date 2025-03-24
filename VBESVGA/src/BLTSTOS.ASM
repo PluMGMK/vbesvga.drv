@@ -22,6 +22,10 @@ include bitblt.var
 include vgautil.inc
 include compblt.inc
 
+externA	stack_top	; in CHKSTK.ASM
+externA	stack_bot	; in CHKSTK.ASM
+externA	stack_min	; in CHKSTK.ASM
+
 .286
 sBegin	Code
 assumes cs,Code
@@ -35,8 +39,16 @@ assumes ss,Nothing
 ;
 
 stos_src1_template:
-	; FIXME: What if there isn't enough space on the stack??
 	sub	sp,01234H		;01234H will become |src_xExt_bytes| + 8
+stos_src1_frame_size:
+
+	; do some book-keeping with the stack pointer
+	cmp	sp,ss:[stack_top]
+	jae	@F
+	int	3			;uh-oh...
+@@:	cmp	sp,ss:[stack_min]
+	jae	stos_src1_outer_loop
+	mov	ss:[stack_min],sp	;update record of min stack pointer
 
 stos_src1_outer_loop:
 	mov	dx,01234H		;01234H will become the src_page
@@ -121,6 +133,7 @@ stos_src1_inner_loop:
 STOS_SRC1_SIZE = $ - stos_src1_template
 STOS_SRC1_DST_PAGE = $ - stos_src1_dst_page + 2
 STOS_SRC1_SRC_PAGE = $ - stos_src1_src_page + 2
+STOS_SRC1_FRAME_SIZE = $ - stos_src1_frame_size + 2
 STOS_SRC1_OUTER_LOOPADDR = $ - stos_src1_outer_loop
 STOS_SRC1_INNER_LOOPADDR = $ - stos_src1_inner_loop
 STOS_SRC1_XEXT_1 = $ - stos_src1_xExt_1 + 2
@@ -234,16 +247,25 @@ bltstos 	PROC	NEAR
 @@:	;so we need to check if the current SP, minus four, leaves enough space,
 	; including eight guard bytes either end (so 20 bytes altogether)
 	lea	ax,[bx+14h]
-	cmp	sp,ax
-	ja	@F
+	sub	ax,sp
+	;if AX > SP, then stack would wrap: not good
+	ja	stack_not_ok
 
+	;OK, stack doesn't wrap, but is there enough space beyond "stack_top"?
+	; (confusingly, "stack_top" is the *lowest* memory address, corresponding
+	;  to a metaphor of the stack growing up, even though it grows down...)
+	neg	ax
+	cmp	ax,ss:[stack_top]
+	jnb	stack_ok
+
+stack_not_ok:
 	;halve the number of bytes per pass and double the number of passes
 	sar	cx,1
 	shr	bx,1
 	shl	word ptr [bltstos_passes],1
 	jmp	@B	;go back and check if it'll fit now
 
-@@:	
+stack_ok:
 	mov	ax,cx
 	mov	cx,8				;eight guard bytes either end
         mov     es:[di - STOS_SRC1_XEXT_2],cx
@@ -261,9 +283,10 @@ bltstos 	PROC	NEAR
 	mov	es:[di - STOS_SRC1_XEXT_3],ax
 	add	ax,10h	;eight guard bytes either end
 
-	lea	bx,[di - STOS_SRC1_OUTER_LOOPADDR]
-	mov	es:[bx - 2],ax
-	push	bx				;save outer loop addr
+	lea	bx,[di - STOS_SRC1_FRAME_SIZE]
+	mov	es:[bx],ax
+	lea	ax,[di - STOS_SRC1_OUTER_LOOPADDR]
+	push	ax				;save outer loop addr
 
 	lea	bx,[di - STOS_SRC1_SRC_PAGE]
 	push	bx				;save address of src_page value
@@ -279,7 +302,7 @@ bltstos 	PROC	NEAR
 	lea	bx,[di - STOS_SRC1_INNER_LOOPADDR]
 	push	bx				;save inner loop address
 
-	push	es:[di - STOS_SRC1_OUTER_LOOPADDR - 2] ; save stack frame size
+	push	es:[di - STOS_SRC1_FRAME_SIZE]	;save stack frame size
 	lea	bx,[dst_seg_wrap]
 	mov	es:[di - STOS_SRC1_DST_SEGWRAP_OFF],bx
 
