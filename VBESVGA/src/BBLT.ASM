@@ -113,17 +113,17 @@ blt_stack_ok:
 	mov	dst_top_edge,ax
 
 	call	bitblt_prep_dst
-	call	blt_set_directions		;set x,y blt directions
 
 	lea	ax,pattern_space		;just in case pattern offset
 	mov	pattern_offset,ax		; is accessed later
         test    rop_flags,PATTERN_PRESENT
 	je	@F
-	call	bitblt_prep_pattern		;if carry set on return, there
 
+	call	bitblt_prep_pattern		;if carry set on return, there
         jc      bitblt_error                    ; was problem with the pattern
 
-@@:	call	bitblt_prep_final
+@@:	call	blt_set_directions		;set x,y blt directions
+	call	bitblt_prep_final
 	call	bitblt_dispatch
 	jnc	bitblt_done
 	call	bitblt_execute
@@ -312,7 +312,7 @@ bitblt_prep_pattern_rotate:
 	call	pattern_rotate		; pattern rotate, clear Z flag if mono
 
 bitblt_prep_pattern_done:
-	lds	si,lpSrcDev			;restore these pointers
+	lds	si,lpSrcDev		;restore these pointers
 	les	di,lpDestDev
 	clc
 	ret
