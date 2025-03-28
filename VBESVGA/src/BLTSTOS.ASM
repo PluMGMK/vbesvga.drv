@@ -65,6 +65,7 @@ stos_src1_xExt_2:			;01234H:=|src_xExt_bytes|+8 if X- else 8
 	mov	ax,ss			; This way src and dst pages need
 	mov	es,ax			; not be switched every pixel, but
 					; only every scanline.
+; FIXME: omit everything from here to @F when not scanxseg!
 	mov	bx,si
 stos_src1_add_check_1:
 	add	bx,cx			;ADD becomes SUB if X-
@@ -80,6 +81,7 @@ ss1ia1:	inc	ax		;guarantee it is not zero on this codepath
 	inc	cx		;restore so we get the correct # of iterations
 
 @@:	rep	movsb
+; FIXME: omit everything from here to @F when not scanxseg!
 	xchg	cx,ax		;get back remaining iterations from before
 	jcxz	@F
 	;we've wrapped, so switch the bank and head back to the beginning of the
@@ -112,6 +114,8 @@ stos_src1_xExt_4:
 	mov	ax,ss
 	mov	ds,ax
 
+; FIXME: omit everything from here to stos_src1_inner_loop
+; when not scanxseg!
 	mov	bx,di
 stos_src1_add_check_2:
 	add	bx,cx		;ADD becomes SUB if X-
@@ -152,6 +156,8 @@ stos_src2_template:
 	loop	stos_src1_inner_loop	;do every pixel on the scanline
 stos_src2_inner_loop1:
 
+; FIXME: omit everything from here to stos_src2_inner_loop2
+; when not scanxseg!
 	xchg	cx,ss:[1234H]	;1234H becomes offset of dst_seg_wrap
 stos_src2_dst_segwrap_off:
 	jcxz	stos_src2_inner_loop2
@@ -347,14 +353,20 @@ stack_ok:
         mov     cx,dst_swing_bytes
 	mov	es:[di - STOS_SRC2_SRC_SWING_BYTES],ax
         mov     es:[di - STOS_SRC2_DST_SWING_BYTES],cx
-	test	word ptr [device_flags],DEVFLAG_SCAN_X_SEG
-	jnz	@F
-	mov	ax,src_width_bytes
-	mov	cx,dst_width_bytes
-	or	bx,bx
-	je	@F
-	neg	ax
-	neg	cx
+	; DON'T DO THIS because there's a whole chunk of hard-coded stuff
+	; in stos_src1_template which handles segment wrapping in the middle
+	; of a scanline whether it's needed or not. So if we do this next bit,
+	; we'll be over-compensating in that case. Ideally should refactor
+	; so that stuff can be excluded altogether in the non-scanxseg case,
+	; then we can put these lines back.
+;	test	word ptr [device_flags],DEVFLAG_SCAN_X_SEG
+;	jnz	@F
+;	mov	ax,src_width_bytes
+;	mov	cx,dst_width_bytes
+;	or	bx,bx
+;	je	@F
+;	neg	ax
+;	neg	cx
 @@:	mov	es:[di - STOS_SRC2_SRC_CMP - 2],ax
 	mov	es:[di - STOS_SRC2_DST_CMP - 2],cx
 
