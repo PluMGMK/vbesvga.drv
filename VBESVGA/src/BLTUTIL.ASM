@@ -490,17 +490,25 @@ pattern_rotate  PROC    NEAR
 	mov	cl,al
 	shl	bx,3			;get back to full row size
 	errnz	SIZE_PATTERN-8
-	mov	dx,bx
+	mov	dx,bx			;dx = size of row in bytes
 	mov	bh,SIZE_PATTERN		;row counter NOT multiplied by bpp
         sub     bx,cx                   ;bh:bl = 8 - y : (8 - x) * bpp
-        shl     ah,3                    ;8 pixels per pattern row
+        shl     ah,3                    ;ah = y*bpp*8, i.e. offset of row y within brush
 	errnz	SIZE_PATTERN-8
-        add     cl,ah                   ;add in x rotate count
+        add     cl,ah                   ;cl = (x+8y)*bpp, i.e. offset of row y, pixel x
 	mov	ah,ch			;save unmultiplied row count
         sub     ch,ch                   ;clear out ch
         add     si,cx                   ;add offset into si
 
 pattern_rotate_color_column:
+	; At this point:
+	; * AL = x * bpp
+	; * AH = y [zero second time round]
+	; * DX = 8 * bpp
+	; * BL = (8 - x) * bpp
+	; * BH =  8 - y [y second time round]
+	; * SI -> row y, pixel x [row 0, pixel x second time round]
+
         mov     cl,bl                   ;get number of bytes til end of row
         rep     movsb                   ;move them into new pattern
         sub     si,dx                   ;point to start of src pattern row
@@ -531,7 +539,7 @@ pattern_rotate_mono_row:
         lodsb                           ;get first mono pattern row
         ror     al,cl                   ;rotate entire row of mono pattern
         stosb                           ;store row
-        dec     bh                      ;one less rwo til we wrap
+        dec     bh                      ;one less row til we wrap
         jne     pattern_rotate_mono_row
         sub     si,8                    ;wrap back to start of src pattern
         or      bh,ah                   ;just a few rows left to do
