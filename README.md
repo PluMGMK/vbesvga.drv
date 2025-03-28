@@ -13,9 +13,9 @@ This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** av
 
 ### Using standard Program Manager shell
 
-![True-Colour Full HD screenshot of Windows 3.1 desktop showing colour settings (on "Bordeaux"), Program Manager, two MS-DOS prompts of different sizes, Solitaire and Minesweeper](./Screenshots/VBESVGA.CLP.rec0.png)
+![True-Colour Full HD screenshot of Windows 3.1 desktop showing colour settings (on "Plasma Power Saver"), Program Manager, an 50-row MS-DOS prompt, Solitaire and Minesweeper](./Screenshots/VBESVGA.BMP.png)
 
-This True-Colour Full HD screenshot gives you some idea of what's working so far. The colour settings dialogue shows that pretty much the entire Windows GUI renders correctly, and the Program Manager shows icons working well too. The two windowed DOS prompts demonstrate that I am running this on MS-DOS 6.20, and that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14`. Minesweeper looks OK, while Solitaire is mostly working, but a few glitches are evident...
+This True-Colour Full HD screenshot, with large fonts, gives you some idea of what's working so far. The colour settings dialogue shows that pretty much the entire Windows GUI renders correctly, and the Program Manager shows icons working well too. The windowed 50-row DOS prompt demonstrates that I am running this on MS-DOS 6.20, and that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14`. Minesweeper and Solitaire both look OK, and the game underway indicates that the latter is eminently playable.
 
 See the Issues page for more details of what is _not_ working at the moment...
 
@@ -23,7 +23,7 @@ See the Issues page for more details of what is _not_ working at the moment...
 
 ![True-Colour Full HD screenshot of Calmira XP shell showing colour settings (on "Bordeaux"), Character Map, Advanced Task Manager, Calmira Explorer, an MS-DOS prompt, GVim and Minesweeper](./Screenshots/VBESVGA2.CLP.rec0.png)
 
-This screenshot showcases the True Colour rendering capability, in the Windows-XP-derived icons used by the Calmira XP shell. The [Advanced Task Manager](https://winworldpc.com/product/advanced-task-manage/1x) instance again confirms that we're on DOS 6.20 and Windows 3.10. It also says we're on a 486, which of course isn't true, but that's just the newest CPU that Windows 3.1 knows about! Again, the `debugx` session in the DOS prompt confirms that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14` (reported a bit more legibly this time!).
+This screenshot showcases the True Colour rendering capability, in the Windows-XP-derived icons used by the Calmira XP shell. The [Advanced Task Manager](https://winworldpc.com/product/advanced-task-manage/1x) instance again confirms that we're on DOS 6.20 and Windows 3.10. It also says we're on a 486, which of course isn't true, but that's just the newest CPU that Windows 3.1 knows about! The 40-row DOS prompt shows the output of `VIDMODES.COM` (see below), confirming again that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14` (reported a bit more legibly this time!).
 
 ## Building
 
@@ -91,7 +91,7 @@ DoubleBufRefreshRate=75
 
 ## Linear Modes and Double Buffering
 
-In general, the VBE modes used by this driver involve a framebuffer larger than can be addressed by a single segment (65536 bytes). VBE provides two strategies for dealing with this: bank-switching and using linear framebuffers. Bank-switching involves mapping only one segment at a time into physical memory, usually at address `A0000h`, whereas a linear framebuffer gets fully mapped somewhere in extended memory (i.e. beyond the 1-MiB boundary). This driver prefers to use linear modes when available, but unfortunately, due to a bug in `DOSX.EXE`, this is not possible when running Windows in Standard Mode while using `EMM386`. To ensure the driver can use linear framebuffers, you will need to run Windows in 386 Enhanced Mode, or else disable `EMM386`.
+The VBE modes used by this driver involve a framebuffer larger than can be addressed by a single segment (65536 bytes). VBE provides two strategies for dealing with this: bank-switching and using linear framebuffers. Bank-switching involves mapping only one segment at a time into physical memory, usually at address `A0000h`, whereas a linear framebuffer gets fully mapped somewhere in extended memory (i.e. beyond the 1-MiB boundary). This driver prefers to use linear modes when available, but unfortunately, due to a bug in `DOSX.EXE`, this is not possible when running Windows in Standard Mode while using `EMM386`. To ensure the driver can use linear framebuffers, you will need to run Windows in 386 Enhanced Mode, or else disable `EMM386`.
 
 When using a linear framebuffer, the driver also attempts to use [Double Buffering](https://wiki.osdev.org/Double_Buffering), which improves performance by ensuring that GDI operations never have to touch video RAM directly. However, it involves allocating two copies of the framebuffer in system RAM, which is quite expensive (especially given that Windows 3.1 usually can't take advantage of more than a quarter of a GiB). If it can't allocate this much RAM, it falls back to direct VRAM access.
 
@@ -117,9 +117,9 @@ Note that this automatic search is currently the only way the driver selects mod
 
 ### Having trouble finding compatible modes?
 
-Ideally the driver would be able to list out all the modes it tries, and indicate what makes each one (un)suitable. But this would make the `FindMode` function even more convoluted, possibly to the point of needing a rewrite!
+If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly, and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
 
-In the meantime, the `VIDMODES.COM` tool included in the latest release can list the available modes on your system to give some idea of what settings to try. Example output:
+If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output (also seen in the screenshot above):
 ```
 Your card: 
 (C) 1988-2018, Advanced Micro Devices, Inc. NAVI14 01.00
@@ -148,4 +148,4 @@ Available modes:
 01D8: 1280*720*16
 01D9: 1280*720*32
 ```
-Note that this lists the total depths, so further experimentation may be needed to find the correct significant depth.
+Note that this lists the total depths rather than significant depths, so the depth list from the driver on boot failure may look a bit different.
