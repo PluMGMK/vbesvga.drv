@@ -1215,7 +1215,7 @@ set_dacsize	ENDP
 ;   Places the card in graphics mode
 ;
 ; Entry:
-;	ES:DI --> ipd_format in our pDevice
+;	ES:DI --> our pDevice
 ;	DS:    =  Data
 ; Returns:
 ;	AX = VBE_INT10_FN
