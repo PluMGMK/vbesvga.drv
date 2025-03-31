@@ -20,7 +20,6 @@ include genconst.inc
 include bblt.inc
 include bitblt.var
 include compblt.inc
-include vgautil.inc
 
 externA __NEXTSEG
 

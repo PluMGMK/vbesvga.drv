@@ -19,7 +19,6 @@ include genconst.inc
 include display.inc
 include bblt.inc
 include bitblt.var
-include vgautil.inc
 include compblt.inc
 
 externA	stack_top	; in CHKSTK.ASM
