@@ -25,7 +25,6 @@ include njumps.mac
 include bblt.inc
 include bltutil.inc
 include vgareg.inc
-include vgautil.inc
 include blt11.inc
 include blt18.inc
 include blt81.inc

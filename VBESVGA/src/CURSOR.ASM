@@ -19,7 +19,6 @@ include macros.mac
 include windefs.inc
 include gdidefs.inc
 include vgareg.inc
-include vgautil.inc
 ; include hwcurs.inc
 include swcurs.inc
 include cursor.inc

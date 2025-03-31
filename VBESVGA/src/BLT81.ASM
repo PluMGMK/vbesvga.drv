@@ -18,7 +18,6 @@ include genconst.inc
 include bitblt.var
 include bblt.inc
 include bltutil.inc
-include vgautil.inc
 include compblt.inc
 
 

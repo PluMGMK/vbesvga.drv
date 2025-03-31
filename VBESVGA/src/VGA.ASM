@@ -70,7 +70,6 @@ FILE_VGA	EQU	1
 	include	cursor.inc
 	include rt.mac
 	include vgareg.inc
-	include vgautil.inc
 	include	int3.inc
 
 ;	Additional Raster Capabilities
