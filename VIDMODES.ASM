@@ -1,6 +1,6 @@
 ; Assemble as a binary file, should be possible on any platform
-;	e.g. jwasm -bin vidmodes.asm
-; then rename vidmodes.bin to vidmodes.com
+;	e.g. jwasm -bin VIDMODES.ASM
+; then rename VIDMODES.BIN to VIDMODES.COM
 
 .model tiny
 .8086
