@@ -1379,8 +1379,6 @@ vesa_gdi_fixup	proc near
 	div	cx
 	mov	es:[di].bmScanSegment,ax
 
-	; TODO: set the geometric stuff in the GDIInfo struct
-
 	; we only support palettes for packed-pixel modes
 	cmp	[VESAMemModel],VESA_MEM_PACKED
 	je	@F
@@ -1404,6 +1402,85 @@ vesa_gdi_fixup	proc near
 	mov	[MemWidth],ax
 	mov	[MemSize.lo],bx
 	mov	[MemSize.hi],cx
+
+	; geometry
+	mov	bx,[ScreenWidthMM]
+	mov	cx,[ScreenHeightMM]
+	mov	es:[si].dpHorzSize,bx
+	mov	es:[si].dpVertSize,cx
+
+	; calculate parameters related to the physical size
+	push	bp
+	push	di
+	mov	bp,es:[si].dpHorzRes
+	mov	di,es:[si].dpVertRes
+	; metric low-res window: dpMLoWin / dpMLoVpt = dpHorzSize*10 / dpHorzRes
+	; since dpMLoVpt == 4, we multiply by 10*4=40 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,40
+	mul	dx
+	div	bp
+	mov	es:[si].dpMLoWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,40
+	mul	dx
+	div	di
+	mov	es:[si].dpMLoWin.ycoord,ax
+	; metric high-res window: dpMHiWin / dpMHiVpt = dpHorzSize*100 / dpHorzRes
+	; since dpMHiVpt == 4, we multiply by 100*4==400 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,400
+	mul	dx
+	div	bp
+	mov	es:[si].dpMHiWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,400
+	mul	dx
+	div	di
+	mov	es:[si].dpMHiWin.ycoord,ax
+	; English low-res window: dpELoWin / dpELoVpt = dpHorzSize*1000 / dpHorzRes*254
+	; since dpELoVpt == 254, we multiply by 1000 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,1000
+	mul	dx
+	div	bp
+	mov	es:[si].dpELoWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,1000
+	mul	dx
+	div	di
+	mov	es:[si].dpELoWin.ycoord,ax
+	; English high-res window: dpEHiWin / dpEHiVpt = dpHorzSize*10000 / dpHorzRes*254
+	; since dpEHiVpt == 254, we multiply by 10000 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,10000
+	mul	dx
+	div	bp
+	mov	es:[si].dpEHiWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,10000
+	mul	dx
+	div	di
+	mov	es:[si].dpEHiWin.ycoord,ax
+	; Twip window: dpTwpWin / dpTwpVpt = dpHorzSize*14400 / dpHorzRes*254
+	; since dpTwpVpt == 254, we multiply by 14400 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,14400
+	mul	dx
+	div	bp
+	mov	es:[si].dpTwpWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,14400
+	mul	dx
+	; QUESTION: can this overflow, and hence crash Windows on boot?
+	; ANSWER: minimum denominator in this situation is DI==480==1E0h, so we would
+	;	  need to have a situation where dpVertSize*14400 >= 1E00000h, meaning
+	;	  dpVertSize >= 2185, i.e. 2.185 metres - I'd say it's unlikely!
+	div	di
+	mov	es:[si].dpTwpWin.ycoord,ax
+	; done with the geometric calculations
+	pop	di
+	pop	bp
 
 	; keep a copy of the raster flags in Data, as InitSeg is discardable!
 	mov	ax,es:[si].dpRaster
