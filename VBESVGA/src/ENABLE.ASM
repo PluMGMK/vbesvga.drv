@@ -105,7 +105,6 @@ press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
 boot_category   db      "VBESVGA.DRV",0
 
-edid_member	db	"UseEDID",0
 width_member	db	"Width",0
 height_member	db	"Height",0
 depth_member	db	"Depth",0
@@ -156,6 +155,7 @@ assumes cs,InitSeg
 
 
 	externNP FindMode		;from vesafns.asm
+	externNP QueryGeometry		;from vesafns.asm
 	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
 	externB  physical_device	;Device physical data
@@ -389,11 +389,10 @@ enable_read_profile	PROC	NEAR
         call    enable_find_substring
 	mov	dac_size,al
 
-	; TODO: Use EDID settings as default
 	lea	ax,boot_category
 	lea	bx,width_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1024,ds,cx>
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
 	cmp	ax,640
 	jnb	@F
 	mov	[fail_reason],offset bad_width
@@ -403,7 +402,7 @@ enable_read_profile	PROC	NEAR
 	lea	ax,boot_category
 	lea	bx,height_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,768,ds,cx>
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
 	cmp	ax,480
 	jnb	@F
 	mov	[fail_reason],offset bad_height
@@ -439,6 +438,15 @@ enable_read_profile	PROC	NEAR
 	mov	al,1
 @@:	mov	ThreeByte,al
 
+	; Find the screen geometry and (if needed) preferred resolution
+	call	QueryGeometry
+	cmp	[VScreen_Width],-1
+	jne	@F
+	mov	[VScreen_Width],ax
+@@:	cmp	[VScreen_Height],-1
+	jne	@F
+	mov	[VScreen_Height],dx
+@@:
 	; Linear = AX = 1 iff prefer_bank == 0
 	mov	ax,[prefer_bank]
 	xor	ax,1
