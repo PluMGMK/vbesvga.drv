@@ -51,6 +51,102 @@ VESA_MEM_SEQ256	= 5
 VESA_MEM_DIRECT	= 6	; no palette switching
 VESA_MEM_YUV	= 7	; no... :(
 
+; Detailed Timing Description
+DTD	struc
+pixclock_10kHz	dw ?	; pixel clock in 10-kHz units
+			; NOTE: RBIL and OSDev wiki both claim that this
+			; is two bytes, the first being the horizontal
+			; rate in kHz and the second being the vertical
+			; rate in Hz - but I can't find any evidence that
+			; this was ever the case!
+horizpixels_low	db ?	; width in pixels
+horizblnk_low	db ?	; blanking pixels
+horiz_high	db ?	; each nibble is high bits of previous two numbers
+vertlines_low	db ?	; height scanlines
+vertblnk_low	db ?	; blanking scanlines
+vert_high	db ?	; each nibble is high bits of previous two numbers
+horizporch_low	db ?
+horizsync_low	db ?
+vert_low	db ?	; nibbles are low bits of vertical porch and sync
+porch_sync_high	db ?	; two highest bits of each of four previous numbers!
+horiz_size_mmlo	db ?	; width in millimetres
+vert_size_mmlo	db ?	; height in millimetres
+size_mmhi	db ?	; each nibble is high bits of previous two numbers
+horiz_border	db ?
+vert_border	db ?
+display_type	db ?
+DTD	ends
+
+; Display Descriptor Tag values
+TAG_DUMMY	=  10h
+TAG_ESTTIMINGS	= 0F7h	; third set of established timings
+TAG_CVT3BYTE	= 0F8h
+TAG_DCMDATA	= 0F9h
+TAG_STDTIMINGS	= 0FAh
+TAG_COLOURPTS	= 0FBh
+TAG_PRODNAME	= 0FCh
+TAG_RANGELIMS	= 0FDh
+TAG_ASCII	= 0FEh
+TAG_SERIALNO	= 0FFh
+
+DspDesc	struc
+resd0	dw ?	; zero
+resd2	db ?	; zero
+tag	db ?	; see TAG_*
+rlimitf	db ?	; Display Range Limits Offsets: FLAGS
+descdat	db 13 dup (?)
+DspDesc	ends
+
+; EDID info struct (based on VESA E-EDID Standard Release A2)
+EDIDblk	struc
+; Header
+hdr		db 8 dup (?)
+; Vendor & Product Identification
+id_mfg_name	dw ?
+id_prod_code	dw ?
+id_serial	dd ?
+mfg_week	db ?	; or FFh to indicate model year
+mfg_year	db ?	; or model year
+; EDID Structure Version & Revision
+edid_ver	db ?
+edid_rev	db ?
+; Basic Display Parameters & Features
+vid_input_def	db ?
+horiz_size_cm	db ?	; physical monitor width in centimetres
+vert_size_cm	db ?	; physical monitor height in centimetres
+gamma		db ?
+features	db ?
+; Colour Characteristics
+rg_low_bits	db ?	; Red / Green
+bw_low_bits	db ?	; Blue / White
+rx_high_bits	db ?	; Red-x
+ry_high_bits	db ?	; Red-y
+gx_high_bits	db ?	; Green-x
+gy_high_bits	db ?	; Green-y
+bx_high_bits	db ?	; Blue-x
+by_high_bits	db ?	; Blue-y
+wx_high_bits	db ?	; White-x
+wy_high_bits	db ?	; White-y
+; Established Timings
+est_timings	dw ?
+oem_timings	db ?
+; Standard Timings
+std_timings	dw 8 dup (?)
+; 18-Byte Data Blocks
+desc0		db (size DTD) dup (?) ; if EDID >= 1.3, this HAS to be Preferred Timing Desc
+desc1		db (size DspDesc) dup (?)
+desc2		db (size DspDesc) dup (?)
+desc3		db (size DspDesc) dup (?)
+; Extension Block Count N
+n_extblocks	db ?
+; Checksum C
+checksum	db ?
+EDIDblk	ends
+
+.errnz	(size DTD) - 18
+.errnz	(size DspDesc) - 18
+.errnz	(size EDIDblk) - 80h
+
 incDevice = 1				;Include control for gdidefs.inc
 
 	.xlist
@@ -166,6 +262,10 @@ EndDepthList	label byte
 ; Are we using a 3-byte-per-pixel video mode, or allowed to search for one?
 public	ThreeByte
 ThreeByte	db 0
+
+; Physical screen geometry - default to 15" 4:3 monitor (i.e. 12" * 9")
+ScreenWidthMM	dw 305	; 304.8 mm
+ScreenHeightMM	dw 229	; 228.6 mm
 
 sEnd	Data
 
@@ -439,6 +539,154 @@ externNP	setup_double_buf		; in DBLBUF.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
+
+;--------------------------------------------------------------------------;
+; QueryGeometry
+;	allocates a Real-Mode buffer and reads the main monitor's EDID data
+;	into it, to determine the screen geometry and preferred resolution
+; Entry:
+; Returns:
+;	AX	= preferred width from first detailed timing description
+;	DX	= preferred height from first detailed timing description
+;	ScreenWidthMM and ScreenHeightMM set to values from first DTD
+;	(or failing that, calculated from centimetre values in EDID block)
+; Error Returns:
+;	AX	= 1024 (sane default)
+;	DX	=  768 (sane default)
+;	ScreenWidthMM and ScreenHeightMM remain at default values
+; Registers Destroyed:
+;	FLAGS
+; Registers Preserved:
+;	BX,CX,SI,DI,DS,ES,BP
+; Calls:
+;	GlobalDosAlloc
+;	DoInt10h
+; History:
+;	see Git
+;--------------------------------------------------------------------------;
+cProc	QueryGeometry,<NEAR,PUBLIC>,<es,di,bx,si,cx>
+cBegin
+	mov	ax,size EDIDblk
+	cCall	GlobalDosAlloc,<0,ax>	; zero-pad to dword
+	mov	es,ax
+	test	ax,ax
+	jnz	@F
+	jmp	EDIDInfo_fail
+
+@@:	; Set ES:DI for int 10h call
+	mov	[int10h_es],dx
+	xor	di,di
+
+	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETEDID
+	mov	bl,1
+	xor	cx,cx
+	xor	dx,dx
+	call	DoInt10h
+	cmp	ax,VBE_INT10_FN	; success?
+	je	@F
+	jmp	EDIDInfo_fail
+
+@@:	; check for valid header block
+	mov	al,0FFh
+	mov	ah,es:[di]
+	; first byte should be 0 or FFh
+	cmp	ah,al
+	je	@F
+	test	ah,ah
+	jnz	EDIDInfo_fail
+@@:	; bytes 1-6 should be FFh
+	inc	di
+	mov	cx,6
+	cld
+	repe	scasb
+	jne	EDIDInfo_fail
+	; last byte should be same as first
+	mov	al,ah
+	scasb
+	jne	EDIDInfo_fail
+
+	; now check the checksum - the full structure should sum to zero
+	xor	ah,ah
+	mov	cx,size EDIDblk
+	xor	si,si
+@@:
+	lods	byte ptr es:[si]
+	add	ah,al
+	loop	@B
+	; AH should now be zero, and ZF should be set
+	jnz	EDIDInfo_fail
+
+	; get the screen geometry
+	mov	cl,10		; cm -> mm conversion factor
+	; physical width
+	mov	al,es:[horiz_size_cm]
+	test	al,al
+	jz	EDIDInfo_fail	; invalid geometry
+	mul	cl
+	mov	dx,ax
+	; physical height
+	mov	al,es:[vert_size_cm]
+	test	al,al
+	jz	EDIDInfo_fail	; invalid geometry
+	mul	cl
+	; save the geometry from the EDID block
+	mov	[ScreenWidthMM],dx
+	mov	[ScreenHeightMM],ax
+
+	; now try to find the preferred resolution - should be in the
+	; first detailed timing descriptor
+	cmp	es:[desc0.pixclock_10kHz],0
+	; FIXME: should we be using this pixel clock value for something?
+	jz	EDIDInfo_fail	; this is not a timing descriptor!
+	; NOTE: we're not going to bother looking at standard timings
+	; or any of that nonsense - let's just provide ONE resolution
+	; that the user can override if it doesn't suit. Otherwise
+	; things will get really confusing with potentially multiple
+	; calls to FindMode, and only being able to report the results
+	; of the last one, and stuff like that...
+
+	; get the geometry associated with this timing
+	mov	al,es:[desc0.horiz_size_mmlo]
+	mov	dx,word ptr es:[desc0.vert_size_mmlo]
+	mov	ah,dh
+	; extract the upper nibble of size_mmhi to get the upper byte
+	; of the width...
+	shr	ah,4
+	; and the lower nibble of size_mmhi to get the upper byte of
+	; the height - confused yet?
+	and	dh,0Fh
+	; save the geometry from the timing descriptor
+	mov	[ScreenWidthMM],ax
+	mov	[ScreenHeightMM],dx
+
+	; get the actual resolution
+	mov	al,es:[desc0.horizpixels_low]
+	mov	ah,es:[desc0.horiz_high]
+	shr	ah,4	; upper nibble
+	mov	dl,es:[desc0.vertlines_low]
+	mov	dh,es:[desc0.vert_high]
+	shr	dh,4	; upper nibble
+
+	; put them in SI/DI to prepare for return
+	mov	si,ax
+	mov	di,dx
+	jmp	EDIDInfo_done
+	
+EDIDInfo_fail:
+	; setup to return default values
+	mov	si,1024
+	mov	di,768
+
+EDIDInfo_done:
+	; free the Real-Mode block
+	mov	ax,es
+	test	ax,ax
+	jz	@F
+	cCall	GlobalDosFree,<es>
+
+@@:	mov	ax,si
+	mov	dx,di
+cEnd
 
 ;--------------------------------------------------------------------------;
 ; GetVBEInfo
