@@ -263,9 +263,10 @@ EndDepthList	label byte
 public	ThreeByte
 ThreeByte	db 0
 
-; Physical screen geometry - default to 15" 4:3 monitor (i.e. 12" * 9")
-ScreenWidthMM	dw 305	; 304.8 mm
-ScreenHeightMM	dw 229	; 228.6 mm
+; Physical screen geometry - default to 180-mm tall monitor (same as V7VGA),
+; with default width calculated based on aspect ratio of user-chosen resolution
+ScreenWidthMM	dw 0	; calculate at runtime
+ScreenHeightMM	dw 180
 
 sEnd	Data
 
@@ -1404,16 +1405,27 @@ vesa_gdi_fixup	proc near
 	mov	[MemSize.hi],cx
 
 	; geometry
-	mov	bx,[ScreenWidthMM]
-	mov	cx,[ScreenHeightMM]
-	mov	es:[si].dpHorzSize,bx
-	mov	es:[si].dpVertSize,cx
-
-	; calculate parameters related to the physical size
 	push	bp
 	push	di
 	mov	bp,es:[si].dpHorzRes
 	mov	di,es:[si].dpVertRes
+
+	mov	bx,[ScreenWidthMM]
+	mov	cx,[ScreenHeightMM]
+	test	bx,bx
+	jnz	@F
+
+	; we failed to detect the screen width, so calculate it from the height
+	; and the aspect ratio of the specified resolution
+	mov	ax,cx
+	mul	bp
+	div	di
+	mov	bx,ax
+
+@@:	mov	es:[si].dpHorzSize,bx
+	mov	es:[si].dpVertSize,cx
+
+	; calculate parameters related to the physical size
 	; metric low-res window: dpMLoWin / dpMLoVpt = dpHorzSize*10 / dpHorzRes
 	; since dpMLoVpt == 4, we multiply by 10*4=40 and divide by dp{Horz,Vert}Res
 	mov	ax,bx
