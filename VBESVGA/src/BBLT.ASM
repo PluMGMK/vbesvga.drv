@@ -683,10 +683,12 @@ bitblt_execute	PROC	NEAR
 	cCall	GetSelectorLimit,<bx>
 	mov	[old_worksel_limit.lo],ax
 	mov	[old_worksel_limit.hi],dx
+	mov	bx,WorkSelector
 	cCall	GetSelectorBase,<bx>
 	mov	[old_worksel_base.lo],ax
 	mov	[old_worksel_base.hi],dx
 
+	mov	bx,WorkSelector
 	cCall	PrestoChangeoSelector,<ss,bx>
 	push	ax				;push compiled code segment
         lea     ax,cblt_code
