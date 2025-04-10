@@ -2412,39 +2412,52 @@ pcolor_transp_output_286 proc near
         pushem  dx,bx,di
 	mov	dx,ax		; restore the frame pointer
 
+	; allow access to "colors" on the stack
+	xchg	bp,dx
+
         mov     bx,cx
         and     bx,0111b
 	shl	bx,1
         mov     bx,cs:pctou_phase_286[bx]
 
-        mov     cl,ss_clip_mask
-
 pctou_char_loop_286:
         lodsb
+	; have to include this in the loop as CX gets overwritten below...
+        mov     cl,ss_clip_mask
         shl     al,cl
-        mov     ch,al
-        mov     al,dl
-        not     ch
+        mov     ah,al
+        not     ah
 
+	push	si
         jmp     bx
 
 irp phase, <0,7,6,5,4,3,2,1>
 pctou_phase_286_&phase:
-        shl     ch,1
-        jc      @f
-        mov     es:[di],al
-@@:
-        inc     di
+	mov	cx,ss_pixbytes
+	; get the foreground colour
+	lea	si,colors.FOREGROUND
+
+        shl     ah,1
+        jc      skip_pctou_286_&phase
+loop_pctou_phase_286_&phase:
+	movs	byte ptr es:[di],ss:[si]	; SI is in "colors" on stack
+	test	di,di
 	UpdBank	jnz
+	loop	loop_pctou_phase_286_&phase
+skip_pctou_286_&phase:
+	add	di,cx			; if we didn't copy, update DI anyway
+	UpdBank
 endm
         add     di,ss_next_scan         ; skip to next scan line
 	UpdBank
 
-        dec     bp
+        dec     dx
+	pop	si
         jz      @F
 	jmp	pctou_char_loop_286
 
 @@:
+	xchg	bp,dx
 	; restore:
 	; - initial bank in AX
 	; - byte width in BX
