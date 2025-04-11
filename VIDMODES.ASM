@@ -14,8 +14,9 @@ getvendor:
 	cmp	al,4Fh
 	jne	@@failure
 
-	.386	; if we have a VESA bios, we must have a 386!
-	cmp	dword ptr [sig],"ASEV"
+	cmp	word ptr sig[0],"EV"
+	jne	@@failure
+	cmp	word ptr sig[2],"AS"
 	jne	@@failure
 
 	mov	ah,9		; write to stdout
@@ -56,9 +57,9 @@ getvendor:
 	lea	dx,modes
 	int	21h
 
-	lfs	si,[lpModes]
+	lds	si,[lpModes]
 @@next:
-	lods	word ptr fs:[si]
+	lodsw
 	cmp	ax,-1
 	je	@@done
 
@@ -69,12 +70,16 @@ getvendor:
 	cmp	ax,4Fh		; check for success
 	jne	@@next
 
+	push	ds
+	push	cs
+	pop	ds		; back to tiny model...
+
 	; Check if supported by current hardware...
-	bt	[wAttrs],0
-	jnc	@@next
+	test	byte ptr [wAttrs],1 SHL 0
+	jz	@@next
 	; ... and if it's actually a graphical mode
-	bt	[wAttrs],4
-	jnc	@@next
+	test	byte ptr [wAttrs],1 SHL 4
+	jz	@@next
 
 	; Write the mode number
 	mov	ax,cx
@@ -104,6 +109,7 @@ getvendor:
 	lea	dx,newline
 	int	21h
 
+	pop	ds
 	jmp	@@next
 
 @@done:
