@@ -331,6 +331,7 @@ OFF_VESA_ADEPTH	equ $-VESAModeStruct
 VESAAFieldSize	db ?
 VESAAFieldPos	db ?
 VESADirectMode	db ?	; Bit 0 = programmable ramp, 1 = usable alpha channel
+OFF_VESA_LINBUF	equ $-VESAModeStruct
 public	VESALinearBuf
 VESALinearBuf	LONG <?,?>	; 32-bit Physical Address
 VESAOSMem	LONG <?,?>	; Off-Screen Memory
@@ -1007,8 +1008,14 @@ jnelp:	; extra label to allow for short JNE instructions
 	jz	FindMode_loop	; NEXT!
 	; Set the "linear" flag in the mode number
 	or	ch,high VESA_FLAG_LINEAR
+	; If we're on a 286, we can't handle an address with over 24 bits
+	mov	ax,__WinFlags
+	test	ax,WF_CPU286
+	jz	@F
+	cmp	byte ptr es:[di.OFF_VESA_LINBUF+3],0
+	jnz	jnelp
 	; And make sure vesa_gdi_fixup gets the right data!
-	cmp	[VESAMajVer],3
+@@:	cmp	[VESAMajVer],3
 	; VBE 2.0 and lower didn't specify separate bitnesses for linear and
 	; banked versions of the same mode
 	jb	FindMode_attrsOK
