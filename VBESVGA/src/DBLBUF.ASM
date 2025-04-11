@@ -18,11 +18,12 @@ incDevice = 1			;Include control for gdidefs.inc
 	include CMACROS.INC
 	include MACROS.MAC
 	include GDIDEFS.INC
-	include int3.inc
+	include DISPLAY.INC	; for WF_*
 	include windefs.inc
 	include	cursor.inc
 	.list
 
+	externA  __WinFlags		;Windows info bit
 	externFP AllocSelector
 	externFP FreeSelector
 	externFP SetSelectorBase
@@ -202,7 +203,7 @@ dbcursor_check	endp
 ; Its job is to copy the entire back buffer onto the front buffer,
 ; while putting the cursor over it.
 swap_buffers	proc near
-	.386	; if we get this far we have a 386 (required for lin framebuf)
+	.386	; if we get this far we have a 386
 	pushad	; we will use all the 386 registers!
 	push	es
 	push	fs
@@ -541,6 +542,12 @@ cBegin
 	jnb	@F
 	jmp	setup_done
 
+@@:	; Double-buffering requires at least a 386
+	mov	ax,__WinFlags
+	test	ax,WF_CPU286
+	jz	@F
+	jmp	setup_done
+
 @@:	; Calculate the relevant period
 	mov	ax,1000		; milliseconds per second
 	div	[desired_fps]	; AL := milliseconds per frame, AH := remainder
@@ -747,46 +754,6 @@ fnptrs_setup_done:
 	.286
 
 setup_done:
-cEnd
-
-; does the opposite of setup_double_buf, as a far function
-; so it can be called from Code...
-cProc	cancel_double_buf,<FAR,PUBLIC,NODATA>,<es,ax,bx,cx,dx,si,di>
-cBegin
-	call	stop_double_buf
-
-	; Forget the selectors (but don't free them since
-	; this seems to cause mayhem throughout the LDT...)
-	xor	di,di
-	mov	[VramSel],di
-	mov	[FrontBufSel],di
-	xchg	[BackBufSel],di
-
-	; Unlock the back buffer memory
-	test	di,di
-	jz	@F
-	cCall	GetSelectorBase,<di>
-	xchg	di,ax
-	mov	si,dx
-
-	mov	ax,601h				; Unlock linear region
-	mov	bx,si
-	mov	cx,di
-	mov	si,[MemSize.hi]
-	mov	di,[MemSize.lo]
-	shl	di,1
-	rcl	si,1
-	int	31h
-
-@@:	; and free it.
-	mov	ax,502h				; Free memory block
-	mov	di,[BackBufDPMIHdl.lo]
-	mov	si,[BackBufDPMIHdl.hi]
-	int	31h
-
-	; the least we can offer in this case is write-through, so reading
-	; from the screen mightn't always be so painfully slow...
-	call	enable_wrthru
 cEnd
 
 ;--------------------------------------------------------------------------;

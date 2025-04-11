@@ -537,7 +537,7 @@ createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
 
 externNP	init_modal_realizations	; in ROBJECT.ASM
-externNP	setup_double_buf		; in DBLBUF.ASM
+externNP	setup_double_buf	; in DBLBUF.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
