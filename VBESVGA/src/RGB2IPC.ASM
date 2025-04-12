@@ -448,6 +448,7 @@ colour_contribution	proc near
 
 @@hard_way:
 	.286
+	xor	ah,ah
 	; We're on a 286, need to restrict ourselves to 16-bit registers...
 	; There are three cases to deal with:
 	; 1. CL <= 8 --> just SHL AX,CL and OR into DI
