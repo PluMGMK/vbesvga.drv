@@ -508,7 +508,7 @@ StBm8_Positive_X proc   near
         mov     bl,bStyleError  ; current value of the error term
         mov     bh,bStyleMask   ; current position of the rotating style mask
         ;mov     si,wDistHoriz   ; load the vertical scale factor
-	mov	si,BytesPerPixel
+	mov	si,word ptr BytesPerPixel
 	and	si,0FFh		; this is only one byte
 
 ; the draw loop
@@ -565,6 +565,7 @@ StBm8_Diagonal_4Q proc  near
 	inc	si
 	call	StepsTo64KBound	; Get number of steps to 64K boundary in si
 
+	; FIXME: this still doesn't look like it handles multi-byte pixels!
         mov     al,TmpColor
         mov     dl,bStyleError  ; the current value of the style error
         mov     bh,bStyleMask   ; current value of the style mask
