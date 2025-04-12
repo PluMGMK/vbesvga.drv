@@ -98,8 +98,8 @@ fail_reason	dw	offset general_fail
 bad_width	db	'Width < 640 is not allowed',13,10,'$'
 bad_height	db	'Height < 480 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
-bad_framerate	db	'Refresh rate must be in less than 256 fps',13,10
-		db	'(Note that values less than 4 fps disable double buffering)',13,10,'$'
+bad_interval	db	'Swap-buffers interval > 55 ms is not allowed',13,10
+		db	'(Note that a value of 0 disables double buffering)',13,10,'$'
 general_fail	db	'No usable modes found with requested resolution and bit depth',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
@@ -109,7 +109,7 @@ width_member	db	"Width",0
 height_member	db	"Height",0
 depth_member	db	"Depth",0
 
-fps_member	db	"DoubleBufRefreshRate",0
+interval_member	db	"SwapBuffersInterval",0
 
 allow3b_member	db	"Allow3ByteMode",0
 
@@ -139,7 +139,7 @@ SYSINI	<PreferBank_off,1,0>
 	externW ScreenSelector		; screen selector
         externW ScratchSel              ; the free selector
 
-	externB	desired_fps		; in DBLBUF.ASM
+	externW	sb_period_ms		; in DBLBUF.ASM
 	externB	ThreeByte		; in VESAFNS.ASM
 	externB	DepthList		; in VESAFNS.ASM
 	externB	EndDepthList		; in VESAFNS.ASM
@@ -420,14 +420,14 @@ enable_read_profile	PROC	NEAR
 @@:	mov	VScreen_Depth,al
 
 	lea	ax,boot_category
-	lea	bx,fps_member
+	lea	bx,interval_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,60,ds,cx>
-	test	ah,ah	; AH is non-zero if user went over 255
-	jz	@F
-	mov	[fail_reason],offset bad_framerate
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,16,ds,cx>
+	cmp	ax,55
+	jng	@F
+	mov	[fail_reason],offset bad_interval
 	jmp	enable_read_profile_fail
-@@:	mov	desired_fps,al
+@@:	mov	[sb_period_ms],ax
 
 	lea	ax,boot_category
 	lea	bx,allow3b_member
