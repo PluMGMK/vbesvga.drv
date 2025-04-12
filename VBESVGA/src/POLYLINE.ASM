@@ -727,7 +727,7 @@ ld_bg_color2:
 	mov	bx	,cs:[RotateColourTable][bx]
 	mov	RotColour,bx
 
-	mov	cx,[si].oem_pen_style	    ; get the requested style
+	mov	cl,[si].oem_pen_style	    ; get the requested style
         mov     LineStyle,cl                ; save style
         cmp     cl,MaxLineStyle             ; test for validity
         jg      jump_error_exit1            ; illegal style
@@ -1613,20 +1613,9 @@ color_bit_is_0:
 	cmp	ax,offset BM8_ROPC
 	jne	dl_jmpexit
 	cmp	FillBytes,0
-	jne	dl_jmpexit
-
-	mov	ax,S1_Move
-	cmp	ax,offset Bm8_Move_Positive_X 
-	je	dl_Diagonal
-	jmp	dl_draw_loop
+	je	dl_draw_loop
 dl_jmpexit:
 	jmp	dl_exit
-
-dl_Diagonal:
-	mov	ax,S1
-	cmp	ax,offset Bm8_Diagonal_1Q
-	mov	dh,byte ptr TmpColor
-	je	dl_Diag_1Q_posx
 
 dl_draw_loop:
         call    S1                      ; draw the slice
@@ -1635,7 +1624,6 @@ dl_draw_loop:
         dec     cScans                  ; one more scan done
         jz      dl_do_last_scan
 
-newErTmMAC macro
 ;---------------------------------------
 ; get the intermediate run length and the new error term
 
@@ -1657,57 +1645,10 @@ newErTmMAC macro
 @@:
         add     ax,wFracS               ; this is the new error
         mov     davidw,ax                   ; save it
-	endm
-
-	newErTmMAC
 
 	jmp short dl_draw_loop
 dl_do_last_scan:
 	jmp	do_the_last_scan
-
-
-dl_Diag_1Q_posx:
-	;Single Line Diagonal
-
-	;S1==Bm8_Diagonal_1Q
-	;S1_Move==Bm8_Move_Positive_X
-dl_Q1posx_loop:
-
-	int	3
-        call    S1                      ; draw the slice
-
-	;mov	dh,TmpColor
-	dec	cx 	;last pixel addressing?ds:di
-	jz	dl_Q1_lastpixel
-dl_Q1_loop:
-	;mov	[di],dh
-	inc	di
-	add	di,si
-	jnc	dl_Q1_decbank
-dl_Q1_lcont:
-	dec	cx
-	jnz	dl_Q1_loop
-
-dl_Q1_lastpixel:
-	;mov	[di],dh
-	inc	di
-
-        dec     cScans                  ; one more scan done
-        jz      dl_do_last_scan
-
-	newErTmMAC 
-
-	jmp short dl_Q1posx_loop
-
-dl_Q1_decbank:
-	dec	bank_select
-	mov	dl,bank_select
-	SET_BANK	;call	SetCurrentBankDL
-  dec	cx	
-  jnz	dl_Q1_loop
-	jmp	dl_Q1_lastpixel
-
-;	jmp short dl_Q1_lcont
 
 dl_exit:
 ;------------------------
