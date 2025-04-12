@@ -20,7 +20,6 @@ incOutput       = 1                     ; Include control for gdidefs.inc
 	include cmacros.inc
 	include gdidefs.inc
 	include display.inc
-;       include cursor.inc
 	include macros.mac
         include njumps.mac
 	include vgareg.inc
@@ -191,7 +190,6 @@ cProc   do_scanlines,<FAR,PUBLIC,WIN,PASCAL,NODATA>,<si,di,es,ds>
 	localW	exclude_flag
 cBegin
 	WriteAux  <'Scanline'>
-	;int	3
 	cld				; We are forever doing this
 
         mov     ax      ,DataBASE

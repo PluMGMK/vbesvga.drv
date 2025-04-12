@@ -19,7 +19,23 @@
 ;
 ;--------------------------------------------------------------------
 color_opaque_rop_0 proc
+	mov	ax,di
+	add	ax,cx
+	jc	@F
 	xor	al,al
+	rep	stosb
+	ret
+
+@@:	; DI + CX wraps around --> we will cross a bank boundary during this ROP
+	; AX at this point contains the remainder, so store that...
+	push	ax
+	mov	cx,di
+	neg	cx	; do enough to finish the current bank
+	xor	al,al
+	rep	stosb
+	; the XOR instruction has set ZF so this will advance the bank:
+	call	colour_check_bank
+	pop	cx	; get back the remainder
 	rep	stosb
 	ret
 color_opaque_rop_0 endp
@@ -31,6 +47,7 @@ co_rop_1_loop:
 	or	es:[di],al
 	not	BYTE PTR es:[di]
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_1_loop
@@ -50,6 +67,7 @@ co_rop_2_loop:
 	not	al
 	and	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_2_loop
@@ -87,6 +105,7 @@ co_rop_4_loop:
 	not	BYTE PTR es:[di]
 	and	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_4_loop
@@ -104,6 +123,7 @@ color_opaque_rop_5 proc
 co_rop_5_loop:
 	not	BYTE PTR es:[di]
 	inc	di
+	call	colour_check_bank
 	loop	co_rop_5_loop
 
 	ret
@@ -115,6 +135,7 @@ co_rop_6_loop:
 	lods	byte PTR ss:[si]
 	xor	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_6_loop
@@ -134,6 +155,7 @@ co_rop_7_loop:
 	and	es:[di],al
 	not	BYTE PTR es:[di]
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_7_loop
@@ -152,6 +174,7 @@ co_rop_8_loop:
 	lods	byte PTR ss:[si]
 	and	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_8_loop
@@ -171,6 +194,7 @@ co_rop_9_loop:
 	not	al
 	xor	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_9_loop
@@ -194,6 +218,7 @@ co_rop_b_loop:
 	not	al
 	or	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_b_loop
@@ -225,6 +250,11 @@ color_opaque_rop_c proc
 	jnz	co_rop_c_loop_si
 	cmp	ax,ss:[si+6]
 	jnz	co_rop_c_loop_si
+
+	; check if we'll cross a bank
+	mov	si,di
+	add	si,cx
+	jc	co_rop_c_loop_si
 	pop	si
 
 co_rop_a:
@@ -258,6 +288,8 @@ co_rop_c_loop_si:
 co_rop_c_loop:
 
 	movs	byte ptr es:[di], ss:[si]
+	test	di,di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_c_loop
@@ -277,6 +309,7 @@ co_rop_d_loop:
 	not	BYTE PTR es:[di]
 	or	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_d_loop
@@ -295,6 +328,7 @@ co_rop_e_loop:
 	lods	byte PTR ss:[si]
 	or	es:[di],al
 	inc	di
+	call	colour_check_bank
 	rol	dl,1
 	jc	@F
 	loop	co_rop_e_loop
@@ -308,7 +342,23 @@ co_rop_e_loop:
 color_opaque_rop_e endp
 ;--------------------------------------------------------------------
 color_opaque_rop_f proc
+	mov	ax,di
+	add	ax,cx
+	jc	@F
 	mov	al,0ffh
+	rep	stosb
+	ret
+
+@@:	; DI + CX wraps around --> we will cross a bank boundary during this ROP
+	; AX at this point contains the remainder, so store that...
+	push	ax
+	mov	cx,di
+	neg	cx	; do enough to finish the current bank
+	mov	al,0ffh
+	rep	stosb
+	test	di,di	; set ZF
+	call	colour_check_bank
+	pop	cx	; get back the remainder
 	rep	stosb
 	ret
 color_opaque_rop_f endp
@@ -334,6 +384,7 @@ cx_rop_0_loop:
 	;perform rop
 	mov	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	loop	cx_rop_0_loop
 
 	ret
@@ -349,6 +400,7 @@ cx_rop_1_loop:
 	or	BYTE PTR es:[di] ,al
 	not	BYTE PTR es:[di]
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -370,6 +422,7 @@ cx_rop_2_loop:
 	not	al
 	and	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -391,6 +444,7 @@ cx_rop_3_loop:
 	not	al
 	mov	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -413,6 +467,7 @@ cx_rop_4_loop:
 	and	es:[di],al
 
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -432,6 +487,7 @@ cx_rop_5_loop:
 	;perform rop
 	not	BYTE PTR es:[di]
 @@:	inc	di
+	call	colour_check_bank
 	loop	cx_rop_5_loop
 	ret
 color_xpar_rop_5 endp
@@ -444,6 +500,7 @@ cx_rop_6_loop:
 	mov	al,ss:[si]
 	xor	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -465,6 +522,7 @@ cx_rop_7_loop:
 	and	es:[di],al
 	not	BYTE PTR es:[di]
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -485,6 +543,7 @@ cx_rop_8_loop:
 	mov	al,ss:[si]
 	and	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -506,6 +565,7 @@ cx_rop_9_loop:
 	not	al
 	xor	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -532,6 +592,7 @@ cx_rop_b_loop:
 	or	es:[di],al
 
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -552,6 +613,7 @@ cx_rop_c_loop:
 	mov	al,ss:[si]
 	mov	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -574,6 +636,7 @@ cx_rop_d_loop:
 	or	es:[di],al
 
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -594,6 +657,7 @@ cx_rop_e_loop:
 	mov	al,ss:[si]
 	or	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	inc	si
 	rol	dl,1
 	jc	@F
@@ -615,8 +679,36 @@ cx_rop_f_loop:
 	;perform rop
 	mov	es:[di],al
 @@:	inc	di
+	call	colour_check_bank
 	loop	cx_rop_f_loop
 
 	ret
 color_xpar_rop_f endp
-
+
+;--------------------------------------------------------------------
+; Check if DI has crossed a segment boundary and update bank
+; (this is always valid since internal colour bitmaps don't have
+;  scanlines crossing segment boundaries unless they are the screen)
+;
+; entry:
+;   ZF = set if DI has wrapped, clear otherwise
+;
+;
+;--------------------------------------------------------------------
+colour_check_bank proc near
+	jz	@F
+	ret
+@@:
+	push	ds
+	push	dx
+        mov     dx,DataBASE
+	mov	ds,dx
+	assumes ds,Data
+	mov	dl,[bank_select_byte]
+	inc	dl
+	SET_BANK
+	pop	dx
+	pop	ds
+	assumes	ds,nothing
+	ret
+colour_check_bank endp
