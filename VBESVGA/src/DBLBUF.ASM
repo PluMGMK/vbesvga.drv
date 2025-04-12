@@ -61,10 +61,10 @@ fast_timer_hdl	dw 0
 fast_timer_irqseg dw 0
 
 ; Approximate time in milliseconds taken to run swap_buffers
+public	sb_period_ms
 sb_period_ms	dw ?	; swap_buffers period in milliseconds
 
 ; User-specified refresh rate
-public	desired_fps
 desired_fps	db 60
 
 externW	cursor_funcs		; in CURSOR.ASM
@@ -538,8 +538,8 @@ cBegin
 	jmp	setup_done
 
 @@:	; has user force-disabled double buffering?
-	cmp	[desired_fps],4
-	jnb	@F
+	cmp	[sb_period_ms],0
+	jnz	@F
 	jmp	setup_done
 
 @@:	; Double-buffering requires at least a 386
@@ -548,13 +548,7 @@ cBegin
 	jz	@F
 	jmp	setup_done
 
-@@:	; Calculate the relevant period
-	mov	ax,1000		; milliseconds per second
-	div	[desired_fps]	; AL := milliseconds per frame, AH := remainder
-	xor	ah,ah		; we don't care about the remainder
-	mov	[sb_period_ms],ax
-
-	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
+@@:	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
 	; this will allow us to schedule fast timer events in a way that's
 	; completely independent of USER.EXE, so it's a lot cleaner.
 	mov	ax,1684h	; get VxD entry point
