@@ -130,7 +130,7 @@ havesystemini_vbesvga:
 	call	silly_atoi
 	mov	[depth], bx
 	jmp	havesystemini_vbesvga
-@@:	lea	di, [pdblbufferlower]
+@@:	lea	di, [pswapbufferlwr]
 	call	assign_recognizer
 	jne	@F
 	call	silly_atoi
@@ -138,20 +138,9 @@ havesystemini_vbesvga:
 	jmp	havesystemini_vbesvga
 @@:	lea	di, [pfontsz]
 	call	assign_recognizer
-	jne	@F
-	call	silly_char
-	mov	[fontsz], al
-	jmp	havesystemini_vbesvga
-@@:	lea	di, [ppmidlower]
-	call	assign_recognizer
 	jne	havesystemini_vbesvga
 	call	silly_char
-	cmp	al, "s"
-	jne	@F
-	cmp	byte ptr [si], "u"
-	jne	@F
-	mov	al, "u"
-@@:	mov	[pmid], al
+	mov	[fontsz], al
 	jmp	havesystemini_vbesvga
 
 havesystemini_eof:
@@ -171,23 +160,20 @@ drawscreenanew:
 	lea	si, [configvbe]
 	mov	dx, 1Ah
 	call	drawstringat
-	mov	dx, 0810h
+	mov	dx, 080Fh
 	lea	si, [enterbase]
 	call	drawstringat
-	mov	dx, 0910h
+	mov	dx, 090Fh
 	lea	si, [escbase]
 	call	drawstringat
-	mov	dx, 210h
+	mov	dx, 20Fh
 	lea	si, [modebase]
 	call	drawstringat
 	lea	si, [dblbuffbase]
-	mov	dx, 310h
+	mov	dx, 30Fh
 	call	drawstringat
 	lea	si, [fontsizebase]
-	mov	dx, 410h
-	call	drawstringat
-	lea	si, [pmidbase]
-	mov	dx, 510h
+	mov	dx, 40Fh
 	call	drawstringat
 
 drawscreen:
@@ -199,7 +185,7 @@ drawscreen:
 	push	di
 	call	mode2text
 	pop	si
-@@:	mov	dx, 22Bh
+@@:	mov	dx, 22Dh
 	call	blankfield
 	call	drawstringat
 drawscreen2:
@@ -210,19 +196,15 @@ drawscreen2:
 	mov	al, "$"
 	stosb
 	pop	si
-	mov	dx, 32Bh
+	mov	dx, 32Dh
 	call	blankfield
 	call	drawstringat
 	call	decodefontsize
 	call	decodedefault
-	mov	dx, 042Bh
+	mov	dx, 042Dh
 	call	blankfield
 	call	drawstringat
-	call	decodepmid
 	call	decodedefault
-	mov	dx, 052Bh
-	call	blankfield
-	call	drawstringat
 	
 basecfgstate:
 	mov	ah, 0
@@ -231,10 +213,6 @@ basecfgstate:
 	je	togglef
 	cmp	al, "f"
 	je	togglef
-	cmp	al, "P"
-	je	togglep
-	cmp	al, "p"
-	je	togglep
 	cmp	al, "D"
 	je	setrefresh
 	cmp	al, "d"
@@ -274,35 +252,8 @@ togglefsmall:
 	mov	al, 's'
 	jmp	toggleffinal
 
-togglep:
-	mov	al, [pmid]
-	cmp	al, 0
-	je	togglepsanity
-	cmp	al, 's'
-	je	togglepnone
-	cmp	al, 'n'
-	je	togglepdisabled
-	cmp	al, 'd'
-	je	togglepsum
-	mov	al, 0
-togglepfinal:
-	mov	[pmid], al
-	jmp	drawscreen
-togglepsanity:
-	mov	al, 's'
-	jmp	togglepfinal
-togglepnone:
-	mov	al, 'n'
-	jmp	togglepfinal
-togglepdisabled:
-	mov	al, 'd'
-	jmp	togglepfinal
-togglepsum:
-	mov	al, 'u'
-	jmp	togglepfinal
-
 setrefresh:
-	mov	dx, 32Bh
+	mov	dx, 32Dh
 	mov	ah, 2
 	int	10h
 	mov	bx, 70h
@@ -319,7 +270,7 @@ setrefresh_draw:
 	call	itoa
 	push	bp		; Some implementation destory BP for int10h due to bug
 	mov	bh, 0
-	mov	dx, 32Bh
+	mov	dx, 32Dh
 @@:	mov	ah, 2
 	int	10h
 	lodsb
@@ -396,7 +347,7 @@ setrefresh_esc:
 
 setmode:	; Select video mode from popup
 	; Draws the popup
-	mov	dx, 32Bh
+	mov	dx, 32Dh
 	mov	bx, 70h
 	mov	ah, 2
 	int	10h
@@ -416,7 +367,7 @@ setmode:	; Select video mode from popup
 	mov	ax, 09BFh
 	int	10h
 	inc	dh
-@@:	mov	dl, 2Bh
+@@:	mov	dl, 2Dh
 	mov	ah, 2
 	int	10h
 	mov	ax, 09B3h
@@ -436,7 +387,7 @@ setmode:	; Select video mode from popup
 	inc	dh
 	cmp	dh, 15
 	jb	@B
-	mov	dl, 2Bh
+	mov	dl, 2Dh
 	mov	ah, 2
 	int	10h
 	mov	ax, 09C0h
@@ -458,7 +409,7 @@ setmode:	; Select video mode from popup
 setmode_drawtext:
 	lea	si, [modes + bp]
 	push	bp			; Some INT10h implementations destroy BP
-	mov	dx, 042Ch
+	mov	dx, 042Eh
 	push	si
 	lea	si, [default0]
 	test	bp, bp
@@ -468,7 +419,7 @@ setmode_drawtext:
 	inc	dh
 	pop	si
 setmode_drawtextn:
-	mov	dl, 2Ch
+	mov	dl, 2Eh
 	cmp	word ptr [si], 0
 	je	setmode_drawtextt
 	lea	di, [genln]
@@ -491,7 +442,7 @@ setmode_drawtextn:
 	add	si, 6
 	cmp	dh, 14
 	jb	setmode_drawtextn
-	mov	dl, 2Ch
+	mov	dl, 2Eh
 	call	blankfield
 	cmp	word ptr [si], 0
 	je	setmode_drawtextend
@@ -636,31 +587,6 @@ decodefontsizelarge:
 	lea	si, [large]
 	ret
 
-decodepmid:		; returns string for pmid in si
-	mov	al, [pmid]
-	cmp	al, "u"
-	je	decodepmidsum
-	cmp	al, "s"
-	je	decodepmidsanity
-	cmp	al, "n"
-	je	decodepmidnone
-	cmp	al, "d"
-	je	decodepmiddisable
-	xor	si, si
-	ret
-decodepmidsum:
-	lea	si, [sum]
-	ret
-decodepmidsanity:
-	lea	si, [sanity]
-	ret
-decodepmidnone:
-	lea	si, [none]
-	ret
-decodepmiddisable:
-	lea	si, [disable]
-	ret
-
 exit_save:
 	call	eraseui
 
@@ -687,6 +613,7 @@ save_boot:
 	call	append_line
 	jmp	save_fenh
 @@:	mov	bp, si
+	jmp	save_boot_nextline2
 save_boot_nextline:
 	call	readnextline
 save_boot_nextline2:
@@ -727,6 +654,7 @@ save_enh:
 	call	append_line
 	jmp	save_fvbesvga
 @@:	mov	bp, si
+	jmp	save_enh_nextline2
 save_enh_nextline:
 	call	readnextline
 save_enh_nextline2:
@@ -765,6 +693,7 @@ save_vbesvga:
 	mov	si, [inend]
 	jmp	save_vbesvga_insert
 @@:	mov	bp, si
+	jmp	save_vbesvga_nextline2
 save_vbesvga_nextline:
 	call	readnextline
 save_vbesvga_nextline2:
@@ -784,10 +713,7 @@ save_vbesvga_nextline2:
 	lea	di, [pfontsz]
 	call	assign_recognizer
 	je	save_vbesvga_remove
-	lea	di, [ppmidlower]
-	call	assign_recognizer
-	je	save_vbesvga_remove
-	lea	di, [pdblbufferlower]
+	lea	di, [pswapbufferlwr]
 	call	assign_recognizer
 	je	save_vbesvga_remove
 	jmp	save_vbesvga_nextline
@@ -820,17 +746,9 @@ save_vbesvga_insert:
 	jz	@F
 	lea	di, [pfontsz]
 	call	insertpropstring
-@@:	mov	ax, [refresh]	; DoubleBufRefreshRate= (always generated)
-	lea	di, [pdblbuffer]
+@@:	mov	ax, [refresh]	; SwapBuffersInterval= (always generated)
+	lea	di, [pswapbuffer]
 	call	insertpropnumeric
-	push	si
-	call	decodepmid
-	xchg	ax, si
-	pop	si
-	test	ax, ax
-	jz	save_buffer
-	lea	di, [ppmid]
-	call	insertpropstring
 save_buffer:
 	lea	si, [pname1]	; Now save buffer
 	lea	di, [pname2]
@@ -996,12 +914,40 @@ popnextvidmode:
 	jnc	popnextvidmode
 	bt	word ptr [di], 4
 	jnc	popnextvidmode
+	mov	cl, [di + 25] ; Depth
+	mov	ch, [di + 27] ; Model
+	cmp	cl, 8
+	mov	ah, cl
+	jb	popnextvidmode	; Unusable (less than 256 colors)
+	cmp	ch, 4
+	je	popvidmode_check	; Potentially Usable (packed-pixel)
+	cmp	ch, 6
+	jne	popnextvidmode	; Unusable (only packed-pixel or direct-colour can be used)
+
+	mov	al, [di + 31]	; Red PX
+	add	al, [di + 33]	; Green PX
+	add	al, [di + 35]	; Blue PX
+	add	al, [di + 37]	; padding
+	; Hardware bug: sometimes padding isn't filled.
+	; Take larger of advertised depth and computed depth.
+	cmp	ah, al
+	jae	popvidmode_check
+	mov	ah, al
+popvidmode_check:
+	; Not offering 3 byte video modes in config screen until they work better
+	; Once they do; this whole thing becomes much shorter
+	;test	ah, 7
+	;jnz	popnextvidmode	; Unusable (not byte aligned)
+	cmp	ah, 8 * 1
+	je	popvidmode_good
+	cmp	ah, 8 * 2
+	je	popvidmode_good
+	cmp	ah, 8 * 4
+	jne	popnextvidmode	; Unusable (not byte aligned)
+
+popvidmode_good:
 	mov	ax, [di + 18] ; Width
 	mov	dx, [di + 20] ; Height
-	mov	cl, [di + 25] ; Depth
-	;Depth code might be wrong and might have to be changed to unpack masks
-	cmp	cl, 8
-	jb	popnextvidmode	; Unusable
 	cmp	cl, 24
 	jbe	@F
 	mov	cl, 24
@@ -1310,9 +1256,8 @@ systeminitoobig	db	"SYSTEM.INI too big", 13, 10, "$"
 systeminitoogro	db	"SYSTEM.INI would be too big", 13, 10, "$"
 configvbe	db	"Configure SVGA Video Settings$"
 modebase	db	"M  Video Mode$"
-dblbuffbase	db	"D  Double Buffer Refresh$"
+dblbuffbase	db	"D  Double Buffer Refresh(ms)$"
 fontsizebase	db	"F  Font Size$"
-pmidbase	db	"P  PMID Check$"
 enterbase	db	"ENTER  Save & Exit$"
 escbase		db	"ESC    Exit$"
 
@@ -1333,16 +1278,10 @@ pheight		db	"Height=$"
 pdepthlower	db	"depth="
 pdepth		db	"Depth=$"
 pfontsz		db	"fontsize=$"
-ppmidlower	db	"pmidcheck="
-ppmid		db	"PMIDcheck=$"
-pdblbufferlower	db	"doublebufrefreshrate="
-pdblbuffer	db	"DoubleBufRefreshRate=$"
+pswapbufferlwr	db	"swapbuffersinterval="
+pswapbuffer	db	"SwapBuffersInterval=$"
 small		db	"small$"
 large		db	"large$"
-sum		db	"sum$"
-sanity		db	"sanity$"
-none		db	"none$"
-disable		db	"disable$"
 more		db	"PG/DN More$"
 less		db	"PG/UP Prev$"
 default0	db	"0) "
@@ -1355,7 +1294,7 @@ height	dw	0
 depth	dw	0
 pmid	db	0
 fontsz	db	0
-refresh	dw	60
+refresh	dw	16
 
 issetupexe:
 	;*** SETUP.EXE copies VGASVGA.DRV, VDDVBE.386, VIDMODES.COM, VBESVGA.TXT
