@@ -78,7 +78,6 @@ lowdos	db	"DOS 3.0 required.", 13, 10, "$"
 haveexepath:
 	mov	[exeoff], si
 	call	popvidmodes
-	.386			; We now know we have a 386 (and we want large conditional jmp instructions)
 	call	pathfromexepath
 	lea	si, [systemini]
 	call	stpcpy0
@@ -895,11 +894,16 @@ popvidmodes:	; Fills MODES structure with video modes, stopping it with an all z
 	jne	nosvgabios
 	cmp	word ptr [di + 2], "AS"
 	jne	nosvgabios
-	.386	; VESA yes, therefore 386 yes
-	lfs	si, [di + 14]
+	push	ds
+	les	si, [di + 14]
+	mov	word ptr [genln], es	; saved result segment (into buffer that's overwritten during SYSTEM.INI generation)
+	pop	es
 	lea	bx, [modes]
 popnextvidmode:
-	lods	word ptr fs:[si]
+	push	ds
+	mov	ds, word ptr [genln]	; get result segment back
+	lodsw
+	pop	ds
 	cmp	ax, 0FFFFh
 	je	poplastvidmode
 	mov	cx, ax
@@ -910,10 +914,10 @@ popnextvidmode:
 	pop	bx
 	cmp	ax, 04Fh
 	jne	popnextvidmode
-	bt	word ptr [di], 0
-	jnc	popnextvidmode
-	bt	word ptr [di], 4
-	jnc	popnextvidmode
+	test	byte ptr [di], 1
+	jz	popnextvidmode
+	test	byte ptr [di], 16
+	jz	popnextvidmode
 	mov	cl, [di + 25] ; Depth
 	mov	ch, [di + 27] ; Model
 	cmp	cl, 8
