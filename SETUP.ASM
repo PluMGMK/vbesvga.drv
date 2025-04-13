@@ -177,7 +177,7 @@ drawscreenanew:
 
 drawscreen:
 	lea	si, [default]
-	cmp	[_width], 0
+	cmp	[depth], 0
 	je	@F
 	lea	si, [_width]
 	lea	di, [genln]
@@ -419,7 +419,7 @@ setmode_drawtext:
 	pop	si
 setmode_drawtextn:
 	mov	dl, 2Eh
-	cmp	word ptr [si], 0
+	cmp	word ptr [si + 4], 0
 	je	setmode_drawtextt
 	lea	di, [genln]
 	mov	al, dh
@@ -443,7 +443,7 @@ setmode_drawtextn:
 	jb	setmode_drawtextn
 	mov	dl, 2Eh
 	call	blankfield
-	cmp	word ptr [si], 0
+	cmp	word ptr [si + 4], 0
 	je	setmode_drawtextend
 	lea	si, [more]
 	call	drawstringat
@@ -471,7 +471,7 @@ setmode_keyboard:
 	jmp	setmode_exit	; short jmp to near jmp
 @@:	lea	si, [modes + bp]
 	mov	bl, "1"
-@@:	cmp	word ptr [si], 0
+@@:	cmp	word ptr [si + 4], 0
 	je	setmode_nomorekeys
 	cmp	al, bl
 	je	setmode_this
@@ -479,7 +479,7 @@ setmode_keyboard:
 	inc	bl
 	cmp	bl, "9"
 	jbe	@B
-	cmp	word ptr [si], 0
+	cmp	word ptr [si + 4], 0
 	je	setmode_nomorekeys
 	cmp	ah, 81		; PGDN
 	jne	setmode_nomorekeys
@@ -511,6 +511,8 @@ setmode_nomorekeys:
 
 mode2text:
 	mov	ax, word ptr [si]
+	test	ax, ax
+	jz	mode2text_edid
 	call	itoa
 	mov	al, "x"
 	stosb
@@ -523,6 +525,11 @@ mode2text:
 	mov	al, "$"
 	stosb
 	ret
+mode2text_edid:
+	mov	ax, word ptr [si + 4]
+	call	itoa
+	lea	si, [bitcolor]
+	jmp	stpcpydollar
 
 blankfield:
 	mov	bh, 0
@@ -883,6 +890,10 @@ nosvgabios:
 popvidmodes:	; Fills MODES structure with video modes, stopping it with an all zeros entry
 	push	ds
 	pop	es
+	lea	di, [modes]
+	xor	ax, ax		; Blank out EDID generation space
+	mov	cx, 24 * 3
+	stosw
 	lea	di, [buf]
 	mov	word ptr [di], "VB"
 	mov	word ptr [di + 2], "E2"
@@ -898,7 +909,7 @@ popvidmodes:	; Fills MODES structure with video modes, stopping it with an all z
 	les	si, [di + 14]
 	mov	word ptr [genln], es	; saved result segment (into buffer that's overwritten during SYSTEM.INI generation)
 	pop	es
-	lea	bx, [modes]
+	lea	bx, [modes + 24 * 6]
 popnextvidmode:
 	push	ds
 	mov	ds, word ptr [genln]	; get result segment back
@@ -920,7 +931,6 @@ popnextvidmode:
 	jz	popnextvidmode
 	mov	cl, [di + 25] ; Depth
 	mov	ch, [di + 27] ; Model
-	cmp	cl, 8
 	mov	ah, cl
 	jb	popnextvidmode	; Unusable (less than 256 colors)
 	cmp	ch, 4
@@ -950,22 +960,31 @@ popvidmode_check:
 	jne	popnextvidmode	; Unusable (not byte aligned)
 
 popvidmode_good:
-	mov	ax, [di + 18] ; Width
-	mov	dx, [di + 20] ; Height
 	cmp	cl, 24
 	jbe	@F
 	mov	cl, 24
-@@:	mov	[bx], ax
+@@:	mov	ch, 0
+	push	bx
+	mov	bl, cl
+	mov	bh, 0
+	shl	bx, 1	; BX *= 6 without clobbering too many registers
+	mov	ax, bx
+	shl	bx, 1
+	add	bx, ax
+	mov	[bx + modes + 4], cl
+	pop	bx
+	mov	ax, [di + 18] ; Width
+	mov	dx, [di + 20] ; Height
+	mov	[bx], ax
 	inc	bx
 	inc	bx
 	mov	[bx], dx
 	inc	bx
 	inc	bx
-	mov	ch, 0
 	mov	[bx], cx
 	inc	bx
 	inc	bx
-	lea	bp, [modes + 4090]
+	lea	bp, [modes + modessz - 6]
 	cmp	bx, bp
 	jbe	popnextvidmode
 poplastvidmode:
@@ -973,8 +992,30 @@ poplastvidmode:
 	mov	word ptr [bx], ax
 	mov	word ptr [bx + 2], ax
 	mov	word ptr [bx + 4], ax
-	cmp	word ptr [modes], 0
+	cmp	word ptr [modes + 6 * 24 + 4], 0
 	je	novidmodes
+	; Compact EDID modes
+	lea	si, [modes]
+	mov	di, si
+	mov	dl, 24
+poplastvidmode_compact0:
+	cmp	byte ptr [si + 4], 0
+	jne	poplastvidmode_compact1
+	add	si, 6
+	jmp	poplastvidmode_compact2
+poplastvidmode_compact1:
+	movsw
+	movsw
+	movsw
+poplastvidmode_compact2:
+	dec	dl
+	jnz	poplastvidmode_compact0
+poplastvidmode_compact3:
+	movsw
+	movsw
+	movsw
+	cmp	byte ptr [si - 2], 0
+	jne	poplastvidmode_compact3
 	ret
 
 novidmodes:
@@ -1290,6 +1331,7 @@ more		db	"PG/DN More$"
 less		db	"PG/UP Prev$"
 default0	db	"0) "
 default		db	"default$"
+bitcolor	db	" bit color$"
 
 	ALIGN 2
 
@@ -1623,5 +1665,6 @@ pname2	db	128 dup(?)
 genln	db	256 dup(?)
 buf	db	32768 dup(?)
 bufsz	equ	32768
-modes	db	4096 dup(?)
+modes	db	6144 dup(?)
+modessz	equ	6144	; Must be a multiple of 6
 end
