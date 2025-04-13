@@ -8,6 +8,145 @@
 ;	BIOS functions.
 ;
 
+; We probably don't need to move these into the common VESADEFS.INC...
+; VESA Capabilities
+VESA_CAP_DAC_8BSWITCH	= 00000001b
+VESA_CAP_NONVGA		= 00000010b
+VESA_CAP_DAC_BLANKPROG	= 00000100b
+VESA_CAP_VBEAF		= 00001000b
+VESA_CAP_CALL_EDA	= 00010000b
+VESA_CAP_HWCURSOR	= 00100000b
+VESA_CAP_HWCLIP		= 01000000b
+VESA_CAP_TRANSBLT	= 10000000b
+
+; VESA Mode Number Bitfields
+VESA_FLAG_SVGA		= 0000000100000000b
+VESA_FLAG_UCRTC		= 0000100000000000b
+VESA_FLAG_VBEAFINIT	= 0010000000000000b
+VESA_FLAG_LINEAR	= 0100000000000000b
+VESA_FLAG_PRESERVEMEM	= 1000000000000000b
+
+; VESA Mode Attributes
+VESA_ATTR_HWSUPPORT	= 0000000000000001b
+VESA_ATTR_OPTINFO	= 0000000000000010b
+VESA_ATTR_BIOS_OP	= 0000000000000100b
+VESA_ATTR_COLOUR	= 0000000000001000b
+VESA_ATTR_GRAPHICS	= 0000000000010000b
+VESA_ATTR_NONVGA	= 0000000000100000b
+VESA_ATTR_NOBANKSWITCH	= 0000000001000000b
+VESA_ATTR_LINEAR	= 0000000010000000b
+VESA_ATTR_DBLSCAN	= 0000000100000000b
+VESA_ATTR_INTERLACED	= 0000001000000000b
+VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
+VESA_ATTR_HWSTEREO	= 0000100000000000b
+VESA_ATTR_DUAL		= 0001000000000000b
+
+; VESA Mode Memory Models
+VESA_MEM_TEXT	= 0
+VESA_MEM_CGA	= 1
+VESA_MEM_HGC	= 2
+VESA_MEM_EGA	= 3
+VESA_MEM_PACKED	= 4
+VESA_MEM_SEQ256	= 5
+VESA_MEM_DIRECT	= 6	; no palette switching
+VESA_MEM_YUV	= 7	; no... :(
+
+; Detailed Timing Description
+DTD	struc
+pixclock_10kHz	dw ?	; pixel clock in 10-kHz units
+			; NOTE: RBIL and OSDev wiki both claim that this
+			; is two bytes, the first being the horizontal
+			; rate in kHz and the second being the vertical
+			; rate in Hz - but I can't find any evidence that
+			; this was ever the case!
+horizpixels_low	db ?	; width in pixels
+horizblnk_low	db ?	; blanking pixels
+horiz_high	db ?	; each nibble is high bits of previous two numbers
+vertlines_low	db ?	; height scanlines
+vertblnk_low	db ?	; blanking scanlines
+vert_high	db ?	; each nibble is high bits of previous two numbers
+horizporch_low	db ?
+horizsync_low	db ?
+vert_low	db ?	; nibbles are low bits of vertical porch and sync
+porch_sync_high	db ?	; two highest bits of each of four previous numbers!
+horiz_size_mmlo	db ?	; width in millimetres
+vert_size_mmlo	db ?	; height in millimetres
+size_mmhi	db ?	; each nibble is high bits of previous two numbers
+horiz_border	db ?
+vert_border	db ?
+display_type	db ?
+DTD	ends
+
+; Display Descriptor Tag values
+TAG_DUMMY	=  10h
+TAG_ESTTIMINGS	= 0F7h	; third set of established timings
+TAG_CVT3BYTE	= 0F8h
+TAG_DCMDATA	= 0F9h
+TAG_STDTIMINGS	= 0FAh
+TAG_COLOURPTS	= 0FBh
+TAG_PRODNAME	= 0FCh
+TAG_RANGELIMS	= 0FDh
+TAG_ASCII	= 0FEh
+TAG_SERIALNO	= 0FFh
+
+DspDesc	struc
+resd0	dw ?	; zero
+resd2	db ?	; zero
+tag	db ?	; see TAG_*
+rlimitf	db ?	; Display Range Limits Offsets: FLAGS
+descdat	db 13 dup (?)
+DspDesc	ends
+
+; EDID info struct (based on VESA E-EDID Standard Release A2)
+EDIDblk	struc
+; Header
+hdr		db 8 dup (?)
+; Vendor & Product Identification
+id_mfg_name	dw ?
+id_prod_code	dw ?
+id_serial	dd ?
+mfg_week	db ?	; or FFh to indicate model year
+mfg_year	db ?	; or model year
+; EDID Structure Version & Revision
+edid_ver	db ?
+edid_rev	db ?
+; Basic Display Parameters & Features
+vid_input_def	db ?
+horiz_size_cm	db ?	; physical monitor width in centimetres
+vert_size_cm	db ?	; physical monitor height in centimetres
+gamma		db ?
+features	db ?
+; Colour Characteristics
+rg_low_bits	db ?	; Red / Green
+bw_low_bits	db ?	; Blue / White
+rx_high_bits	db ?	; Red-x
+ry_high_bits	db ?	; Red-y
+gx_high_bits	db ?	; Green-x
+gy_high_bits	db ?	; Green-y
+bx_high_bits	db ?	; Blue-x
+by_high_bits	db ?	; Blue-y
+wx_high_bits	db ?	; White-x
+wy_high_bits	db ?	; White-y
+; Established Timings
+est_timings	dw ?
+oem_timings	db ?
+; Standard Timings
+std_timings	dw 8 dup (?)
+; 18-Byte Data Blocks
+desc0		db (size DTD) dup (?) ; if EDID >= 1.3, this HAS to be Preferred Timing Desc
+desc1		db (size DspDesc) dup (?)
+desc2		db (size DspDesc) dup (?)
+desc3		db (size DspDesc) dup (?)
+; Extension Block Count N
+n_extblocks	db ?
+; Checksum C
+checksum	db ?
+EDIDblk	ends
+
+.errnz	(size DTD) - 18
+.errnz	(size DspDesc) - 18
+.errnz	(size EDIDblk) - 80h
+
 incDevice = 1				;Include control for gdidefs.inc
 
 	.xlist
@@ -56,70 +195,15 @@ GMEM_LOWER      =   GMEM_NOT_BANKED
 GHND    =    GMEM_MOVEABLE+GMEM_ZEROINIT
 GPTR    =    GMEM_FIXED+GMEM_ZEROINIT
 
-; We probably don't need to move these into the common VESADEFS.INC...
-; VESA Capabilities
-VESA_CAP_DAC_8BSWITCH	= 00000001b
-VESA_CAP_NONVGA		= 00000010b
-VESA_CAP_DAC_BLANKPROG	= 00000100b
-VESA_CAP_VBEAF		= 00001000b
-VESA_CAP_CALL_EDA	= 00010000b
-VESA_CAP_HWCURSOR	= 00100000b
-VESA_CAP_HWCLIP		= 01000000b
-VESA_CAP_TRANSBLT	= 10000000b
-
-; VESA Mode Number Bitfields
-VESA_FLAG_SVGA		= 0000000100000000b
-VESA_FLAG_UCRTC		= 0000100000000000b
-VESA_FLAG_VBEAFINIT	= 0010000000000000b
-VESA_FLAG_LINEAR	= 0100000000000000b
-VESA_FLAG_PRESERVEMEM	= 1000000000000000b
-
-; VESA Mode Attributes
-VESA_ATTR_HWSUPPORT	= 0000000000000001b
-VESA_ATTR_OPTINFO	= 0000000000000010b
-VESA_ATTR_BIOS_OP	= 0000000000000100b
-VESA_ATTR_COLOUR	= 0000000000001000b
-VESA_ATTR_GRAPHICS	= 0000000000010000b
-VESA_ATTR_NONVGA	= 0000000000100000b
-VESA_ATTR_NOBANKSWITCH	= 0000000001000000b
-VESA_ATTR_LINEAR	= 0000000010000000b
-VESA_ATTR_DBLSCAN	= 0000000100000000b
-VESA_ATTR_INTERLACED	= 0000001000000000b
-VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
-VESA_ATTR_HWSTEREO	= 0000100000000000b
-VESA_ATTR_DUAL		= 0001000000000000b
-
-; VESA Mode Memory Models
-VESA_MEM_TEXT	= 0
-VESA_MEM_CGA	= 1
-VESA_MEM_HGC	= 2
-VESA_MEM_EGA	= 3
-VESA_MEM_PACKED	= 4
-VESA_MEM_SEQ256	= 5
-VESA_MEM_DIRECT	= 6	; no palette switching
-VESA_MEM_YUV	= 7	; no... :(
-
-; Protected Mode Interface struct (taken straight from VBE 3.0 spec)
-PMInfoBlock	struc
-Signature	dd ?	; PM Info Block Signature, always "PMID"
-EntryPoint	dw ?	; Offset of PM entry point within BIOS
-PMInitialize	dw ?	; Offset of PM initialization entry point
-BIOSDataSel	dw ?	; Selector to BIOS data area emulation block
-A0000Sel	dw ?	; Selector to access A0000h physical mem
-B0000Sel	dw ?	; Selector to access B0000h physical mem
-B8000Sel	dw ?	; Selector to access B8000h physical mem
-CodeSegSel	dw ?	; Selector to access code segment as data
-InProtectMode	db ?	; Set to 1 when in protected mode
-Checksum	db ?	; Checksum byte for structure
-PMInfoBlock	ends
-
 
 sBegin	Data
 
 externW	ScreenSelector
 externW	ColourFormat
 EXTRN	dac_size:byte
+externW	raster_flags		; in BMC_MAIN.ASM
 externD	setramdac
+externD	VDDEntry
 
 ; From INT10.ASM
 externW	int10h_ds
@@ -154,63 +238,41 @@ VESAScratch2	db 100h dup (?)
 VESA_INFO_LEN	equ $ - VESAInfoStruct
 BIOS_DATA_LEN	equ 600h
 
-PMIntHandles	label word
-hPMcode		dw 0
-hBIOSdata	dw 0
-; hPMstack	dw 0
-NUM_PMINT_HDLS	equ ($ - PMIntHandles) SHR 1
-
-PMIntEntry	FARPOINTER <?,?>
-
 ; Real-Mode buffer for palette entries (if needed)
 RMPaletteSel	dw 0
 RMPaletteSeg	dw 0
 
+; Low-memory display buffer selector for VDD hack...
+public	DummyLoMemSel
+DummyLoMemSel	dw 0
+
 ; Scan line length for ease of access in certain parts of the driver...
 public	MemWidth
 MemWidth	dw ?
+; Total framebuffer size for the same purpose
+public	MemSize
+MemSize		dd ?
+
+; Keep track of available depths so we can give the user some more helpful info
+; if we can't find the exact depth they requested...
+public	DepthList,EndDepthList
+DepthList	db 15 dup (0)
+EndDepthList	label byte
+
+; Are we using a 3-byte-per-pixel video mode, or allowed to search for one?
+public	ThreeByte
+ThreeByte	db 0
+
+; Physical screen geometry - default to 180-mm tall monitor (same as V7VGA),
+; with default width calculated based on aspect ratio of user-chosen resolution
+ScreenWidthMM	dw 0	; calculate at runtime
+ScreenHeightMM	dw 180
 
 sEnd	Data
 
 
 .286
 
-
-;---------------------------------Macro---------------------------------;
-; CALL_PMINT
-;
-; calls the VESA Protected Mode Interface, equivalent to int 10h
-;
-; usage
-;
-;     CALL_PMINT
-;
-; Entry:
-;       DS      = Data
-;	Other registers as per desired int 10h call
-; Returns:
-;	As per desired int 10h call
-; Error Returns:
-;	As per desired int 10h call
-; Registers Destroyed:
-;	As per desired int 10h call
-; Registers Preserved:
-;	As per desired int 10h call
-; History:
-;	see Git
-;-----------------------------------------------------------------------;
-CALL_PMINT	macro
-	; we need to save and restore the stack pointer since the spec
-	; seems to leave undefined whether the PM interface should return
-	; with an IRET or a RETF - i.e. the stack may or may not have
-	; flags on it after PMIntEntry returns...
-	push	bp
-	mov	bp,sp
-	pushf
-	call	[PMIntEntry]
-	mov	sp,bp
-	pop	bp
-	endm
 
 sBegin  Code
 assumes cs,Code
@@ -231,7 +293,7 @@ VESAWinAAttrs	db ?
 VESAWinBAttrs	db ?
 VESAGranularity	dw ?	; in kiB, hopefully == 64
 VESAWinSize	dw ?	; in kiB, hopefully == 64
-VESAWinASeg	dw ?
+VESAWinASeg	dw ?	; copy of ScreenSelector in CS, for bank switching!
 VESAWinBSeg	dw ?
 public	VESABankSwitch
 VESABankSwitch	FARPOINTER <?,?>
@@ -265,9 +327,11 @@ VESAGFieldPos	db ?
 OFF_VESA_BDEPTH	equ $-VESAModeStruct
 VESABFieldSize	db ?
 VESABFieldPos	db ?
+OFF_VESA_ADEPTH	equ $-VESAModeStruct
 VESAAFieldSize	db ?
 VESAAFieldPos	db ?
 VESADirectMode	db ?	; Bit 0 = programmable ramp, 1 = usable alpha channel
+OFF_VESA_LINBUF	equ $-VESAModeStruct
 public	VESALinearBuf
 VESALinearBuf	LONG <?,?>	; 32-bit Physical Address
 VESAOSMem	LONG <?,?>	; Off-Screen Memory
@@ -310,25 +374,13 @@ blue_shl	db 0FFh	; how far left to shift it before ORing in (BFieldPos)
 ; (for whatever reason...)
 BankSwitchInt10	proc far
 	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_BANKSWITCH
-	jmp	DoInt10h
-BankSwitchInt10	endp
-
-BankSwitchPMInt	proc far
-	push	ds
-	mov	ax,seg PMIntEntry
-	mov	ds,ax
-	assumes	ds,Data
-	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_BANKSWITCH
-	CALL_PMINT
-	pop	ds
-	assumes	ds,nothing
+	int	10h
 	ret
-BankSwitchPMInt	endp
+BankSwitchInt10	endp
 
 ; This function emulates bank-switching for linear modes.
 ; It allows me to start programming support for linear modes,
 ; while still fully stress-testing the bank-switching code paths.
-; Unfortunately, the performance doesn't seem to be any better...
 BankSwitchSoft	proc far
 	; Since we're calling a Win16 API function, save these:
 	push	dx
@@ -394,23 +446,6 @@ setramdac_vbe	PROC	FAR
 	xor	bl,bl	; set primary palette
 	mov	ax,(VBE_INT10_FN SHL 8) + VBE_PALENTRIES
 
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	CALL_PMINT
-
-setramdac_vbe_exit:
-	; restore original byte order
-	call	switcheroo
-	pop	di
-	pop	es
-
-	; success?
-	cmp	ax,VBE_INT10_FN
-	jne	setramdac_need_vga
-        ret
-
-@@:
-	; the way less travelled...
 	mov	di,ax
 	cmp	[RMPaletteSel],0
 	jnz	@F
@@ -451,7 +486,17 @@ setramdac_vbe_exit:
 	pop	di
 
 	call	DoInt10h
-	jmp	setramdac_vbe_exit
+
+setramdac_vbe_exit:
+	; restore original byte order
+	call	switcheroo
+	pop	di
+	pop	es
+
+	; success?
+	cmp	ax,VBE_INT10_FN
+	jne	setramdac_need_vga
+        ret
 
 setramdac_need_vga:
 	; VBE cannot be used to set RAMDAC, so fall back to VGA implementation
@@ -492,253 +537,158 @@ createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
 
 externNP	init_modal_realizations	; in ROBJECT.ASM
-externNP	setup_double_buf		; in DBLBUF.ASM
+externNP	setup_double_buf	; in DBLBUF.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
+
 ;--------------------------------------------------------------------------;
-; SetupPMInt
-;	sets up Protected-Mode Interface to VBE, if needed and available
+; QueryGeometry
+;	allocates a Real-Mode buffer and reads the main monitor's EDID data
+;	into it, to determine the screen geometry and preferred resolution
 ; Entry:
-;	DS	= Data
-;	AL	= PMID integrity checking (0=NONE!, 1=checksum, 2=sanity)
 ; Returns:
-;	DX:AX	= selector:offset of VBE entry point
+;	AX	= preferred width from first detailed timing description
+;	DX	= preferred height from first detailed timing description
+;	ScreenWidthMM and ScreenHeightMM set to values from first DTD
+;	(or failing that, calculated from centimetre values in EDID block)
 ; Error Returns:
-;	DX:AX	= zero
+;	AX	= 1024 (sane default)
+;	DX	=  768 (sane default)
+;	ScreenWidthMM and ScreenHeightMM remain at default values
 ; Registers Destroyed:
-;	AX,BX,CX,DX,FLAGS
+;	FLAGS
 ; Registers Preserved:
-;	SI,DI,BP,DS,ES
+;	BX,CX,SI,DI,DS,ES,BP
 ; Calls:
-;	AllocDSToCSAlias
-;	GlobalAlloc
-;	GlobalLock
-;	GlobalUnlock
-;	GlobalFree
-;	FreeSelFromSeg
+;	GlobalDosAlloc
+;	DoInt10h
 ; History:
 ;	see Git
 ;--------------------------------------------------------------------------;
-public	SetupPMInt
-SetupPMInt	proc near
-	test	al,80h	; negative => disable?
-	jnz	@@skip
-	mov	bh,al	; save the integrity-check mode
-
-	mov	ax,__WinFlags
-	test	ax,WF_PMODE
-	jnz	@F
-
-@@skip:
-	xor	ax,ax	; Real Mode, no PM interface!
-@@retnull:
-	cwd
-	ret
-
-@@:
-	push	es
-	push	di
-	push	si
-	push	bp
-
-	mov	ax,__C000
+cProc	QueryGeometry,<NEAR,PUBLIC>,<es,di,bx,si,cx>
+cBegin
+	mov	ax,size EDIDblk
+	cCall	GlobalDosAlloc,<0,ax>	; zero-pad to dword
 	mov	es,ax
-	mov	dx,40h		; assume 32k length if not informed otherwise
-	; check if it's an Option ROM
-	cmp	word ptr es:[0],0AA55h
-	jne	@F
-	; if so, get its length in sectors (DH already == 0 from above)
-	mov	dl,byte ptr es:[2]
-@@:
-	shl	dx,9		; convert sectors to bytes
+	test	ax,ax
+	jnz	@F
+	jmp	EDIDInfo_fail
 
-	; scan for the "PMID" signature
-	; it does not have to be DWORD- or even WORD-aligned,
-	; so we just search for 'P' and check the rest when we find it
-	mov	al,'P'
-	mov	cx,dx			; search the full length
-	xor	di,di			; from the beginning
-	sub	cx,size PMInfoBlock	; but don't run off the end!
-	cld
-@@resume:
-	repne	scasb
+@@:	; Set ES:DI for int 10h call
+	mov	[int10h_es],dx
+	xor	di,di
+
+	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETEDID
+	mov	bl,1
+	xor	cx,cx
+	xor	dx,dx
+	call	DoInt10h
+	cmp	ax,VBE_INT10_FN	; success?
 	je	@F
-	; jne @@notfound is too long for 286!
-	jmp	@@notfound
-@@:
-	cmp	byte ptr es:[di],'M'
-	jne	@@resume
-	cmp	byte ptr es:[di+1],'I'
-	jne	@@resume
-	cmp	byte ptr es:[di+2],'D'
-	jne	@@resume
+	jmp	EDIDInfo_fail
 
-	; found it! Now make sure it all checks out...
-	lea	si,[di-1]	; point at the beginning of the structure
-	test	bh,bh		; any integrity checking?
-	jz	@@pmidok
-	cmp	bh,1
-	jna	@@checksum	; go straight to check the sum
+@@:	; check for valid header block
+	mov	al,0FFh
+	mov	ah,es:[di]
+	; first byte should be 0 or FFh
+	cmp	ah,al
+	je	@F
+	test	ah,ah
+	jnz	EDIDInfo_fail
+@@:	; bytes 1-6 should be FFh
+	inc	di
+	mov	cx,6
+	cld
+	repe	scasb
+	jne	EDIDInfo_fail
+	; last byte should be same as first
+	mov	al,ah
+	scasb
+	jne	EDIDInfo_fail
 
-	; for BH>1, allow a weaker form of sanity checking
-	; (but fall back to checksum if it fails)
-	cmp	es:[si.BIOSDataSel],0
-	jne	@@checksum
-	cmp	es:[si.A0000Sel],0A000h
-	jne	@@checksum
-	cmp	es:[si.B0000Sel],0B000h
-	jne	@@checksum
-	cmp	es:[si.B8000Sel],0B800h
-	jne	@@checksum
-	cmp	es:[si.CodeSegSel],0C000h
-	jne	@@checksum
-	cmp	es:[si.InProtectMode],0
-	je	@@pmidok
-
-@@checksum:
-	push	cx
-	mov	cx,size PMInfoBlock
-	xor	ax,ax
+	; now check the checksum - the full structure should sum to zero
+	xor	ah,ah
+	mov	cx,size EDIDblk
+	xor	si,si
 @@:
 	lods	byte ptr es:[si]
 	add	ah,al
 	loop	@B
-	pop	cx
-	mov	al,'P'
-	; AH should now be zero, and ZF set
-	jnz	@@resume	; if not, keep looking...
+	; AH should now be zero, and ZF should be set
+	jnz	EDIDInfo_fail
 
-@@pmidok:
-	; use BP since it is not destroyed by kernel calls
-	lea	bp,[di-1]	; point at the beginning of the structure
-	mov	di,dx		; likewise keep length in preserved register
+	; get the screen geometry
+	mov	cl,10		; cm -> mm conversion factor
+	; physical width
+	mov	al,es:[horiz_size_cm]
+	test	al,al
+	jz	EDIDInfo_fail	; invalid geometry
+	mul	cl
+	mov	dx,ax
+	; physical height
+	mov	al,es:[vert_size_cm]
+	test	al,al
+	jz	EDIDInfo_fail	; invalid geometry
+	mul	cl
+	; save the geometry from the EDID block
+	mov	[ScreenWidthMM],dx
+	mov	[ScreenHeightMM],ax
 
-	; now we need to allocate two blocks of memory:
-	; 1. one of length DI==DX to contain a copy of the Video BIOS ROM
-	; 2. one of length 600h to serve as a surrogate IVT+BDA
-	; (the stack is already allocated by SetupInt10h)
-	cCall	GlobalAlloc, <GMEM_FIXED,0,di>	; fixed for CS alias
-	assumes	es,nothing	; kernel call may destroy ES!
-	test	ax,ax
-	jnz	@F
-	; jnz @@retnull_es is too long for 286!
-	jmp	@@retnull_es
-@@:
-	mov	[hPMcode],ax
+	; now try to find the preferred resolution - should be in the
+	; first detailed timing descriptor
+	cmp	es:[desc0.pixclock_10kHz],0
+	; FIXME: should we be using this pixel clock value for something?
+	jz	EDIDInfo_fail	; this is not a timing descriptor!
+	; NOTE: we're not going to bother looking at standard timings
+	; or any of that nonsense - let's just provide ONE resolution
+	; that the user can override if it doesn't suit. Otherwise
+	; things will get really confusing with potentially multiple
+	; calls to FindMode, and only being able to report the results
+	; of the last one, and stuff like that...
 
-	; GHND to make it all zero
-	cCall	GlobalAlloc, <GHND,0,BIOS_DATA_LEN>
-	test	ax,ax
-	jnz	@F
-	jmp	@@freehdls
-@@:
-	mov	[hBIOSdata],ax
+	; get the geometry associated with this timing
+	mov	al,es:[desc0.horiz_size_mmlo]
+	mov	dx,word ptr es:[desc0.vert_size_mmlo]
+	mov	ah,dh
+	; extract the upper nibble of size_mmhi to get the upper byte
+	; of the width...
+	shr	ah,4
+	; and the lower nibble of size_mmhi to get the upper byte of
+	; the height - confused yet?
+	and	dh,0Fh
+	; save the geometry from the timing descriptor
+	mov	[ScreenWidthMM],ax
+	mov	[ScreenHeightMM],dx
 
-	; Got 'em, now lock 'em!
-	cCall	GlobalLock, <[hPMcode]>
-	test	dx,dx
-	jnz	@F
-	jmp	@@freehdls
+	; get the actual resolution
+	mov	al,es:[desc0.horizpixels_low]
+	mov	ah,es:[desc0.horiz_high]
+	shr	ah,4	; upper nibble
+	mov	dl,es:[desc0.vertlines_low]
+	mov	dh,es:[desc0.vert_high]
+	shr	dh,4	; upper nibble
 
-@@:
-	; Get ready to start copying stuff into this buffer...
-	push	ds
-	mov	es,dx
+	; put them in SI/DI to prepare for return
+	mov	si,ax
+	mov	di,dx
+	jmp	EDIDInfo_done
+	
+EDIDInfo_fail:
+	; setup to return default values
+	mov	si,1024
+	mov	di,768
 
-	push	es
-	cCall	GlobalLock, <[hBIOSdata]>
-	pop	es	; kernel call may destroy ES!
-	test	dx,dx
-	jnz	@F
-	jmp	@@unlockpmcode
-@@:
-	mov	si,dx
-
-	; finally, get a CS alias for the PM code...
-	push	es
-	cCall	AllocDSToCSAlias, <es>
-	pop	es	; Win16 API call stomps ES!
-	test	ax,ax
-	jz	@@unlockbiosdata
-ifdef	INT3
-public	PMIntSelReady
-PMIntSelReady:
-	int	3
-endif
-	mov	[PMIntEntry.sel],ax
-
-	; OK, now it's time to fill it all in!
-	mov	ax,__C000
-	mov	ds,ax
-	assumes	ds,nothing
-	mov	cx,di	; we saved the length in DI
-	shr	cx,1	; divide by two to move wordwise
-	mov	dx,si	; we put the BIOS data selector in SI
-
-	xor	si,si	; copy the whole lot from the beginning!
-	xor	di,di
-	cld
-	rep	movsw
-
-	; get back the proper DS
-	pop	ds
-	assumes	ds,Data
-
-	; fill in the selectors as needed
-	mov	es:[bp.BIOSDataSel],dx
-	mov	es:[bp.A0000Sel],__A000
-	mov	es:[bp.B0000Sel],__B000
-	mov	es:[bp.B8000Sel],__B800
-	mov	es:[bp.CodeSegSel],es
-	mov	es:[bp.InProtectMode],1
-
-	; get the initialization function and call it
-	mov	ax,es:[bp.PMInitialize]
-	mov	[PMIntEntry.off],ax
-	call	[PMIntEntry]
-	; now it's been initialized, the actual entry point is usable!
-	mov	ax,es:[bp.EntryPoint]
-	mov	[PMIntEntry.off],ax
-
-	; all done!
-	pop	bp
-	pop	si
-	pop	di
-	mov	dx,es
-	pop	es
-	ret
-
-@@notfound:
-	xor	ax,ax
-@@retnull_es:
-	cwd
-	pop	bp
-	pop	si
-	pop	di
-	pop	es
-	ret
-
-@@unlockbiosdata:
-	cCall	GlobalUnlock, <[hBIOSdata]>
-@@unlockpmcode:
-	pop	es
-	cCall	GlobalUnlock, <[hPMcode]>
-	pop	ds
-
-@@freehdls:
-	mov	cx,NUM_PMINT_HDLS
-	lea	si,PMIntHandles
-	cld
-@@:
-	lodsw
+EDIDInfo_done:
+	; free the Real-Mode block
+	mov	ax,es
 	test	ax,ax
 	jz	@F
-	cCall	GlobalFree, <ax>
-	loop	@B
-@@:
-	jmp	@@notfound
-SetupPMInt	endp
+	cCall	GlobalDosFree,<es>
+
+@@:	mov	ax,si
+	mov	dx,di
+cEnd
 
 ;--------------------------------------------------------------------------;
 ; GetVBEInfo
@@ -753,8 +703,6 @@ SetupPMInt	endp
 ; Registers Preserved:
 ;	BX,CX,SI,DI,DS,ES,BP
 ; Calls:
-;	PMIntEntry
-;	- OR -
 ;	DoInt10h
 ;	FixupFarPtr
 ; History:
@@ -773,34 +721,6 @@ cBegin
 	jmp	VBEInfo_Done
 
 @@:
-	cmp	[PMIntEntry.sel],0
-	jz	GetVBEInfo_Real
-
-	push	ds
-	pop	es
-	assumes	es,Data
-	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETINFO
-	lea	di,VESAInfoStruct
-	CALL_PMINT
-
-	; Check if function succeeded
-	cmp	ax,VBE_INT10_FN
-	mov	di,VBE_ERR_FAIL
-	jne	@F
-
-	; Check if the buffer is filled correctly
-	; It should now begin with "VESA"
-	cmp	word ptr [VESASig],"EV"
-	jne	@F
-	cmp	word ptr [VESASig+2],"AS"
-	jne	@F
-
-	; Success!
-	xor	di,di
-@@:
-	jmp	VBEInfo_Done
-
-GetVBEInfo_Real:	; fallback to Real Mode interface
 	assumes	es,nothing
 	; Allocate a Real-Mode memory block to transfer the info
 	cCall	GlobalDosAlloc,<0,VESA_INFO_LEN>	; zero-pad to dword
@@ -931,8 +851,6 @@ cEnd
 ;	AllocCSToDSAlias
 ;	FreeSelector
 ;	
-;	PMIntEntry
-;	- OR -
 ;	DoInt10h
 ;	FixupFarPtr
 ; History:
@@ -1009,21 +927,17 @@ public	VBEInfoReady
 VBEInfoReady:
 	int	3
 endif
-	; fail fast if the DAC cannot be set as desired
-	cmp	[dac_size],2
-	je	@F	; 6-bit DAC is always possible
+	; set the DAC size to the best available if necessary
+	cmp	[dac_size],-1	; "auto" setting?
+	jne	@F
 
-	test	[VESACaps.lo],VESA_CAP_DAC_8BSWITCH
-	jnz	@F	; we're OK
-
-ifdef	INT3
-public	No8bDAC
-No8bDAC:
-	int	3
-endif
-	WriteAux <'8-bit DAC specified in profile but not supported by card'>
-	mov	di,-1
-	jmp	FindMode_reterr
+	mov	al,byte ptr [VESACaps.lo]
+	not	al
+	and	al,VESA_CAP_DAC_8BSWITCH
+	; now AL == 1 if it CANNOT be switched to 8-bit, 0 if it can
+	shl	al,1	; set to 2 (i.e. 8 minus 6) if applicable
+.errnz	(VESA_CAP_DAC_8BSWITCH - (2 SHR 1))
+	mov	[dac_size],al
 
 @@:
 	push	seg VESAModeStruct
@@ -1033,16 +947,6 @@ endif
 	mov	di,ERR_PROT_ALLOC
 	jnz	@F
 	jmp	FindMode_reterr
-
-@@:
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-
-	; Protected Mode buffer
-	mov	es,[CodeSel]
-	assumes	es,Code
-	lea	di,VESAModeStruct
-	jmp	FindMode_bufready
 
 @@:
 	; Real Mode buffer
@@ -1078,40 +982,40 @@ FindMode_loop:
 
 @@:
 	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	CALL_PMINT
-	jmp	FindMode_ChkInfo
-@@:
 	call	DoInt10h
 
-FindMode_ChkInfo:
 	mov	ax,es:[di.OFF_VESA_ATTRS]
 	; Is it supported by the current hardware?
-	test	ax,VESA_ATTR_HWSUPPORT
+	test	al,low VESA_ATTR_HWSUPPORT
 	jz	FindMode_loop	; NEXT!
 	; Is it graphical (not text)?
-	test	ax,VESA_ATTR_GRAPHICS
+	test	al,low VESA_ATTR_GRAPHICS
 	jz	FindMode_loop	; NEXT!
 	; Is it colour (not BW)?
-	test	ax,VESA_ATTR_COLOUR
+	test	al,low VESA_ATTR_COLOUR
 	jz	FindMode_loop	; NEXT!
 
 	cmp	[bLinear],0
 	jnz	@F
 	; Does it support bank switching?
-	test	ax,VESA_ATTR_NOBANKSWITCH
+	test	al,low VESA_ATTR_NOBANKSWITCH
 jnelp:	; extra label to allow for short JNE instructions
 	jne	FindMode_loop	; NEXT!
 	jmp	FindMode_attrsOK
 @@:
 	; Does it support linear operation?
-	test	ax,VESA_ATTR_LINEAR
+	test	al,low VESA_ATTR_LINEAR
 	jz	FindMode_loop	; NEXT!
 	; Set the "linear" flag in the mode number
 	or	ch,high VESA_FLAG_LINEAR
+	; If we're on a 286, we can't handle an address with over 24 bits
+	mov	ax,__WinFlags
+	test	ax,WF_CPU286
+	jz	@F
+	cmp	byte ptr es:[di.OFF_VESA_LINBUF+3],0
+	jnz	jnelp
 	; And make sure vesa_gdi_fixup gets the right data!
-	cmp	[VESAMajVer],3
+@@:	cmp	[VESAMajVer],3
 	; VBE 2.0 and lower didn't specify separate bitnesses for linear and
 	; banked versions of the same mode
 	jb	FindMode_attrsOK
@@ -1139,45 +1043,81 @@ FindMode_attrsOK:
 	jne	jnelp		; NEXT!
 
 	mov	al,es:[di.OFF_VESA_DEPTH]
-	test	al,7		; is our pixel an integer number of bytes?
-	jnz	jnelp		; NEXT!
-
+	mov	ah,al
 	; Packed pixel?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_PACKED
-	je	@F				; depth is as given
+	je	@F		; depth is as given
 
 	; Direct colour?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_DIRECT
 	; We don't support other models
 	jne	jnelp		; NEXT!
-	mov	al,es:[di.OFF_VESA_RDEPTH]	; depth is sum of R/G/B vals
+
+	; save the advertised depth in BL since we'll check it again
+	mov	bl,al
+
+	; calculate significant and total depth for non-packed mode
+	mov	al,es:[di.OFF_VESA_RDEPTH]	; sig depth is sum of R/G/B vals
 	add	al,es:[di.OFF_VESA_GDEPTH]
 	add	al,es:[di.OFF_VESA_BDEPTH]
+	mov	ah,al				; save significant depth in AH
+	add	al,es:[di.OFF_VESA_ADEPTH]	; get total depth in AL
+
+	; Sometimes the firmware doesn't fill out the ADEPTH field, expecting
+	; us to infer the padding from the advertised DEPTH. Check for this
+	; by comparing the calculated total to the advertised depth, and pick
+	; whichever is bigger.
+	cmp	al,bl
+	jae	@F
+	mov	al,bl
+
+@@:	; here AL = total depth and AH = significant depth
+	test	al,7		; is our pixel an integer number of bytes?
+	jz	@F
+baddepth:
+	jmp	FindMode_loop	; NEXT!
+
+@@:	; if the total depth is three bytes, only use it if explicitly allowed
+	cmp	al,24
+	jne	@F
+	cmp	[ThreeByte],0
+	jz	baddepth	; NEXT!
 
 @@:
-	; Is it the right depth?
-	cmp	al,[VScreen_Depth]
-	jne	jnelp		; NEXT!
+	; Set the depth field equal to the total depth so we don't confuse
+	; any other logic later on...
+	mov	es:[di.OFF_VESA_DEPTH],al
+
+	; At this point, we know the mode is usable, so find a slot and
+	; put its depth on the list
+	lea	bx,[DepthList]
+@@:	cmp	bx,offset EndDepthList
+	jnb	@F		; no more slots available
+
+	mov	al,[bx]
+	cmp	al,ah
+	je	@F		; already on the list
+
+	inc	bx
+	test	al,al		; free slot?
+	jnz	@B		; not free, try next slot
+
+	mov	[bx-1],ah	; fill the slot
+
+@@:	; Is it the right significant depth?
+	cmp	ah,[VScreen_Depth]
+	jne	baddepth	; NEXT!
 
 	; OK, we've found the mode!
 	mov	[Vmode],cx
 	xor	ax,ax		; return success
 
 ModeFound:
-	; if we used the PM interface, then we're done here
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	test	ax,ax		; returning success?
-	jz	FindMode_checksels
-	mov	di,ax		; save return code
-	jmp	FindMode_done
-
-@@:
 	test	ax,ax		; returning success?
 	mov	si,es		; if not, put the DOS buffer in SI
 	jnz	@F
 
-	; otherwise, we have to do a load of translation...
+	; we have to do a load of segment translation...
 	push	ds
 	; Copy the buffer back out...
 	push	es
@@ -1239,48 +1179,6 @@ ModeFound:
 	xor	di,di	; all good!
 @@:	jmp	FindMode_done
 
-FindMode_checksels:
-	test	[Vmode],VESA_FLAG_LINEAR
-	jnz	FindMode_setuplin
-
-	; Dodgy PMID implementations may leave us with segments rather than
-	; selectors in some of the essential pointers. Deal with that...
-	.286p			; for LAR instruction
-	mov	ax,[VESAWinASeg]
-	lar	cx,ax
-	jz	@F		; ZF if it's a valid selector
-
-	xor	cx,cx		; want a data segment
-	call	SegToSel
-	mov	[VESAWinASeg],ax
-@@:
-	mov	ax,[VESAWinBSeg]
-	test	ax,ax
-	jz	@F		; if it's zero, we don't care
-	lar	cx,ax
-	jz	@F		; ZF if it's a valid selector
-
-	xor	cx,cx		; want a data segment
-	call	SegToSel
-	mov	[VESAWinBSeg],ax
-@@:
-	mov	ax,[VESABankSwitch.sel]
-	cmp	ax,0C000h	; if it's in C000H, then redirect to PMID seg
-	jne	@F
-	mov	ax,[PMIntEntry.sel]
-	mov	[VESABankSwitch.sel],ax
-@@:
-	lar	cx,ax
-	jz	@F
-
-	; just zero out the bank-switch pointer and fall back to indirect call,
-	; which will be setup below.
-	mov	[VESABankSwitch.sel],0
-
-@@:
-	xor	di,di	; all good!
-	jmp	short FindMode_done
-
 FindMode_setuplin:
 ifdef	INT3
 public	FindMode_setuplin
@@ -1306,7 +1204,18 @@ endif
 	mov	[VESALinearBuf.lo],cx
 	mov	[VESALinearBuf.hi],bx
 
-	; Create a selector that will be used to access 64k at a time
+	; IF we're in a linear mode AND the VDD is loaded, then we need to
+	; "artificially" touch the pages in the low-memory (banked) buffer
+	; (usually A0000h-AFFFFh) to make sure it knows we own them.
+	cmp	[VDDEntry.sel],0
+	jz	@F
+
+	mov	ax,[VESAWinASeg]
+	xor	cx,cx		; want a data segment
+	call	SegToSel
+	mov	[DummyLoMemSel],ax
+
+@@:	; Create a selector that will be used to access 64k at a time
 	; (we can copy __A000 and then change its base dynamically)
 	cCall	AllocSelector,<__A000>
 	mov	es,[CodeSel]	; ES gets stomped when we call the C function
@@ -1355,6 +1264,15 @@ FindMode_done:
 	shr	al,3	; bits to bytes
 	cbw
 	mov	[pxbytes],ax
+
+	; mark whether or not we end up using a three-byte mode
+	; (in theory this could be used to enable/disable awkward code paths)
+	xor	ah,ah
+	cmp	al,3
+	jne	@F
+	inc	ah
+@@:	mov	[ThreeByte],ah
+
 	mov	dh,[VESAMemModel]
 	xor	dh,VESA_MEM_DIRECT	; zero if NO palette, else non-zero
 	mov	ah,dh
@@ -1388,10 +1306,6 @@ FindMode_done:
 
 	mov	[VESABankSwitch.sel],seg BankSwitchInt10
 	mov	[VESABankSwitch.off],offset BankSwitchInt10
-
-	cmp	[PMIntEntry.sel],0
-	jz	@F
-	mov	[VESABankSwitch.off],offset BankSwitchPMInt
 
 @@:
 	; time to free the selector
@@ -1473,8 +1387,6 @@ vesa_gdi_fixup	proc near
 	div	cx
 	mov	es:[di].bmScanSegment,ax
 
-	; TODO: set the geometric stuff in the GDIInfo struct
-
 	; we only support palettes for packed-pixel modes
 	cmp	[VESAMemModel],VESA_MEM_PACKED
 	je	@F
@@ -1491,19 +1403,112 @@ vesa_gdi_fixup	proc near
         mov     ax,wptr es:[di].bmPlanes
 	mov	[ColourFormat],ax
 
-	; and the MemWidth
+	; and the MemWidth / Size
 	mov	ax,es:[di].bmWidthBytes
+	mov	bx,es:[di].bmWidthPlanes.lo
+	mov	cx,es:[di].bmWidthPlanes.hi
 	mov	[MemWidth],ax
+	mov	[MemSize.lo],bx
+	mov	[MemSize.hi],cx
+
+	; geometry
+	push	bp
+	push	di
+	mov	bp,es:[si].dpHorzRes
+	mov	di,es:[si].dpVertRes
+
+	mov	bx,[ScreenWidthMM]
+	mov	cx,[ScreenHeightMM]
+	test	bx,bx
+	jnz	@F
+
+	; we failed to detect the screen width, so calculate it from the height
+	; and the aspect ratio of the specified resolution
+	mov	ax,cx
+	mul	bp
+	div	di
+	mov	bx,ax
+
+@@:	mov	es:[si].dpHorzSize,bx
+	mov	es:[si].dpVertSize,cx
+
+	; calculate parameters related to the physical size
+	; metric low-res window: dpMLoWin / dpMLoVpt = dpHorzSize*10 / dpHorzRes
+	; since dpMLoVpt == 4, we multiply by 10*4=40 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,40
+	mul	dx
+	div	bp
+	mov	es:[si].dpMLoWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,40
+	mul	dx
+	div	di
+	mov	es:[si].dpMLoWin.ycoord,ax
+	; metric high-res window: dpMHiWin / dpMHiVpt = dpHorzSize*100 / dpHorzRes
+	; since dpMHiVpt == 4, we multiply by 100*4==400 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,400
+	mul	dx
+	div	bp
+	mov	es:[si].dpMHiWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,400
+	mul	dx
+	div	di
+	mov	es:[si].dpMHiWin.ycoord,ax
+	; English low-res window: dpELoWin / dpELoVpt = dpHorzSize*1000 / dpHorzRes*254
+	; since dpELoVpt == 254, we multiply by 1000 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,1000
+	mul	dx
+	div	bp
+	mov	es:[si].dpELoWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,1000
+	mul	dx
+	div	di
+	mov	es:[si].dpELoWin.ycoord,ax
+	; English high-res window: dpEHiWin / dpEHiVpt = dpHorzSize*10000 / dpHorzRes*254
+	; since dpEHiVpt == 254, we multiply by 10000 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,10000
+	mul	dx
+	div	bp
+	mov	es:[si].dpEHiWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,10000
+	mul	dx
+	div	di
+	mov	es:[si].dpEHiWin.ycoord,ax
+	; Twip window: dpTwpWin / dpTwpVpt = dpHorzSize*14400 / dpHorzRes*254
+	; since dpTwpVpt == 254, we multiply by 14400 and divide by dp{Horz,Vert}Res
+	mov	ax,bx
+	mov	dx,14400
+	mul	dx
+	div	bp
+	mov	es:[si].dpTwpWin.xcoord,ax
+	mov	ax,cx
+	mov	dx,14400
+	mul	dx
+	; QUESTION: can this overflow, and hence crash Windows on boot?
+	; ANSWER: minimum denominator in this situation is DI==480==1E0h, so we would
+	;	  need to have a situation where dpVertSize*14400 >= 1E00000h, meaning
+	;	  dpVertSize >= 2185, i.e. 2.185 metres - I'd say it's unlikely!
+	div	di
+	mov	es:[si].dpTwpWin.ycoord,ax
+	; done with the geometric calculations
+	pop	di
+	pop	bp
+
+	; keep a copy of the raster flags in Data, as InitSeg is discardable!
+	mov	ax,es:[si].dpRaster
+	mov	[raster_flags],ax
 
 	; setup double-buffering if possible / necessary
 	test	[Vmode],VESA_FLAG_LINEAR
 	jz	@F
-
-	push	si
-	mov	si,es	; setup_double_buf requires pointer in SI:DI, not ES:DI
 	call	setup_double_buf
-	pop	si
-
 @@:	ret
 vesa_gdi_fixup	endp
 
@@ -1554,7 +1559,7 @@ set_dacsize	ENDP
 ;   Places the card in graphics mode
 ;
 ; Entry:
-;	ES:DI --> ipd_format in our pDevice
+;	ES:DI --> our pDevice
 ;	DS:    =  Data
 ; Returns:
 ;	AX = VBE_INT10_FN
@@ -1587,6 +1592,7 @@ common_vesafun:
 	; segments - and anyway, this way it's easier for the VxD to trap it!
 	int	10h
 	ret
+
 setmode	endp
 
 ;--------------------------------------------------------------------------;

@@ -70,7 +70,6 @@ FILE_VGA	EQU	1
 	include	cursor.inc
 	include rt.mac
 	include vgareg.inc
-	include vgautil.inc
 	include	int3.inc
 
 ;	Additional Raster Capabilities
@@ -79,6 +78,7 @@ FILE_VGA	EQU	1
 
 	externA	 __NEXTSEG		; an import from the kernel
 	externA  __WinFlags		; LSB set in protected mode
+	externA	 __A000			; selector for linear range A0000h-AFFFFh
         externFP AllocSelector          ; create a new selector
 	externFP AllocCSToDSAlias	; change a CS selector to DS
 	externFP AllocDSToCSAlias	; change a DS selector to CS
@@ -101,29 +101,6 @@ off     dw      ?
 sel     dw      ?
 FARPOINTER      ends
 endif
-
-;
-;------------------------------ Macro ----------------------------------;
-;	cdw - conditional dw
-;
-;	cdw is used to conditionally define a word to one of the
-;	given values.
-;
-;	usage:
-;		cdw	v1,v2
-;
-;	v1 will be used if LARGE_SCREEN_SIZE if defined.
-;	v1 will be used otherwise.
-;-----------------------------------------------------------------------;
-
-cdw	macro	v1,v2
-; JAK 1/3/90
-;ifdef   LARGE_SCREEN_SIZE
-	dw	v1
-;else
-;	 dw	 v2
-;endif
-	endm
 
 	externFP init_hw_regs		;Initialize ega state code
         externFP SetPalette             ;loads palette
@@ -256,12 +233,6 @@ page
 
 sBegin	Data
 
-PUBLIC	Video_Board_Id, Video_Memory_Banks, Video_Board_Flags
-
-Video_Board_Id		DW	0
-Video_Memory_Banks	DB	0
-Video_Board_Flags	DB	0
-
 PUBLIC	VScreen_Width, VScreen_Height, VScreen_Depth, Vmode
 
 VScreen_Width		DW	0
@@ -272,6 +243,8 @@ VScreen_Depth		DB	0
 EXTRN   dac_size:BYTE
 externD	setramdac
 externB bank_select
+externD	VDDEntry
+externD	MemSize				; in VESAFNS.ASM
 
 globalW ScreenSelector,0                ;the screen selector
 globalW ScratchSel,0			;have a scratch selector
@@ -407,6 +380,12 @@ NumOfLines	db	0	; number of lines in text mode
 public	ColourFormat
 ColourFormat	dw	COLOR_FORMAT
 
+; Remember where we put the latch save address
+public	LatchAddx
+LatchAddx	dw	0
+; Essentially useless byte required to satisfy function contract with VDD
+ShadowMemStatus db	0
+
 sEnd	Data
 page
 
@@ -473,10 +452,12 @@ info_table_base label byte
 	dw	DT_RASDISPLAY		;Device classification
 	errnz	dpTechnology-dpVersion-2
 
-	cdw	240,208 		;Horizontal size in millimeters
+	dw	0			;Horizontal size in millimetres (fixed
+					; up by enable.asm at boot time)
 	errnz	dpHorzSize-dpTechnology-2
 
-	cdw	180,156 		;Vertical size in millimeters
+	dw	0			;Vertical size in millimetres (fixed
+					; up by enable.asm at boot time)
 	errnz	dpVertSize-dpHorzSize-2
 
 	dw	0			;Horizontal width in pixels (fixed up
@@ -550,34 +531,34 @@ RC_BIGFONT      equ 0000010000000000b   ; can do fonts > 64k
 	errnz	dpStyleLen-dpAspectXY-2
 
 	errnz	dpMLoWin-dpStyleLen-2	;Metric  Lo res WinX,WinY,VptX,VptY
-	cdw	15,2080 		;  HorzSize * 10
-	cdw	15,1560 		;  VertSize * 10
-	cdw	4,640			;  HorizRes
-	cdw	-4,-480 		;  -VertRes
+	dw	15 			;  HorzSize * 10
+	dw	15 			;  VertSize * 10
+	dw	4			;  HorizRes
+	dw	-4 			;  -VertRes
 
 	errnz	dpMHiWin-dpMLoWin-8	;Metric  Hi res WinX,WinY,VptX,VptY
-	cdw	150,20800		;  HorzSize * 100
-	cdw	150,15600		;  VertSize * 100
-	cdw	4,640			;  HorizRes
-	cdw	-4,-480 		;  -VertRes
+	dw	150			;  HorzSize * 100
+	dw	150			;  VertSize * 100
+	dw	4			;  HorizRes
+	dw	-4 			;  -VertRes
 
 	errnz	dpELoWin-dpMHiWin-8	;English Lo res WinX,WinY,VptX,VptY
-	cdw	375,325 		;  HorzSize * 1000
-	cdw	375,325 		;  VertSize * 1000
-	cdw	254,254 		;  HorizRes * 254
-	cdw	-254,-254		;  -VertRes * 254
+	dw	375 			;  HorzSize * 1000
+	dw	375 			;  VertSize * 1000
+	dw	254 			;  HorizRes * 254
+	dw	-254			;  -VertRes * 254
 
 	errnz	dpEHiWin-dpELoWin-8	;English Hi res WinX,WinY,VptX,VptY
-	cdw	3750,1625		;  HorzSize * 10000
-	cdw	3750,1625		;  VertSize * 10000
-	cdw	254,127 		;  HorizRes * 254
-	cdw	-254,-127		;  -VertRes * 254
+	dw	3750			;  HorzSize * 10000
+	dw	3750			;  VertSize * 10000
+	dw	254 			;  HorizRes * 254
+	dw	-254			;  -VertRes * 254
 
 	errnz	dpTwpWin-dpEHiWin-8	;Twips		WinX,WinY,VptX,VptY
-	cdw	5400,2340		;  HorzSize * 14400
-	cdw	5400,2340		;  VertSize * 14400
-	cdw	254,127 		;  HorizRes * 254
-	cdw	-254,-127		;  -VertRes * 254
+	dw	5400			;  HorzSize * 14400
+	dw	5400			;  VertSize * 14400
+	dw	254 			;  HorizRes * 254
+	dw	-254			;  -VertRes * 254
 
 	dw	96			;Logical Pixels/inch in X
 	errnz	dpLogPixelsX-dpTwpWin-8
@@ -612,7 +593,7 @@ page
 ;   The EGA state restoration code is initialized.
 ;
 ; Entry:
-;	ES:DI --> ipd_red_shr in our pDevice
+;	ES:DI --> our pDevice
 ;	DS:    =  Data
 ; Returns:
 ;	AX = non-zero to show success
@@ -655,9 +636,7 @@ physical_enable proc near
 	push	ax
 	cCall	AllocSelector		; get a free selector
 	mov	ScratchSel,ax		; save it
-;
         pop     es
-        mov	byte ptr es:[di],3      ; force a mode 3
 
 	push	es
 	push	bp
@@ -676,9 +655,7 @@ physical_enable proc near
 	;some of these pushes and pops probably aren't necessary
 	push	di
 	push	si
-	push	ds
 	call	setmode
-	pop	ds
 
 
 	mov	bx,1			;attempt to set 8 bit DAC mode
@@ -709,14 +686,39 @@ physical_enable proc near
 	
 	mov	ax,is_protected
 	and	ax,(WF_PMODE OR WF_WIN386)
-	cmp	ax,(WF_PMODE OR WF_WIN386)
-	jnz	phys_enable_ok		;not in protected mode
-	mov	ax,STOP_IO_TRAP		
+	test	ax,WF_PMODE
+	jz	phys_enable_ok		;not in protected mode
+
+	; check if we have a VDD entry pointer (EGAINIT should have set it)
+	cmp	[VDDEntry.sel],0
+	jz	novdd
+	; call it to set the latch position - we put it at the end of the last
+	; *visible* page of VRAM in the range A0000h-AFFFFh, so that VDD knows
+	; what pages are visible!
+	mov	ax,0Ch			;VDDsetaddresses
+	mov	bx,[MemSize.lo]
+	mov	cx,[MemSize.hi]		;TODO: implement bank awareness in VDD
+	; NOTE: we are in Chain4 mode, but the VDD will enter planar mode to
+	; save the latches, so the saving will (in theory) be at an address
+	; four times higher than the one we spec here. But what really matters
+	; is that we mark ALL our pages as visible, in Chain4 mode, so VDD won't
+	; try to steal them based on some putative LRU value!
+	dec	bx			;convert buffer length to last address
+	test	cl,cl			;more than 64k bytes?
+	jz	@F
+	mov	bx,-1			;just tell it we're taking all 16 pages
+@@:	or	bx,0FFFh		;round up to end of page
+	xor	dx,dx			;no flags - TODO: bank flag for VDD
+	lea	si,ShadowMemStatus
+	call	[VDDEntry]
+	mov	[LatchAddx],bx
+
+	OWN_ALL_PAGES
+
+novdd:	mov	ax,STOP_IO_TRAP		
 	int	2fh		
 ;
 phys_enable_ok:
-	call	set_board_flags
-	call	set_cursor_addr
         mov     ax,1                    ;indicate success
         ret
 
@@ -797,7 +799,6 @@ physical_disable proc near
 ;
 phdi_exit:
 
-	;call	restore_int_10h
 ;----------------------------------------------------------------------------;
 ; at this point as the kernel to do the io trapping again, provided we are in;
 ; protected mode.							     ;
@@ -805,8 +806,8 @@ phdi_exit:
 	
 	mov	ax,is_protected
 	and	ax,(WF_PMODE OR WF_WIN386)
-	cmp	ax,(WF_PMODE OR WF_WIN386)
-	jnz	phys_disable_ret	;we are in real mode
+	test	ax,WF_PMODE
+	jz	phys_disable_ret	;we are in real mode
 	mov	ax,START_IO_TRAP
 	int	2fh			;start i/o trapping
 ;
@@ -821,141 +822,6 @@ phys_disable_ret:
 physical_disable endp
 page
 
-assumes ds,Data
-
-;	set_board_flags
-;
-;	This routine sets some global data variables having to do with
-;	the board that is installed and running. These flags can be checked
-;	by other driver calls to see what sort of hardware support the
-;	video board supplies. For example -- bitblt may wish to use
-;	splitbank addressing if it is available.
-;	PARMS:
-;	ds	Data
-
-;	FIXME: this is all hardware-specific stuff, can probably remove!
-
-PUBLIC	set_board_flags
-set_board_flags 	PROC	NEAR
-
-;	I will assume either 512K or 1Meg of memory
-
-	mov	dl,3				;set bank 3
-	SET_BANK	; call	far_set_both_banko
-
-	mov	ax,ScreenSelector
-	mov	es,ax
-	mov	ax,es:[0]
-	push	ax
-
-	mov	bx,2
-	mov	ax,55AAH
-	mov	byte ptr es:[0],al
-	mov	byte ptr es:[1],ah
-	mov	al,es:[0]
-	cmp	al,0AAH
-	jne	sbf0
-	mov	al,es:[1]
-	cmp	al,55H
-	jne	sbf0
-
-	mov	ax,00FFH
-	mov	byte ptr es:[0],al
-	mov	byte ptr es:[1],ah
-	mov	al,es:[0]
-	cmp	al,0FFH
-	jne	sbf0
-	mov	al,es:[1]
-	cmp	al,00H
-	jne	sbf0
-	shl	bx,1
-
-sbf0:	pop	ax
-	mov	es:[0],ax
-	mov	Video_Memory_Banks,bl
-
-	mov	dx,03C4H
-	mov	al,08FH
-	out	dx,al
-	inc	dx
-	in	al,dx
-	mov	ah,al
-
-	dec	dx
-	mov	al,08EH
-	out	dx,al
-	inc	dx
-	in	al,dx
-	mov	Video_Board_Id,ax
-
-	sub	bx,bx
-	cmp	ax,07151H			;VRAMII rev B id
-        je      short board_flag_yes_splitbank
-	cmp	ax,07152H			;VRAMII rev C and D id
-	je	short board_flag_yes_splitbank
-	cmp	ax,07760H			;HT216 rev B and C
-	je	short board_flag_yes_splitbank
-	cmp	ax,07763H			;HT216 rev B, C, and D
-	je	short board_flag_yes_splitbank
-	cmp	ax,07764H			;HT216 rev E
-        jne     short board_flag_no_splitbank
-board_flag_yes_splitbank:
-	or	bl,BOARD_FLAG_SPLITBANK
-board_flag_no_splitbank:
-	cmp	ax,07760H			;HT216 rev B and C
-	je	short board_flag_yes_216
-	cmp	ax,07763H			;HT216 rev B, C, and D
-	je	short board_flag_yes_216
-	cmp	ax,07764H			;HT216 rev E
-        jne     short board_flag_no_216
-board_flag_yes_216:
-board_flag_no_216:
-	mov	Video_Board_Flags,bl
-	ret
-
-set_board_flags 	ENDP
-
-
-
-;	set_cursor_addr
-;
-;	This routine sets the address from which the hardware will fetch
-;	the cursor data. The hardware cursor also needs a kick to bring
-;	it back on again when switching in from a DOS session.
-;	PARMS:
-;       ds      Data
-
-PUBLIC	far_set_cursor_addr
-far_set_cursor_addr	PROC	FAR
-
-	call	set_cursor_addr
-	ret
-
-far_set_cursor_addr	ENDP
-
-PUBLIC	set_cursor_addr
-set_cursor_addr 	PROC	NEAR
-
-	mov	dx,VGAREG_SQ_ADDR		;set the cursor bank to be
-	mov	al,VGAREG_SQ_INTERFACE		; the last available bank
-	out	dx,al				; in video memory
-	inc	dx
-	in	al,dx
-	mov	ah,Video_Memory_Banks		;NOTE: the hardware forces the
-	dec	ah				; data to come from offset
-	shl	ah,5				; 192K (= 3 * 64K) within a
-	and	ax,609FH			; 256K bank. But we do have a
-	or	al,ah				; choice of the 256 byte
-	out	dx,al				; boundary within a 64K page
-
-	dec	dx				;I choose the last 256 bytes
-	mov	ax,VGAREG_SQ_POINTER_ADDRESS	; of a 64K page.
-	mov	ah,0FFH
-        out     dx,ax
-	ret
-
-set_cursor_addr 	ENDP
-
 
 	assumes ds,Data
 	assumes es,nothing
@@ -966,291 +832,6 @@ farsetmode     proc    far
 	ret
 
 farsetmode      endp
-
-
-
-SC_INDEX        equ     03C4h           ; Sequence Controller Index register
-GC_INDEX        equ     03CEh           ; Graphics Controller Index register
-CRT_INDEX       equ     03D4h           ; CRT index
-
-;---------------------------Private-Macro--------------------------------;
-; SLAM port, regs
-;
-;   Sets a range of VGA registers
-;
-; Entry:
-;   port    port index register
-;   regs    table of register values
-;
-; History:
-;       Wed 04-Jan-1990 13:45:58 -by-  Todd Laney [ToddLa]
-;	Created.
-;-----------------------------------------------------------------------;
-
-SLAM    macro   port, regs
-	local	slam_loop
-	local	slam_exit
-        mov     cx,(&regs&_end - regs) / 2
-	mov	dx,port
-	mov	si,offset regs
-	jcxz	slam_exit
-slam_loop:
-        lodsw
-        out     dx,ax
-	loop	slam_loop
-slam_exit:
-        endm
-
-;---------------------------Private-Routine------------------------------;
-; SetMode320x240x8
-;
-;   VGA 320x240x8 graphics mode is entered
-;
-; Entry:
-;
-; Returns:
-;       320x240x8 graphics mode is entered
-; Error Returns:
-;	None
-; Registers Preserved:
-;       BP,DS,SI,DI
-; Registers Destroyed:
-;       AX,BX,CX,DX,FLAGS
-; Calls:
-;	INT 10h
-; History:
-;
-;       Wed 04-Jan-1990 13:45:58 -by-  Todd Laney [ToddLa]
-;	Created.
-;-----------------------------------------------------------------------;
-
-crt_320x240:
-        dw      00611h  ; un-protect cr0-cr7
-
-        dw      05F00h  ; horz total
-        dw      04F01h  ; horz displayed
-        dw      05002h  ; start horz blanking
-        dw      08203h  ; end horz blanking
-        dw      05404h  ; start h sync
-        dw      08005h  ; end h sync
-
-        dw      00d06h  ; vertical total
-        dw      03e07h  ; overflow
-        dw      0C009h  ; cell height + double scans
-        dw      0ea10h  ; v sync start
-        dw      0ac11h  ; v sync end and protect cr0-cr7
-        dw      0df12h  ; vertical displayed
-;       dw      02813h  ; offset
-        dw      00014h  ; turn on dword mode
-        dw      0e715h  ; v blank start
-        dw      00616h  ; v blank end
-        dw      0e317h  ; turn on byte mode
-crt_320x240_end:
-
-cProc   SetMode320x240x8, <NEAR, PUBLIC>, <ds,si>
-cBegin
-        mov     ax,cs                   ; get segment for data
-        mov     ds,ax
-
-        ;
-        ;   Set the CRT regs
-	;
-        SLAM CRT_INDEX, crt_320x240
-
-        ;
-        ;   Select a 25 mHz crystal (used with mode 13h)
-        ;
-        mov     dx,SC_INDEX     ; alter sequencer registers
-	mov	ax,0100h	; synchronous reset
-        out     dx,ax           ; asserted
-
-        mov     dx,SC_INDEX     ; misc output
-        mov     ax,000A4h       ; use 25 mHz dot clock
-        out     dx,ax           ; select it
-
-        mov     dx,SC_INDEX     ; sequencer again
-        mov     ax,0300h        ; restart sequencer
-        out     dx,ax           ; running again
-cEnd
-
-;---------------------------Public-Routine-----------------------------;
-; hook_int_10h
-;
-; Installs a link in the 10h interupt
-;
-; This is done because the BIOS disables extentions on every bios call.
-; why would a windows app do a INT 10h you ask? CodeView does so we need
-; to trap INT 10h
-;
-; This function is called whenever the driver recieves an physical_enable call.
-;
-; Entry:
-;	DS = Data
-; Returns:
-;	DS = Data
-; Registers Preserved:
-;       SI,DI,BP,DS
-; Registers Destroyed:
-;       AX,BX,CX,DX,ES,flags
-; Calls:
-;	none
-; History:
-;	Wrote it.
-;-----------------------------------------------------------------------;
-	assumes ds,Data
-	assumes es,nothing
-
-hook_int_10h proc near
-
-
-        push    ds
-
-;----------------------------------------------------------------------------;
-; have to change the vectors properly to vaoid GP faults in protected mode   ;
-;----------------------------------------------------------------------------;
-
-	mov	ax,CodeBASE		; get the CS selector
-        cCall   AllocCSToDSAlias,<ax>   ; get a data segment alias
-        push    ax                      ; push sel for call to FreeSelector
-        mov     ds,ax
-	assumes	ds,Code			; do this to save address in CS
-
-        mov     ax,3510h                ; get the vector
-	int	21h	
-	
-        mov     prev_int_10h.off,bx
-        mov     prev_int_10h.sel,es
-
-        mov     dx,CodeOFFSET int_10h_hook
-        mov     ax,CodeBASE
-	mov	ds,ax
-	assumes ds,nothing
-
-        mov     ax,2510h                ; set the vector
-        int     21h
-
-        cCall   FreeSelector            ; free the code alias selector
-                                        ;   .. NOTE pushed param above
-	pop	ds			; get back own data segment
-	assumes	ds,Data
-
-hook_int_10h_exit:
-
-        ret
-
-hook_int_10h endp
-
-;---------------------------Public-Routine-----------------------------;
-; restore_int_10h
-;
-; restore the INT 10h vector to the previous value
-;
-; This is done because the V7 BIOS disables extentions on every bios call.
-; why would a windows app do a INT 10h you ask? CodeView does so we need
-; to trap INT 10h
-;
-; This function is called whenever the driver recieves an physical_disable call.
-;
-; Entry:
-;	DS = Data
-; Returns:
-;	DS = Data
-; Registers Preserved:
-;       SI,DI,BP,DS
-; Registers Destroyed:
-;       AX,BX,CX,DX,ES,flags
-; Calls:
-;	none
-; History:
-;	Wrote it.
-;-----------------------------------------------------------------------;
-	assumes ds,Data
-	assumes es,nothing
-
-restore_int_10h proc near
-        push    ds                      ; save
-
-        mov     ax,CodeBASE             ; get the CS selector
-        mov     ds,ax                   ; do this to save address in CS
-        assumes ds,Code
-
-        mov     dx, prev_int_10h.off
-        mov     ax, prev_int_10h.sel
-
-        or      ax,ax
-        jz      restore_int_10h_exit
-
-        mov     ds,ax
-	assumes ds,nothing
-
-        mov     ax,2510h                ; set the previous vector
-        int     21h                     ;   takes DS:DX
-
-restore_int_10h_exit:
-
-        pop     ds                      ; get back own data segment
-        assumes ds,Data
-
-        ret
-
-restore_int_10h endp
-
-sEnd    InitSeg
-
-sBegin  Code
-        assumes cs,Code
-
-prev_int_10h    dd      0
-
-;---------------------------Public-Routine-----------------------------;
-; int_10h_hook
-;
-; this is the hooked INT 10h function, all we do is call down the chain
-; then reenable V7 extentions
-;
-; This is done because the V7 BIOS disables extentions on every bios call.
-; why would a windows app do a INT 10h you ask? CodeView does so we need
-; to trap INT 10h
-;
-; Entry:
-;
-; Returns:
-;
-; Registers Preserved:
-;       all
-; Registers Destroyed:
-;       none
-; Calls:
-;	none
-; History:
-;	Wrote it.
-;-----------------------------------------------------------------------;
-        assumes ds,nothing
-        assumes es,nothing
-
-int_10h_hook   proc far
-
-	WriteAux <'Hooking int 10'>
-IFDEF   DEBUGAUX
-	int	 3
-ENDIF
-
-	pushf
-        call    prev_int_10h
-
-	push	ax
-	push	dx
-
-        mov     ax,0ea06h               ; enable V7 VGA extentions
-	mov	dx,03c4h
-        out     dx,ax
-
-	pop	dx
-	pop	ax
-
-        iret
-
-int_10h_hook   endp
 
 sEnd
 

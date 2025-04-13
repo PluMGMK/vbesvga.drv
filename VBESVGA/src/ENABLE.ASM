@@ -61,6 +61,8 @@ incDevice	= 1
 	externFP AllocCSToDSAlias
 	externFP GetPrivateProfileString
         externFP GetPrivateProfileInt   ; Kernel!GetProfileInt
+	externFP LoadLibrary
+	externFP GetProcAddress
 
 ifdef PALETTES
 	externFP SetPaletteTranslate    ;in color\ega\vga\palette.asm
@@ -96,31 +98,20 @@ fail_reason	dw	offset general_fail
 bad_width	db	'Width < 640 is not allowed',13,10,'$'
 bad_height	db	'Height < 480 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
-;bad_framerate	db	'Refresh rate must be in range 4-255 fps inclusive',13,10,'$'
-bad_framerate	db	'Refresh rate must be in less than 256 fps',13,10
-		db	'(Note that values less than 4 fps disable double buffering)',13,10,'$'
-general_fail	db	'Unsuitable settings for current driver / hardware',13,10,'$'
+bad_interval	db	'Swap-buffers interval > 55 ms is not allowed',13,10
+		db	'(Note that a value of 0 disables double buffering)',13,10,'$'
+general_fail	db	'No usable modes found with requested resolution and bit depth',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
 boot_category   db      "VBESVGA.DRV",0
 
-chk_member	db	"PMIDcheck",0
-chk_disable	db	"disable",0	; allow disabling it if it crashes
-chk_none	db	"none",0
-chk_sum		db	"sum",0
-chk_sanity	db	"sanity",0
-sysini_chkstruc	LABEL	BYTE
-SYSINI	<chk_disable,7,-1>
-SYSINI	<chk_none,4,0>
-SYSINI	<chk_sum,3,1>
-SYSINI	<chk_sanity,6,2>
-
-edid_member	db	"UseEDID",0
 width_member	db	"Width",0
 height_member	db	"Height",0
 depth_member	db	"Depth",0
 
-fps_member	db	"DoubleBufRefreshRate",0
+interval_member	db	"SwapBuffersInterval",0
+
+allow3b_member	db	"Allow3ByteMode",0
 
 font_member	db	"fontsize",0
 dpi_96		db	"small",0
@@ -132,9 +123,11 @@ SYSINI	<dpi_120,5,120>
 dac_member	db	"dacdepth",0
 dac_depth_6	db	"6",0
 dac_depth_8	db	"8",0
+dac_depth_auto	db	"auto",0
 sysini_dacstruc        LABEL   BYTE
 SYSINI	<dac_depth_6,1,2>
 SYSINI	<dac_depth_8,1,0>
+SYSINI	<dac_depth_auto,4,0FFh>
 
 PreferBank_member	db	"PreferBankedModes",0
 PreferBank_on		db	"1",0
@@ -146,9 +139,10 @@ SYSINI	<PreferBank_off,1,0>
 	externW ScreenSelector		; screen selector
         externW ScratchSel              ; the free selector
 
-	externB	desired_fps		; in DBLBUF.ASM
-
-	externW	raster_flags		; in BMC_MAIN.ASM
+	externW	sb_period_ms		; in DBLBUF.ASM
+	externB	ThreeByte		; in VESAFNS.ASM
+	externB	DepthList		; in VESAFNS.ASM
+	externB	EndDepthList		; in VESAFNS.ASM
 
 sEnd	Data
 
@@ -161,7 +155,7 @@ assumes cs,InitSeg
 
 
 	externNP FindMode		;from vesafns.asm
-	externNP SetupPMInt		;from vesafns.asm
+	externNP QueryGeometry		;from vesafns.asm
 	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
 	externB  physical_device	;Device physical data
@@ -350,30 +344,6 @@ enable_read_profile	PROC	NEAR
 	lea	ax,boot_category
         push    ds
         push    ax
-	lea	ax,chk_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,1				;default return value = checksum
-	mov	bx,4				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_chkstruc
-	call	enable_find_substring
-	call	SetupPMInt
-
-@@:	lea	ax,boot_category
-        push    ds
-        push    ax
 	lea	ax,PreferBank_member
         push    ds
         push    ax
@@ -412,18 +382,17 @@ enable_read_profile	PROC	NEAR
         push    ax
 	call	GetPrivateProfileString
 
-	mov	ax,2			       ;default return value
-	mov	bx,2				;number different modes
+	mov	ax,0FFh			       ;default return value
+	mov	bx,3				;number different modes
         lea     si,aszCurDrvFName
 	lea	bp,sysini_dacstruc
         call    enable_find_substring
 	mov	dac_size,al
 
-	; TODO: Use EDID settings as default
 	lea	ax,boot_category
 	lea	bx,width_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1024,ds,cx>
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
 	cmp	ax,640
 	jnb	@F
 	mov	[fail_reason],offset bad_width
@@ -433,7 +402,7 @@ enable_read_profile	PROC	NEAR
 	lea	ax,boot_category
 	lea	bx,height_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,768,ds,cx>
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
 	cmp	ax,480
 	jnb	@F
 	mov	[fail_reason],offset bad_height
@@ -451,17 +420,33 @@ enable_read_profile	PROC	NEAR
 @@:	mov	VScreen_Depth,al
 
 	lea	ax,boot_category
-	lea	bx,fps_member
+	lea	bx,interval_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,60,ds,cx>
-	;cmp	al,4
-	;rcl	ah,1	
-	test	ah,ah	; AH is non-zero if user went over 255 OR below 4
-	jz	@F
-	mov	[fail_reason],offset bad_framerate
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,16,ds,cx>
+	cmp	ax,55
+	jng	@F
+	mov	[fail_reason],offset bad_interval
 	jmp	enable_read_profile_fail
-@@:	mov	desired_fps,al
+@@:	mov	[sb_period_ms],ax
 
+	lea	ax,boot_category
+	lea	bx,allow3b_member
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+	test	ax,ax
+	jz	@F
+	mov	al,1
+@@:	mov	ThreeByte,al
+
+	; Find the screen geometry and (if needed) preferred resolution
+	call	QueryGeometry
+	cmp	[VScreen_Width],-1
+	jne	@F
+	mov	[VScreen_Width],ax
+@@:	cmp	[VScreen_Height],-1
+	jne	@F
+	mov	[VScreen_Height],dx
+@@:
 	; Linear = AX = 1 iff prefer_bank == 0
 	mov	ax,[prefer_bank]
 	xor	ax,1
@@ -515,10 +500,6 @@ enable_read_profile_done:
 
 	call	vesa_gdi_fixup		;fixup GDI info table
 
-	; keep a copy of the raster flags in Data, as InitSeg is discardable!
-	mov	ax,es:[si].dpRaster
-	mov	[raster_flags],ax
-
         xor     bx,bx
         mov     es,bx                   ;invalidate es before freeing
         cCall   FreeSelector
@@ -545,12 +526,18 @@ enable_read_profile_fail:
 	; * Print the failure reason
 	; * Invite the user to press a key
 	; * FatalExit, which may not do anything...
+	; * Exit to DOS
 	mov	ax,3	; text mode
 	int	10h
 	mov	dx,[fail_reason]
 	mov	ah,9	; write string to stdout
 	int	21h
-	lea	dx,[press_key]
+	cmp	[VScreen_Depth],0
+	jz	@F
+	; if the settings are fully loaded, then tell the user a little bit about them:
+	call	enable_print_info
+@@:	lea	dx,[press_key]
+	mov	ah,9	; write string to stdout
 	int	21h
 	mov	ah,8	; read character from stdin
 	int	21h
@@ -565,6 +552,143 @@ enable_read_profile_fail:
 	int	21h
 
 enable_read_profile	ENDP
+
+
+;
+;       enable_print_info
+;
+;       This routine is called just before a fatal exit, and imports WSPRINTF
+;	from USER.EXE to quickly print out some troubleshooting info about
+;	the way the driver is currently (mis)configured.
+;	PARMS:
+;	ds	Data
+;
+;       RETURNS:
+;       nothing
+
+user_exe	db "USER.EXE",0
+wsprintf_name	db "_WSPRINTF",0
+info_format	db "Selected resolution: %u*%u",13,10
+		db "Selected bit depth:  %u bits",13,10
+		db "Usable bit depths at this resolution: ",0
+next_format	db ", " ; fallthrough
+first_format	db "%u bits",0
+
+cProc	enable_print_info,<NEAR,PUBLIC,NODATA>
+	localD	wsprintf
+	localV	outbuf,400h
+cBegin
+	; Load USER.EXE so we can use wsprintf function - this has to be
+	; done at runtime, as DISPLAY.DRV cannot depend on DLLs other than
+	; KERNEL!
+	lea	ax,user_exe
+	cCall	LoadLibrary,<cs,ax>
+	cmp	ax,20h	; HINSTANCE_ERROR
+	jnb	@F
+	jmp	print_info_done
+
+@@:	; get the wsprintf pointer
+	lea	dx,wsprintf_name
+	cCall	GetProcAddress,<ax,cs,dx>
+	test	dx,dx	; NULL?
+	jnz	@F
+	jmp	print_info_done
+
+@@:	mov	[wsprintf.off],ax
+	mov	[wsprintf.sel],dx
+
+	; format configuration information
+	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
+	xor	ax,ax
+	mov	al,[VScreen_Depth]
+	push	ax
+	push	[VScreen_Height]
+	push	[VScreen_Width]
+	lea	ax,info_format
+	push	cs
+	push	ax
+	lea	ax,outbuf
+	push	ss
+	push	ax
+	call	[wsprintf]
+	mov	sp,si	; restore stack pointer
+
+	; then print it
+	mov	si,ax	; get length of output string
+	; replace null terminator with dollar terminator
+	mov	byte ptr outbuf[si],'$'
+	push	ds
+	mov	ax,ss
+	mov	ds,ax
+	lea	dx,outbuf
+	mov	ah,9	; write string to stdout
+	int	21h
+	pop	ds
+
+	; now print the usable depths
+	lea	si,DepthList
+	lea	cx,EndDepthList
+	sub	cx,si
+	lodsb
+	test	al,al
+	jz	print_info_none
+
+	lea	bx,first_format
+@@:	; format depth info
+	push	cx
+	mov	di,sp	; save stack pointer since wsprintf is _cdecl!
+	xor	ah,ah
+	push	ax
+	push	cs
+	push	bx
+	lea	bx,outbuf
+	push	ss
+	push	bx
+	call	[wsprintf]
+	mov	sp,di	; restore stack pointer
+	pop	cx
+
+	; then print it
+	mov	di,ax	; get length of output string
+	; replace null terminator with dollar terminator
+	mov	byte ptr outbuf[di],'$'
+	push	ds
+	mov	bx,ss
+	mov	ds,bx
+	lea	dx,outbuf
+	mov	ah,9	; write string to stdout
+	int	21h
+	pop	ds
+
+	; get the next depth from the list
+	lodsb
+	test	al,al
+	lea	bx,next_format
+	loopnz	@B
+	jmp	@F
+
+print_info_none:
+	; print the word "None" to indicate no depths supported for this resolution
+	mov	ah,2	; write character to stdout
+	mov	dl,'N'
+	int	21h
+	mov	dl,'o'
+	int	21h
+	mov	dl,'n'
+	int	21h
+	mov	dl,'e'
+	int	21h
+@@:	; finish the whole thing off with a newline
+	mov	ah,2
+	mov	dl,0Dh
+	int	21h
+	mov	dl,0Ah
+	int	21h
+
+print_info_done:
+	; don't worry about freeing pointers, we're about to crash the
+	; entire system anyway!
+cEnd
 
 
 ;

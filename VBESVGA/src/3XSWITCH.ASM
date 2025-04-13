@@ -44,7 +44,6 @@ incDevice = 1				;Include control for gdidefs.inc
 	public		dev_to_background
 
 	EXTRN		far_set_dacsize:FAR
-	EXTRN		far_set_cursor_addr:FAR
 
 sBegin  Data
 	externW ScreenSelector
@@ -55,6 +54,7 @@ sBegin  Data
 	externB	info_table_base
         externD setramdac
 	externW raster_flags
+	externW	Vmode
 sEnd	Data
 
 createSeg _INIT,InitSeg,word,public,CODE
@@ -126,11 +126,11 @@ WriteAux    <'devtofg'>
 
 @@:
 	call	init_hw_regs
+	OWN_ALL_PAGES
 	mov	[enabled_flag],0ffh	; is now enabled.
 	call	far_start_dblbuf
 ;	 mov	 screen_busy,1
 
-	call	far_set_cursor_addr
         ret
 
 dev_to_foreground	endp

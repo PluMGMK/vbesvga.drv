@@ -87,11 +87,6 @@ $(OBJ)\bltstos.obj:     $(SRC)\bltstos.asm      \
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
-$(OBJ)\vgautil.obj:     $(SRC)\vgautil.asm
-			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
-			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
-			$(ASM) < vrammak
-
 $(OBJ)\bltutil.obj:     $(SRC)\bltutil.asm      \
 			$(SRC)\bitblt.var
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
@@ -509,7 +504,6 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\blt81.obj        \
 		$(OBJ)\blt88.obj        \
 		$(OBJ)\bltstos.obj      \
-		$(OBJ)\vgautil.obj      \
 		$(OBJ)\bltutil.obj      \
 		$(OBJ)\compblt.obj      \
 		$(OBJ)\bmc_eti.obj      \

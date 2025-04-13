@@ -212,6 +212,16 @@ sBegin Code
 	externB	blue_shr
 	externB	blue_shl
 
+; Returns:
+;	AL = index in palette
+;	AH = 80h if exact match, 0 otherwise
+;	BX, DX, CX, DS, SI, DI destroyed
+cProc	match_to_palette, <NEAR, PUBLIC>
+	parmD	lpPalette
+	parmW	NumColours
+	localW	lMinLo
+	localW	wIndex
+	localB	lMinHi
 ;
 ; At this point,
 ;    AL contains the RED intensity that we're going to use.
@@ -219,35 +229,14 @@ sBegin Code
 ;    DL contains the BLUE intensity that we're going to use.
 ;    DH contains the colour index.
 ;
-cProc	rgb_to_ipc, <NEAR, PUBLIC>, <si, di, cx, bx>
-	localW	lMinLo
-	localW	wIndex
-	localB	lMinHi
-;
 cBegin
-	WriteAux <'rgb-to_ipc'>
-
-	mov	bx, ax			; logical colors are in
-        sub     cx, cx                  ; bl: red, bh: green, dl: blue
-
-	cmp	[red_shr],-1
-	je	@F
-	jmp	NoPalette
-
-@@:	; We only need the DS for the palette
-	push	ds
-	mov	ds,cs:_cstods
-	assumes	ds,Data
-
-	; PluM: Why is this restricted to system colours?
-	; Is it because other colours could change at a moment's notice?
-	; I'm too afraid to change it tbh...
-	mov	cl, SystemPaletteColors ; CX=Size of Physical Palette
+	mov	bx, ax			; logical colors are in bl: red, bh: green, dl: blue
+	mov	cx, NumColours		; CX=Size of Physical Palette
 	xor	ax, ax
 	dec	ax
 	mov	lMinLo, ax		; initialize error term to some
 	mov	lMinHi, al		; hideously large value (00ffffffh)
-	mov	si, DataOFFSET Palette	; DS:SI-->Physical palette (RGB)
+	lds	si, lpPalette		; DS:SI-->Physical palette (RGB)
 ;
 LetsBoogy:
 	sub	dh, dh			; initialize true error to 0
@@ -302,23 +291,60 @@ PossibleExactMatch:
 	or	dh, dh
 	jnz	NotExactMatch
 
-        mov     bx, SystemPaletteColors
-	sub	bx, cx			    ; it is an exact match
-	mov	ax,08000h		    ; exact match flag!!!
+	mov	ah,080h			; exact match flag!!!
 	jmp	short EndItNow
 ;
 ExitCleanup:
-	xor	ax, ax
-	mov	bx,SystemPaletteColors
-	sub	bx,wIndex
+	mov	cx,wIndex
+	xor	ah,ah			; no flag
 ;
 EndItNow:
-	xor	bh,bh
-	shl	bx,1
+        mov     al, byte ptr NumColours
+	sub	al, cl
+cEnd
+
+cProc	match_to_palette_far, <FAR, PUBLIC, NODATA>, <ds,bx,dx,cx,si,di>
+	parmD	lpPalette
+	parmW	NumColours
+cBegin
+	cCall	match_to_palette,<lpPalette,NumColours>
+cEnd
+
+cProc	rgb_to_ipc, <NEAR, PUBLIC>, <si, di, cx, bx>
+;
+; At this point,
+;    AL contains the RED intensity that we're going to use.
+;    AH contains the GREEN intensity that we're going to use.
+;    DL contains the BLUE intensity that we're going to use.
+;    DH contains the colour index.
+;
+cBegin
+	WriteAux <'rgb-to_ipc'>
+
+	mov	bx, ax			; logical colors are in
+        sub     cx, cx                  ; bl: red, bh: green, dl: blue
+
+	cmp	[red_shr],-1
+	je	@F
+	jmp	NoPalette
+
+@@:	; We only need the DS for the palette
+	push	ds
+	mov	ds,cs:_cstods
+	assumes	ds,Data
+
+	; PluM: Why is this restricted to system colours?
+	; Is it because other colours could change at a moment's notice?
+	; I'm too afraid to change it tbh...
+	mov	si, DataOFFSET Palette
+	cCall	match_to_palette,<ds, si, [SystemPaletteColors]>
+	xor	bx,bx			; zero out BX
+	xchg	bl,al			; AX := 8000h or zero, BX := index
+	shl	bx,1			; BX := offset into table
 	mov	si, DataOFFSET PhysicalIndexTable
-	or	ax, [bx+si]		    ; preserve exact match flag!!
+	or	ax, [bx+si]		; preserve exact match flag!!
 	mov	dx, 0ff00h
-	mov	ch, ah			    ; preserve accels to return ZF/CF
+	mov	ch, ah			; preserve accels to return ZF/CF
 
 	; DS no longer needed since we're done with the palette
 	pop	ds
@@ -422,6 +448,7 @@ colour_contribution	proc near
 
 @@hard_way:
 	.286
+	xor	ah,ah
 	; We're on a 286, need to restrict ourselves to 16-bit registers...
 	; There are three cases to deal with:
 	; 1. CL <= 8 --> just SHL AX,CL and OR into DI

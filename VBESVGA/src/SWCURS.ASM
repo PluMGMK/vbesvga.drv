@@ -21,7 +21,6 @@ include windefs.inc
 include gdidefs.inc
 include display.inc
 include vgareg.inc
-include vgautil.inc
 include cursor.inc
 include swcurs.inc
 

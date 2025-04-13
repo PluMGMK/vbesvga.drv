@@ -63,6 +63,8 @@ MONO_BIT		equ	00000001b
 
 	externA		__NEXTSEG		; offset to next segment
 	externFP	ipc_to_rgb_seq		; in RGB2IPC.ASM
+	externFP	ipc_to_rgb_far		; in RGB2IPC.ASM
+	externFP	match_to_palette_far	; in RGB2IPC.ASM
 
 
 sBegin Data
@@ -461,11 +463,18 @@ ite_1	proc	near
 	mov	num_pels_per_src_byte,8
 
 
+        mov     ax, DIMapSegOFFSET copy_iXe1 ;Color bitmap
+	mov	bx, DIMapSegOFFSET copy_iXe1_partial
+	mov	cx	,256
+
+	cmp	[use_palette_trans],0
+	jz	@F
+
         mov     ax, DIMapSegOFFSET copy_i8e1 ;Color bitmap
 	mov	bx, DIMapSegOFFSET copy_i8e1_partial
 	mov	cx	,256
 
-        test    fbsd, SD_COLOR          ;Monochrome source?
+@@:     test    fbsd, SD_COLOR          ;Monochrome source?
 	jnz	ite_1_have_proc 	;  No
 
         mov     ax, DIMapSegOFFSET copy_i1e1 ;Assume monochrome bitmap
@@ -475,7 +484,7 @@ ite_1	proc	near
 ite_1_have_proc:
 	mov	full_byte_proc, ax
 	mov	partial_byte_proc, bx
-	call	move_color_table
+	call	setup_colour_table_1
 
 ; Whenever we allocated a scanline (or each scan of a color
 ; bitmap), we allocated to a dword boundary.  If we just
@@ -544,11 +553,18 @@ ite_4	proc	near
 	mov	num_pels_per_src_byte,8
 
 
+        mov     ax, DIMapSegOFFSET copy_iXe4 ;Color bitmap
+	mov	bx, DIMapSegOFFSET copy_iXe4_partial
+	mov	cx	,256
+
+	cmp	[use_palette_trans],0
+	jz	@F
+
         mov     ax, DIMapSegOFFSET copy_i8e4
 	mov	bx, DIMapSegOFFSET copy_i8e4_partial
 	mov	cx	,256
 
-        test    fbsd, SD_COLOR          ;Monochrome source?
+@@:     test    fbsd, SD_COLOR          ;Monochrome source?
 	jnz	ite_4_not_mono		;Not mono, must	be color
 
         mov     ax, DIMapSegOFFSET copy_i1e4
@@ -558,7 +574,7 @@ ite_4	proc	near
 ite_4_not_mono:
 	mov	full_byte_proc, ax
 	mov	partial_byte_proc, bx	;Might need this for seg boundaries
-        call    move_color_table
+	call	setup_colour_table_4
 
 	mov	ax, bitmap_width	; Compute the number of	source bytes
 	add	ax, 7			; We can force dword alignment by
@@ -579,14 +595,22 @@ ite_4_color3:
 	shiftr	ax, 3
 	mov	int_move_count, ax
 	shiftl	ax, 3
-	sub	bx, ax			; must be multiple of 2
-	mov	int_remaining_pixel_count, bx
-	or	bx, bx
+
+	xchg	bx, ax
+	cwd
+	xor	cx, cx
+	mov	cl, [total_depth_bytes]
+	div	cx
+
+	sub	ax, bx
+	mov	int_remaining_pixel_count, ax
+	or	ax, ax
 	je	ite_4_colorx
-	shr	bx, 1
-	sub	bx, 4
-	neg	bx
-	mov	ext_dword_adjust, bx
+	inc	ax			; round up rather than down
+	shr	ax, 1
+	sub	ax, 4
+	neg	ax
+	mov	ext_dword_adjust, ax
 ite_4_colorx:
 	ret				; for one bitmap scan
 
@@ -616,14 +640,21 @@ ite_8	proc	near
 	mov	ext_dword_adjust, ax
 	mov	scan_length.hi, ax	;Max dest scan size is < 64K
 
-	call	move_color_table
+	call	setup_colour_table_8
 
         mov     num_pels_per_src_byte,8
+        mov     ax, DIMapSegOFFSET copy_iXe8 ;Color bitmap
+	mov	bx, DIMapSegOFFSET copy_iXe8_partial
+	mov	cx	,256
+
+	cmp	[use_palette_trans],0
+	jz	@F
+
 	mov	ax, DIMapSegOFFSET copy_i8e8
 	mov	bx, DIMapSegOFFSET copy_i8e8_partial
 	mov	cx	,256
 
-        test    fbsd, SD_COLOR          ;Monochrome source?
+@@:     test    fbsd, SD_COLOR          ;Monochrome source?
 	jnz	ite_8_not_mono		;Not mono, must	be color
 
         mov     ax, DIMapSegOFFSET copy_i1e8
@@ -653,13 +684,20 @@ ite_8_color3:
 	shiftr	ax, 3
 	mov	int_move_count, ax     ; pixels not enough for 1 byte
 	shiftl	ax, 3
-	mov	bx, int_aligned_width
-	sub	bx, ax
-	mov	int_remaining_pixel_count, bx
-	neg	bx			; shift	the last byte
-	add	bx, 4
-	and	bx, 00000011b		; Compute number of bytes to pad with
-	mov	ext_dword_adjust, bx
+	mov	bx, ax
+
+	mov	ax, int_aligned_width
+	cwd
+	xor	cx, cx
+	mov	cl, [total_depth_bytes]
+	div	cx
+
+	sub	ax, bx
+	mov	int_remaining_pixel_count, ax
+	neg	ax			; shift	the last byte
+	add	ax, 4
+	and	ax, 00000011b		; Compute number of bytes to pad with
+	mov	ext_dword_adjust, ax
 	ret
 
 ite_8	endp
@@ -720,6 +758,242 @@ ite_24	endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;
+; setup_colour_table_1							     ;
+;									     ;
+;   Create a colour table for a monochrome DIB.                              ;
+;									     ;
+; Entry:								     ;
+;	NONE								     ;
+; Returns:								     ;
+;	AX,CX destroyed 						     ;
+;       No other registers modified                                          ;
+;	Direction flag cleared						     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub   setup_colour_table_1
+
+setup_colour_table_1 proc	 near
+
+	; has GDI done the heavy lifting for us?
+	cmp	[lpColorInfo.sel],0
+	jz	@F
+	; copy GDI's table onto the stack
+	jmp	move_color_table
+
+@@:	push	es
+	push	di
+
+	les	di,[lp_info_ext]
+	; point at the end of the DIB header, which is the palette space
+	add	di,word ptr es:[di].biSize
+
+	; four bytes of black
+	xor	ax,ax
+	mov	word ptr es:[di],ax
+	mov	word ptr es:[di+2],ax
+	; four bytes of white
+	not	ax
+	mov	word ptr es:[di+4],ax
+	mov	word ptr es:[di+6],ax
+
+	; store a 1-byte version of the table on the stack
+	mov	byte ptr color_xlate[0],0
+	mov	color_xlate[1],al
+
+	pop	di
+	pop	es
+	ret
+
+setup_colour_table_1 endp
+
+;--------------------------Private-Routine-----------------------------------;
+; setup_colour_table_4							     ;
+;									     ;
+;   Create a colour table for a 16-colour DIB.                               ;
+;									     ;
+; Entry:								     ;
+;	NONE								     ;
+; Returns:								     ;
+;	AX,CX destroyed 						     ;
+;       No other registers modified                                          ;
+;	Direction flag cleared						     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub   setup_colour_table_4
+
+setup_colour_table_4 proc	 near
+
+	; has GDI done the heavy lifting for us?
+	cmp	[lpColorInfo.sel],0
+	jz	@F
+	; copy GDI's table onto the stack
+	jmp	move_color_table
+
+@@:	push	es
+	push	di
+
+	les	di,[lp_info_ext]
+	; point at the end of the DIB header, which is the palette space
+	add	di,word ptr es:[di].biSize
+
+	; clear out the 16*4 bytes (16*2 words) needed for the palette
+	push	di
+	xor	ax,ax
+	mov	cx,16*2
+	rep	stosw
+	pop	di
+
+	; low-intensity colours
+	mov	ax,8080h
+	; place 80h in the bytes corresponding to "ON" bits
+	mov	es:[di+(4*0001b)+0],al
+	mov	es:[di+(4*0010b)+1],al
+	mov	es:[di+(4*0011b)+0],ax
+	mov	es:[di+(4*0100b)+2],al
+	mov	es:[di+(4*0101b)+0],al
+	mov	es:[di+(4*0101b)+2],al
+	mov	es:[di+(4*0110b)+1],ax
+	mov	es:[di+(4*0111b)+0],ax
+	mov	es:[di+(4*0111b)+2],al
+	; bright grey is a special case
+	mov	ax,0C0C0h
+	mov	es:[di+(4*1000b)+0],ax
+	mov	es:[di+(4*1000b)+2],al
+	; high-intensity colours
+	mov	ax,0FFFFh
+	; place 0FFh in the bytes corresponding to "ON" bits
+	mov	es:[di+(4*1001b)+0],al
+	mov	es:[di+(4*1010b)+1],al
+	mov	es:[di+(4*1011b)+0],ax
+	mov	es:[di+(4*1100b)+2],al
+	mov	es:[di+(4*1101b)+0],al
+	mov	es:[di+(4*1101b)+2],al
+	mov	es:[di+(4*1110b)+1],ax
+	mov	es:[di+(4*1111b)+0],ax
+	mov	es:[di+(4*1111b)+2],al
+
+	; store mono version on the stack
+	mov	byte ptr color_xlate[0],0
+	mov	byte ptr color_xlate[1],0Fh
+
+        test    fbsd, SD_COLOR          ;Monochrome source?
+	jz	@F
+
+	; store colour version on the stack - put red first,
+	; and have just three bytes per entry
+	push	ds
+	push	si
+	pushf
+
+	push	es
+	pop	ds
+	push	ss
+	pop	es
+	mov	si,di
+	lea	di,color_xlate
+	mov	cx,16
+	cld
+colour_table_4_loop:
+	lodsw				;AL:=Blue,AH:=Green
+	mov	dx,ax			;DL:=Blue,DH:=Green
+	lodsw				;AL:=Red
+	mov	ah,dh			;AH:=Green
+	stosw				;store red and green bytes
+	mov	al,dl			;AL:=Blue
+	stosb				;store blue byte
+	loop	colour_table_4_loop
+
+	popf
+	pop	si
+	pop	ds
+
+@@:	pop	di
+	pop	es
+
+	ret
+
+setup_colour_table_4 endp
+
+;--------------------------Private-Routine-----------------------------------;
+; setup_colour_table_8							     ;
+;									     ;
+;   Create a colour table for a 256-colour DIB.                              ;
+;									     ;
+; Entry:								     ;
+;	NONE								     ;
+; Returns:								     ;
+;	AX,CX destroyed 						     ;
+;       No other registers modified                                          ;
+;	Direction flag cleared						     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub   setup_colour_table_8
+
+setup_colour_table_8 proc	 near
+
+	; has GDI done the heavy lifting for us?
+	cmp	[lpColorInfo.sel],0
+	jz	@F
+	; copy GDI's table onto the stack
+	jmp	move_color_table
+
+@@:	push	es
+	push	di
+
+	les	di,[lp_info_ext]
+	; point at the end of the DIB header, which is the palette space
+	add	di,word ptr es:[di].biSize
+
+	; generate a palette based on using three significant bits for red,
+	; three for green, and two for blue (RGBQUADs so blue comes first!).
+	xor	ax,ax
+	mov	dx,ax
+	mov	cx,100h
+	
+palette256_loop:
+	stosw	; store red and green
+	xchg	dx,ax
+	stosw	; store blue and padding
+	xchg	dx,ax
+
+	; advance to next red shade
+	add	al,255/3
+	jc	@F
+	loop	palette256_loop
+	jcxz	palette256_done
+@@:	; reset red and advance to the next green shade
+	xor	al,al
+	add	ah,255/7
+	jc	@F
+	loop	palette256_loop
+	jcxz	palette256_done
+@@:	; reset green and advance to the next blue shade
+	xor	ah,ah
+	add	dl,255/7
+	loop	palette256_loop
+
+palette256_done:
+	; setup mono version
+	mov	byte ptr color_xlate[0],0
+	mov	byte ptr color_xlate[1],0FFh
+
+	pop	di
+	pop	es
+	ret
+
+setup_colour_table_8 endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
 ; move_color_table							     ;
 ;									     ;
 ;   Move GDI's lpColorInfo table to the stack.                               ;
@@ -729,7 +1003,6 @@ page
 ; Returns:								     ;
 ;	AX,CX destroyed 						     ;
 ;       No other registers modified                                          ;
-;	Direction flag cleared						     ;
 ;----------------------------------------------------------------------------;
 
 	assumes	ds, nothing
@@ -1591,7 +1864,7 @@ page
 ; Entry:								     ;
 ;	DS:SI --> source						     ;
 ;	ES:DI --> destination						     ;
-;	CX     =  number of bits to xlate (will	always be 8)		     ;
+;	CX     =  number of bits to xlate				     ;
 ; Returns:								     ;
 ;	ES:DI --> next destination byte					     ;
 ;----------------------------------------------------------------------------;
@@ -1600,9 +1873,24 @@ page
 	assumes	es, nothing
 
 copy_i8e1_partial proc near
-	mov	cx, 1
-	call	full_byte_proc
-	dec	di
+	lea	bx,color_xlate
+	mov	dl, 8
+	mov	ah, 0
+
+ci8e1p_next_pixel:
+	lodsb
+	xlat	ss:[bx]
+	cmp	ah,al
+        rcl     dh, 1
+	dec	dl
+        loop    ci8e1p_next_pixel
+
+	; At this point, DL = 8 minus the bits we've processed.
+	; So shift the full byte left by that much to pad it.
+	mov	cl, dl
+	shl	dh, cl
+
+	mov	al, dh
 	jmp	store_i1_with_seg_check
 
 copy_i8e1_partial endp
@@ -1631,6 +1919,150 @@ swsc_i1_exit:
 	ret
 
 store_i1_with_seg_check endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_iXe1								     ;
+;									     ;
+;   copy internal high-colour pixel to external 1 bit			     ;
+;									     ;
+;   The	destination is filled with the source data.  All 8 byte	pixels	     ;
+;   of the source byte are combined to form the	single destination byte.     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings,       ;
+;   and	to ensure that there are enough	bytes of destination available	     ;
+;   to hold the	data.							     ;
+;									     ;
+;   Since there	will be	information loss in going from four color to	     ;
+;   one	color, all colors which	match the !!!??? background color	     ;
+;   will be mapped to 1, and all other colors will be mapped to	the	     ;
+;   !!!??? forground color.  This is the same strategy used in color	     ;
+;   to mono bitblts.							     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	mono				     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of bytes to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+public	copy_iXe1
+public  copy_iXe1
+copy_iXe1	proc  near
+	; abuse BP to store the bytes per pixel
+	push	bp
+	mov	al,[total_depth_bytes]
+	xor	ah,ah
+	mov	bp,ax
+
+ciXe1_next_byte:
+	mov	bl, 8
+
+ciXe1_next_pixel:
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	bp,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	; advance BP bytes
+	lea	si,[bp+si]
+	call	ipc_to_rgb_far
+	shr	dh, 1			;get MONO_BIT into CF
+.errnz	MONO_BIT-1
+        rcl     bh, 1
+	dec	bl
+	jne	ciXe1_next_pixel
+
+	mov	al, bh
+	stosb
+
+        loop    ciXe1_next_byte         ;next byte
+
+	pop	bp
+	ret
+
+copy_iXe1	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_iXe1_partial							     ;
+;									     ;
+;   copy internal 1 8-bit pixel	to external 1 bit, partial byte		     ;
+;									     ;
+;   The	destination is filled with the source data.  All 8 byte	pixels	     ;
+;   of the source byte are combined to form the	single destination byte.     ;
+;									     ;
+;   This routine will handle the destination (user's buffer) crossing        ;
+;   a segment boundary during the translation of the source byte.	     ;
+;   The	source will never cross	a segment boundary since it is an	     ;
+;   internal bitmap and	all scans are allocated	to fit within a		     ;
+;   segment.								     ;
+;									     ;
+;   Since there	will be	information loss in going from four color to	     ;
+;   one	color, all colors which	match the !!!??? background color	     ;
+;   will be mapped to 1, and all other colors will be mapped to	the	     ;
+;   !!!??? forground color.  This is the same strategy used in color	     ;
+;   to mono bitblts.							     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	mono				     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of bits to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+copy_iXe1_partial proc near
+	; abuse BP to store the bytes per pixel
+	push	bp
+	mov	al,[total_depth_bytes]
+	xor	ah,ah
+	mov	bp,ax
+	mov	bl, 8
+
+ciXe1p_next_pixel:
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	bp,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	; advance BP bytes
+	lea	si,[bp+si]
+	call	ipc_to_rgb_far
+	shr	dh, 1			;get MONO_BIT into CF
+.errnz	MONO_BIT-1
+        rcl     bh, 1
+	dec	bl
+        loop    ciXe1_next_pixel
+
+	; At this point, BL = 8 minus the bits we've processed.
+	; So shift the full byte left by that much to pad it.
+	mov	cl, bl
+	shl	bh, cl
+	mov	al, bh
+
+	pop	bp
+	jmp	store_i1_with_seg_check
+
+copy_iXe1_partial endp
+
 
 
 
@@ -1787,6 +2219,217 @@ store_i4_with_seg_check endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;
+; copy_iXe4								     ;
+;									     ;
+;   copy internal high-colour pixel to external 4 bit packed pixel	     ;
+;									     ;
+;   The	destination is filled with the source data.  All four planes	     ;
+;   of the source byte are used	to form	the nibble for the destination	     ;
+;   byte.								     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings,       ;
+;   and	to ensure that there are enough	bytes of destination available	     ;
+;   to hold the	data.							     ;
+;									     ;
+;   Since there	will be	information loss in going from four color to	     ;
+;   one	color, all colors which	match the !!!??? background color	     ;
+;   will be mapped to 1, and all other colors will be mapped to	the	     ;
+;   !!!??? forground color.  This is the same strategy used in color	     ;
+;   to mono bitblts.							     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	4-bit packed pixels		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of bytes to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+public	copy_iXe4
+copy_iXe4	proc near
+	mov	bx, cx
+	mov	cl,[total_depth_bytes]
+	; Abuse BP to point at the colour table
+	push	bp
+	lea	bp,color_xlate
+ciXe4_next_byte:
+	mov	ch, 4			;8 pixel/byte -	inner loop count
+
+ciXe4_next_pixel:
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	cl,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	call	ipc_to_rgb_far
+	; advance CL bytes
+	mov	dh,ch
+	xor	ch,ch
+	add	si,cx
+	mov	ch,dh
+	cCall	match_to_palette_far,<ss,bp,16>
+	shiftl	al, 4			;use last 4 bits for 1st nibble
+	stosb				;store byte with first pixel
+
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	cl,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	call	ipc_to_rgb_far
+	; advance CL bytes
+	mov	dh,ch
+	xor	ch,ch
+	add	si,cx
+	mov	ch,dh
+	cCall	match_to_palette_far,<ss,bp,16>
+        and     al, 0fh                 ;use last 4 bits for 2nd nibble
+	jz	@F
+	or	es:[di-1],al		;OR in the second pixel to stored byte
+
+@@:	dec	ch
+	jnz	ciXe4_next_pixel
+
+	dec	bx
+	jnz	ciXe4_next_byte		;next byte
+
+	pop	bp
+	ret
+
+copy_iXe4	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+;									     ;
+; copy_iXe4_partial							     ;
+;									     ;
+;   copy internal high-colour pixel to external 4 bit packed pixel, partial  ;
+;									     ;
+;   The	destination is filled with the source data.  All four planes	     ;
+;   of the source byte are used	to form	the nibble for the destination	     ;
+;   byte.								     ;
+;									     ;
+;   This routine handles partial bytes where some portion of the first	     ;
+;   or last byte needs to be saved.					     ;
+;									     ;
+;   This routine will handle the destination (user's buffer) crossing        ;
+;   a segment boundary during the translation of the source byte.	     ;
+;   The	source will never cross	a segment boundary since it is an	     ;
+;   internal bitmap and	all scans are allocated	to fit within a		     ;
+;   segment.								     ;
+;									     ;
+;   Since this routine always writes nibbles, it is guaranteed that	     ;
+;   the	shift count passed in is even.					     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	4-bit packed pixels		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	BX     =  index	to next	plane					     ;
+;	CL     =  number of pixels to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+copy_iXe4_partial proc near
+	mov	ch,cl
+	mov	cl,[total_depth_bytes]
+	; Abuse BP to point at the colour table
+	push	bp
+	lea	bp,color_xlate
+;
+ciXe4p_next_pixel:
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	cl,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	call	ipc_to_rgb_far
+	; advance CL bytes
+	mov	dh,ch
+	xor	ch,ch
+	add	si,cx
+	mov	ch,dh
+	cCall	match_to_palette_far,<ss,bp,16>
+	shiftl	al, 4			;use last 4 bits for 1st nibble
+	dec	ch
+	jz	ciXe4p_store
+	mov	bh,al
+
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	cl,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	call	ipc_to_rgb_far
+	; advance CL bytes
+	mov	dh,ch
+	xor	ch,ch
+	add	si,cx
+	mov	ch,dh
+	cCall	match_to_palette_far,<ss,bp,16>
+        and     al, 0fh                 ;use last 4 bits for 2nd nibble
+	dec	ch
+	or	al, bh			;get the 1st nibble
+ciXe4p_store:
+	stosb				;Save the byte
+	or	di, di			;If in the next segment
+	jnz	ciXe4p_check_counter	;  then update the selector
+
+	test	ch,ch
+	jnz	@F
+
+	mov	ax,bp
+	pop	bp			; need the frame pointer for scanline_count
+        cmp     scanline_count,1
+	push	bp
+	mov	bp,ax			; set BP back to what it was
+
+	je	ciXe4p_done		; based on CMP above
+@@:
+	push	ax
+	push	dx
+	mov	dx, es
+	add	dx, __NEXTSEG
+	mov	es, dx
+	assumes	es, nothing
+	pop	dx
+	pop	ax
+
+ciXe4p_check_counter:
+	test	ch,ch
+	jnz	ciXe4p_next_pixel
+
+ciXe4p_done:
+	pop	bp
+	ret
+
+copy_iXe4_partial endp
+
+
+
+
+page
+;--------------------------Private-Routine-----------------------------------;
 ;									     ;
 ; copy_i8e8								     ;
 ;									     ;
@@ -1897,6 +2540,169 @@ swsc_i8_x:
 	ret
 
 store_i8_with_seg_check endp
+
+
+
+
+page
+;--------------------------Private-Routine-----------------------------------;
+;									     ;
+; copy_iXe8								     ;
+;									     ;
+;   copy internal high-colour pixel to external 8 bit packed pixel	     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings,       ;
+;   and	to ensure that there are enough	bytes of destination available	     ;
+;   to hold the	data.							     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal 8 bit to external 8-bit packed pixels			     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of bytes to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+; Error	Returns:							     ;
+;	None								     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+public	copy_iXe8
+copy_iXe8       proc near
+	; abuse BP to store the bytes per pixel
+	push	bp
+	mov	al,[total_depth_bytes]
+	xor	ah,ah
+	mov	bp,ax
+
+	mov	bx, cx
+ciXe8_next_byte:
+	mov	cx, 8			;8 pixel/byte
+ciXe8_next_pixel:
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	bp,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	; advance BP bytes
+	lea	si,[bp+si]
+	call	ipc_to_rgb_far
+	; use two bits for blue, three for green, three for red
+	and	al,11100000b
+	shr	ah,8-3-2
+	and	ah,11100b
+	or	al,ah
+	shr	dl,8-2
+	or	al,dl
+	stosb
+
+	loop	ciXe8_next_pixel
+	dec	bx
+	jne	ciXe8_next_byte
+
+	pop	bp
+	ret
+
+copy_iXe8	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+;									     ;
+; copy_iXe8_partial							     ;
+;									     ;
+;   copy internal 1 8-bit pixel	to external 8 bit packed pixel,	partial	byte ;
+;									     ;
+;   The	destination is filled with the source data.  All four planes	     ;
+;   of the source byte are used	to form	the byte for the destination.	     ;
+;									     ;
+;   This routine handles partial bytes where some portion of the first	     ;
+;   or last byte needs to be saved.					     ;
+;									     ;
+;   This routine will handle the destination (user's buffer) crossing        ;
+;   a segment boundary during the translation of the source byte.	     ;
+;   The	source will never cross	a segment boundary since it is an	     ;
+;   internal bitmap and	all scans are allocated	to fit within a		     ;
+;   segment.								     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	8-bit packed pixels		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CL     =  number of pixels to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+copy_iXe8_partial proc near
+
+	; abuse BP to store the bytes per pixel
+	push	bp
+	mov	al,[total_depth_bytes]
+	xor	ah,ah
+	mov	bp,ax
+
+ciXe8p_next_pixel:
+	; load two bytes (should be safe since scanline boundaries
+	; should be word-aligned)
+	mov	ax,[si]
+	cmp	bp,2
+	jna	@F
+	; load another two if needed
+	mov	dx,[si+2]
+@@:	; advance BP bytes
+	lea	si,[bp+si]
+	call	ipc_to_rgb_far
+	; use two bytes for blue, three for green, three for red
+	and	al,11100000b
+	shr	ah,8-3-2
+	and	ah,11100b
+	or	al,ah
+	shr	dl,8-2
+	or	al,dl
+
+	stosb				;Save the byte
+	or	di, di			;If in the next segment
+	jnz	ciXe8p_check_counter	;  then update the selector
+
+	cmp	cl,1
+	jne	@F
+
+	mov	ax,bp
+	pop	bp			; need the frame pointer for scanline_count
+        cmp     scanline_count,1
+	push	bp
+	mov	bp,ax			; set BP back to what it was
+
+	je	ciXe8p_check_counter	; based on CMP above
+@@:
+	push	ax
+	push	dx
+	mov	dx, es
+	add	dx, __NEXTSEG
+	mov	es, dx
+	assumes	es, nothing
+	pop	dx
+	pop	ax
+
+ciXe8p_check_counter:
+	dec	cl
+	jne	ciXe8p_next_pixel
+
+	pop	bp
+	ret
+
+copy_iXe8_partial endp
 
 
 

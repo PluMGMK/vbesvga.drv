@@ -1520,7 +1520,8 @@ ce1i8_next_pixel:
 	stosb
 	jmp	ce1i8_dec_counter
 @@:	stosw
-	jna	ce1i8_dec_counter	;flags are still set by CMP above
+	cmp	bl, 30h
+	jb	ce1i8_dec_counter
 	mov	ax, dx			;saved by CWD above
 	and	ax, color_xlate[8].hi
 	xor	ax, color_xlate[0].hi
@@ -1812,7 +1813,7 @@ copy_e8i8_partial proc near
 ce8i8p_next_byte:
 	call	load_with_seg_check	; Get 1 pel of source data
 	xor	ah, ah
-	shl	ax, 1
+	shl	ax, 2	; four bytes per palette entry
 	mov	bx, dx
 	add	bx, ax
 	xchg	bx, si

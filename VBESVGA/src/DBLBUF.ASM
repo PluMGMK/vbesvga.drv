@@ -18,11 +18,12 @@ incDevice = 1			;Include control for gdidefs.inc
 	include CMACROS.INC
 	include MACROS.MAC
 	include GDIDEFS.INC
-	include int3.inc
+	include DISPLAY.INC	; for WF_*
 	include windefs.inc
 	include	cursor.inc
 	.list
 
+	externA  __WinFlags		;Windows info bit
 	externFP AllocSelector
 	externFP FreeSelector
 	externFP SetSelectorBase
@@ -43,9 +44,6 @@ VramSel	dw ?
 ; Handle to back-buffer memory block
 BackBufDPMIHdl	dd ?
 
-; How much data to transfer when swapping buffers
-BackBufSize	dd ?
-
 ; VTDAPI entry point (preferred to MMSYSTEM if available)
 VTDAPIEntry	dd ?
 
@@ -63,23 +61,26 @@ fast_timer_hdl	dw 0
 fast_timer_irqseg dw 0
 
 ; Approximate time in milliseconds taken to run swap_buffers
+public	sb_period_ms
 sb_period_ms	dw ?	; swap_buffers period in milliseconds
 
 ; User-specified refresh rate
-public	desired_fps
 desired_fps	db 60
 
-externW		cursor_funcs		; in CURSOR.ASM
-externW		cursor_xdraw		; in CURSOR.ASM
-externW		cursor_ydraw		; in CURSOR.ASM
-externW		save_screen_y		; in SWCURS.ASM
-externW		save_screen_x		; in SWCURS.ASM
-externW		save_screen_yclip	; in SWCURS.ASM
-externW		save_screen_xclip	; in SWCURS.ASM
-externD		save_screen_longaddr	; in SWCURS.ASM
-externW		save_screen_height	; in SWCURS.ASM
-externW		save_screen_width	; in SWCURS.ASM
-externW		swcursor_data		; in SWCURS.ASM
+externW	cursor_funcs		; in CURSOR.ASM
+externW	cursor_xdraw		; in CURSOR.ASM
+externW	cursor_ydraw		; in CURSOR.ASM
+externW	save_screen_y		; in SWCURS.ASM
+externW	save_screen_x		; in SWCURS.ASM
+externW	save_screen_yclip	; in SWCURS.ASM
+externW	save_screen_xclip	; in SWCURS.ASM
+externD	save_screen_longaddr	; in SWCURS.ASM
+externW	save_screen_height	; in SWCURS.ASM
+externW	save_screen_width	; in SWCURS.ASM
+externW	swcursor_data		; in SWCURS.ASM
+
+externW	ScreenSelector		; in VGA.ASM
+externD	MemSize			; in VESAFNS.ASM
 
 ; cursor functions for "double-buffering cursor" implementation
 dbcursor_funcs	DW	dbcursor_set, dbcursor_move, dbcursor_check
@@ -202,7 +203,7 @@ dbcursor_check	endp
 ; Its job is to copy the entire back buffer onto the front buffer,
 ; while putting the cursor over it.
 swap_buffers	proc near
-	.386	; if we get this far we have a 386 (required for lin framebuf)
+	.386	; if we get this far we have a 386
 	pushad	; we will use all the 386 registers!
 	push	es
 	push	fs
@@ -350,7 +351,7 @@ swap_buffers	proc near
 @@no_cursor:
 	; done with the cursor altogether (or had none in the first place),
 	; so just chug through the rest of the buffer copy and we're done
-	mov	ecx,[BackBufSize]
+	mov	ecx,[MemSize]
 	; account for any progress made so far
 	sub	ecx,edi
 	jnz	@@copy_loop
@@ -513,7 +514,6 @@ TimeKillEvent_name	db "timeKillEvent",0
 ;	addresses and allocating memory for the back-buffer
 ; Entry:
 ;	DS	= Data
-;	SI:DI	= int_phys_device structure
 ;	The driver must be setup to use a linear framebuffer
 ; Returns:
 ;	BackBufSel,FrontBufSel,VramSel populated, pointing at respective buffers
@@ -538,20 +538,19 @@ cBegin
 	jmp	setup_done
 
 @@:	; has user force-disabled double buffering?
-	cmp	[desired_fps],4
-	jnb	@F
+	cmp	[sb_period_ms],0
+	jnz	@F
 	jmp	setup_done
 
-@@:	; Calculate the relevant period
-	mov	ax,1000		; milliseconds per second
-	div	[desired_fps]	; AL := milliseconds per frame, AH := remainder
-	xor	ah,ah		; we don't care about the remainder
-	mov	[sb_period_ms],ax
+@@:	; Double-buffering requires at least a 386
+	mov	ax,__WinFlags
+	test	ax,WF_CPU286
+	jz	@F
+	jmp	setup_done
 
-	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
+@@:	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
 	; this will allow us to schedule fast timer events in a way that's
 	; completely independent of USER.EXE, so it's a lot cleaner.
-	xchg	dx,di		; hold onto our pointer
 	mov	ax,1684h	; get VxD entry point
 	mov	bx,0442h	; VTDAPI
 	xor	di,di		; NULL default return value
@@ -559,10 +558,9 @@ cBegin
 	int	2Fh
 	mov	ax,es
 	test	ax,ax		; Still NULL?
-	xchg	dx,di		; get back our pointer
 	jz	@F
 
-	mov	[VTDAPIEntry.off],dx
+	mov	[VTDAPIEntry.off],di
 	mov	[VTDAPIEntry.sel],es
 
 	; use our internal implementations of the MMSYSTEM time functions
@@ -642,15 +640,9 @@ fnptrs_setup_done:
 	; Allocate the back buffer memory. Use DPMI directly, since
 	; GlobalAlloc/GlobalLock would allocate a whole bunch of selectors
 	; which we don't actually need!
-	mov	es,si
 	mov	ax,501h				; Allocate memory block
-	mov	bx,es:[di].bmWidthPlanes.hi
-	mov	cx,es:[di].bmWidthPlanes.lo
-	mov	dx,di				; Stash this offset
-
-	; set BackBufSize while we're at it
-	mov	[BackBufSize.lo],cx
-	mov	[BackBufSize.hi],bx
+	mov	bx,[MemSize.hi]
+	mov	cx,[MemSize.lo]
 
 	; we need twice this much memory - one for the true back-buffer,
 	; and again for the write-through front buffer!
@@ -668,8 +660,8 @@ fnptrs_setup_done:
 	; the back buffer in use for as long as Windows is running...
 	; (It is a LOT of physical memory, so we don't want to lose it!)
 	mov	ax,600h				; Lock linear region
-	mov	di,[BackBufSize.lo]
-	mov	si,[BackBufSize.hi]
+	mov	di,[MemSize.lo]
+	mov	si,[MemSize.hi]
 	; again, we need to double it
 	shl	di,1
 	rcl	si,1
@@ -680,8 +672,7 @@ fnptrs_setup_done:
 @@:	; Allocate selectors for front and back buffer
 	mov	di,cx
 	mov	si,bx
-	mov	bx,dx	; get the offset of the bitmap structure stashed before
-	cCall	AllocSelector,<es:[bx].bmBits.sel>
+	cCall	AllocSelector,<[ScreenSelector]>
 	test	ax,ax
 	jnz	@F
 	jmp	setup_done
@@ -692,8 +683,8 @@ fnptrs_setup_done:
 
 	; And set its limit - SetSelectorBase should have returned the same
 	; value in AX again
-	mov	dx,[BackBufSize.lo]
-	mov	cx,[BackBufSize.hi]
+	mov	dx,[MemSize.lo]
+	mov	cx,[MemSize.hi]
 	; Limit == size-1
 	sub	dx,1
 	sbb	cx,0
@@ -715,8 +706,8 @@ fnptrs_setup_done:
 	; Set the selector to the base of the front buffer.
 	; It's the second half of the large memory block we
 	; just allocated, of which the base is in SI:DI
-	add	di,[BackBufSize.lo]
-	adc	si,[BackBufSize.hi]
+	add	di,[MemSize.lo]
+	adc	si,[MemSize.hi]
 	cCall	SetSelectorBase,<ax,si,di>
 
 	; Now copy the selector again, to make one for the VRAM buffer
@@ -740,7 +731,7 @@ fnptrs_setup_done:
 	push	edi
 	mov	es,[BackBufSel]
 	xor	eax,eax
-	mov	ecx,[BackBufSize]
+	mov	ecx,[MemSize]
 	mov	edi,eax
 	shr	ecx,1
 	jnc	@F
@@ -757,46 +748,6 @@ fnptrs_setup_done:
 	.286
 
 setup_done:
-cEnd
-
-; does the opposite of setup_double_buf, as a far function
-; so it can be called from Code...
-cProc	cancel_double_buf,<FAR,PUBLIC,NODATA>,<es,ax,bx,cx,dx,si,di>
-cBegin
-	call	stop_double_buf
-
-	; Forget the selectors (but don't free them since
-	; this seems to cause mayhem throughout the LDT...)
-	xor	di,di
-	mov	[VramSel],di
-	mov	[FrontBufSel],di
-	xchg	[BackBufSel],di
-
-	; Unlock the back buffer memory
-	test	di,di
-	jz	@F
-	cCall	GetSelectorBase,<di>
-	xchg	di,ax
-	mov	si,dx
-
-	mov	ax,601h				; Unlock linear region
-	mov	bx,si
-	mov	cx,di
-	mov	si,[BackBufSize.hi]
-	mov	di,[BackBufSize.lo]
-	shl	di,1
-	rcl	si,1
-	int	31h
-
-@@:	; and free it.
-	mov	ax,502h				; Free memory block
-	mov	di,[BackBufDPMIHdl.lo]
-	mov	si,[BackBufDPMIHdl.hi]
-	int	31h
-
-	; the least we can offer in this case is write-through, so reading
-	; from the screen mightn't always be so painfully slow...
-	call	enable_wrthru
 cEnd
 
 ;--------------------------------------------------------------------------;
@@ -833,7 +784,7 @@ cBegin
 	push	edi
 	mov	es,[FrontBufSel]
 	xor	eax,eax
-	mov	ecx,[BackBufSize]
+	mov	ecx,[MemSize]
 	mov	edi,eax
 	shr	ecx,1
 	jnc	@F

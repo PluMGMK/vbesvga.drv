@@ -20,7 +20,6 @@ include genconst.inc
 include bblt.inc
 include bitblt.var
 include compblt.inc
-include vgautil.inc
 
 externA __NEXTSEG
 externFP far_set_bank_select	; in BANK.INC
@@ -482,10 +481,71 @@ WST_PAGE_PTR_OFFSET1 = $ - wt1 + 2
 WST_INCDEC_OFFSET = $ - wt1
 WST_PAGE_PTR_OFFSET2 = $ - wt2 + 2
 
+;	these are the special cases where inner_loop_count == 1
+
+wrap_screen_special_srcminus:
+	cmp	si,-1		;SI == -1 if we've just wrapped back from zero
+	jne	@F
+	mov	dx,ss:[1234H]	;1234H becomes offset of src_page
+wsssm1:	dec	dx
+	mov	ss:[1234H],dx	;1234H becomes offset of src_page
+wsssm2:	call	far_set_bank_select
+@@:
+
+WSSSM_SIZE = $ - wrap_screen_special_srcminus
+WSSSM_PAGE_PTR_OFFSET1 = $ - wsssm1 + 2
+WSSSM_PAGE_PTR_OFFSET2 = $ - wsssm2 + 2
+
+wrap_screen_special_srcplus:
+	test	si,si		;SI == 0 if we've just wrapped up from -1
+	jnz	@F
+	mov	dx,ss:[1234H]	;1234H becomes offset of src_page
+wsssp1:	inc	dx
+	mov	ss:[1234H],dx	;1234H becomes offset of src_page
+wsssp2:	call	far_set_bank_select
+@@:
+
+WSSSP_SIZE = $ - wrap_screen_special_srcplus
+WSSSP_PAGE_PTR_OFFSET1 = $ - wsssp1 + 2
+WSSSP_PAGE_PTR_OFFSET2 = $ - wsssp2 + 2
+
+wrap_screen_special_dstminus:
+	cmp	di,-1		;DI == -1 if we've just wrapped back from zero
+	jne	@F
+	mov	dx,ss:[1234H]	;1234H becomes offset of dst_page
+wssdm1:	dec	dx
+	mov	ss:[1234H],dx	;1234H becomes offset of dst_page
+wssdm2:	call	far_set_bank_select
+@@:
+
+WSSDM_SIZE = $ - wrap_screen_special_dstminus
+WSSDM_PAGE_PTR_OFFSET1 = $ - wssdm1 + 2
+WSSDM_PAGE_PTR_OFFSET2 = $ - wssdm2 + 2
+
+wrap_screen_special_dstplus:
+	test	di,di		;DI == 0 if we've just wrapped up from -1
+	jnz	@F
+	mov	dx,ss:[1234H]	;1234H becomes offset of dst_page
+wssdp1:	inc	dx
+	mov	ss:[1234H],dx	;1234H becomes offset of dst_page
+wssdp2:	call	far_set_bank_select
+@@:
+
+WSSDP_SIZE = $ - wrap_screen_special_dstplus
+WSSDP_PAGE_PTR_OFFSET1 = $ - wssdp1 + 2
+WSSDP_PAGE_PTR_OFFSET2 = $ - wssdp2 + 2
+
 PUBLIC	compile_inner_loop_wraps
 compile_inner_loop_wraps	PROC	NEAR
 
-	test	[device_flags],DEVFLAG_SRC_SCAN_X_SEG
+	; first of all, if inner_loop_count is 1, then the wrap check
+	; isn't needed at all, and is skipped in compile_inner_loop_start,
+	; so skip it here too!
+	cmp	word ptr inner_loop_count,1
+	jne	@F
+	jmp	wrap_special
+
+@@:	test	[device_flags],DEVFLAG_SRC_SCAN_X_SEG
 	jz	dstwrap
 	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
 	jz	dstwrap	; we don't support wrapping memory segments (not needed)
@@ -537,6 +597,54 @@ dstwrap:
 	mov	es:[di - 1],al
 
 donewrap:
+	ret
+
+wrap_special:
+	test	[device_flags],DEVFLAG_SRC_SCAN_X_SEG
+	jz	dstwrap_special
+	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
+	jz	dstwrap_special	; we don't support wrapping memory segments (not needed)
+
+	lea	si,wrap_screen_special_srcplus
+	mov	cx,WSSSP_SIZE
+
+	or	word ptr src_xExt_bytes,0
+	jns	@F
+	lea	si,wrap_screen_special_srcminus
+	mov	cx,WSSSM_SIZE
+
+@@:	rep	movs byte ptr es:[di], cs:[si]
+	lea	cx,src_page
+; things are much easier when we have the same pointer offsets in the templates
+; for Y- and Y+ blits!
+.errnz	WSSSP_PAGE_PTR_OFFSET1 - WSSSM_PAGE_PTR_OFFSET1
+.errnz	WSSSP_PAGE_PTR_OFFSET2 - WSSSM_PAGE_PTR_OFFSET2
+	mov	es:[di - WSSSP_PAGE_PTR_OFFSET1],cx
+	mov	es:[di - WSSSP_PAGE_PTR_OFFSET2],cx
+
+dstwrap_special:
+	test	word ptr [device_flags],DEVFLAG_DST_SCAN_X_SEG
+	jz	donewrap
+	test	word ptr [device_flags],DEVFLAG_DST_SCREEN
+	jz	donewrap; we don't support wrapping memory segments (not needed)
+
+	lea	si,wrap_screen_special_dstplus
+	mov	cx,WSSDP_SIZE
+
+	or	word ptr dst_xExt_bytes,0
+	jns	@F
+	lea	si,wrap_screen_special_dstminus
+	mov	cx,WSSDM_SIZE
+
+@@:	rep	movs byte ptr es:[di], cs:[si]
+	lea	cx,dst_page
+; things are much easier when we have the same pointer offsets in the templates
+; for Y- and Y+ blits!
+.errnz	WSSDP_PAGE_PTR_OFFSET1 - WSSDM_PAGE_PTR_OFFSET1
+.errnz	WSSDP_PAGE_PTR_OFFSET2 - WSSDM_PAGE_PTR_OFFSET2
+	mov	es:[di - WSSDP_PAGE_PTR_OFFSET1],cx
+	mov	es:[di - WSSDP_PAGE_PTR_OFFSET2],cx
+
 	ret
 
 compile_inner_loop_wraps	ENDP

@@ -25,7 +25,6 @@ include njumps.mac
 include bblt.inc
 include bltutil.inc
 include vgareg.inc
-include vgautil.inc
 include blt11.inc
 include blt18.inc
 include blt81.inc
@@ -113,17 +112,17 @@ blt_stack_ok:
 	mov	dst_top_edge,ax
 
 	call	bitblt_prep_dst
-	call	blt_set_directions		;set x,y blt directions
 
 	lea	ax,pattern_space		;just in case pattern offset
 	mov	pattern_offset,ax		; is accessed later
         test    rop_flags,PATTERN_PRESENT
 	je	@F
-	call	bitblt_prep_pattern		;if carry set on return, there
 
+	call	bitblt_prep_pattern		;if carry set on return, there
         jc      bitblt_error                    ; was problem with the pattern
 
-@@:	call	bitblt_prep_final
+@@:	call	blt_set_directions		;set x,y blt directions
+	call	bitblt_prep_final
 	call	bitblt_dispatch
 	jnc	bitblt_done
 	call	bitblt_execute
@@ -204,8 +203,6 @@ bitblt_prep_rop_etal	PROC	NEAR
 	mov	local_enable_flag,al
 	mov	al,bank_select
 	mov	global_bank,al
-	mov	al,Video_Board_Flags
-	mov	local_board_flags,al
 
 	les	di,lpDrawMode			;these may not be needed but
 	mov	ax,es:[di].bkColor.lo		; putting them on the stack
@@ -314,7 +311,7 @@ bitblt_prep_pattern_rotate:
 	call	pattern_rotate		; pattern rotate, clear Z flag if mono
 
 bitblt_prep_pattern_done:
-	lds	si,lpSrcDev			;restore these pointers
+	lds	si,lpSrcDev		;restore these pointers
 	les	di,lpDestDev
 	clc
 	ret
@@ -433,7 +430,7 @@ bitblt_prep_dst PROC	NEAR
 	mov	ax,xExt
 
 	test	word ptr device_flags,DEVFLAG_DST_COLOR
-	jne	@F
+	jnz	@F
 	mov	bx,DestxOrg			;for mono dst, we need to get
 	mov	cx,ax				; the left and right edge masks
 	call	get_edge_masks_bytes		;the dst x extent IN BYTES =
@@ -471,15 +468,6 @@ zero_alignment:
 	shl	bx,1
 	mov	ax,compile_colour_stos_table[bx-2]
 	mov	[compile_colour_stos],ax
-
-	; this is in the colour section since the screen is never mono
-	test	word ptr device_flags,DEVFLAG_DST_SCREEN
-	je	bitblt_prep_dst_done
-	mov	bx,DestxOrg			; planar mode. When the dst
-	mov	cx,xExt 			; is the screen, this is almost
-	call	get_edge_masks_nibbles		; always the case (think about
-	mov	byte ptr first_edge_mask,bl	; src copy and pattern fills.)
-	mov	byte ptr last_edge_mask,bh
 
 bitblt_prep_dst_done:
 	ret
@@ -695,10 +683,12 @@ bitblt_execute	PROC	NEAR
 	cCall	GetSelectorLimit,<bx>
 	mov	[old_worksel_limit.lo],ax
 	mov	[old_worksel_limit.hi],dx
+	mov	bx,WorkSelector
 	cCall	GetSelectorBase,<bx>
 	mov	[old_worksel_base.lo],ax
 	mov	[old_worksel_base.hi],dx
 
+	mov	bx,WorkSelector
 	cCall	PrestoChangeoSelector,<ss,bx>
 	push	ax				;push compiled code segment
         lea     ax,cblt_code

@@ -54,6 +54,7 @@ WF_CPU486       =    0008h
         externFP        FarDeviceSelectDIB      ; in DIBSEL.ASM
         externFP        StretchBlt              ; in STRETCH.ASM
 	externFP	rgb_to_ipc_seq		; in RGB2IPC.ASM
+	externFP	sum_RGB_alt_far		; in ROBJECT.ASM
 
 ifdef EXCLUSION
 	externFP	exclude_far		; xeclude cursor from blt area
@@ -750,49 +751,79 @@ next_bank	endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                     BX,DX --    unchanged
-;                     AL,CX --    destroyed
+;                           --    unchanged
+;               BX,DX,AL,CX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_1  proc    near
 
-        mov     bx,wptr color_xlate     ; bl=fg color, bh=bk color
-        xor     bh,bl                   ; bl=fg color, bh=(bk ^ fg)
+	; at this point, "color_xlate" points at the physical background colour
+	; and "color_xlate+4" points at the physical foreground colour
+	mov	ax, color_xlate[0].lo
+	mov	dx, color_xlate[0].hi
+	; get fg XOR bg
+	xor	ax, color_xlate[4].lo
+	xor	dx, color_xlate[4].hi
+	; and stash it at "color_xlate+8" since we have plenty of room
+	mov	color_xlate[8].lo, ax
+	mov	color_xlate[8].hi, dx
 
-        call    get_byte                ; al = first byte
-        mov     dh,al                   ; dh = current byte
-        mov     dl,01h                  ; dl = alignment bit
+	; use both nibbles of BL as counters
+	mov	bl,bptr colour_format[1] ; BL := bits per pixel
+	shl	bl, 1	; BYTES per pixel in upper nibble
 
-        mov     ah,cl                   ; save CX
-        mov     cl,bptr SrcX            ; align first byte
-        and     cl,0111b
-        shl     dx,cl
-        mov     cl,ah                   ; restore CX
+copy_1_next_byte:
+	or	bl, 8	; lower nibble
+	lodsb
+	mov	bh, al
 
-copy_1_loop:
-        shl     dh,1                    ; get the next pel into carry
-        sbb     al,al                   ; al = FF if C, 00 if NC
-        and     al,bh                   ; al = (fg ^ bg) if C, 0 if NC
-        xor     al,bl                   ; al = bg if C, fg if NC
-        stosb                           ; write pixel
-        dec     cx
-        jz      copy_1_done             ; another pel?
+; Note:	this could be made more efficient (fewer insts, no stack spillage)
+;       with 386 registers - should look into making it modal
+copy_1_next_pixel:
+	shl	bh, 1
+	sbb	ax, ax
+	cwd
+	and	ax, color_xlate[8].lo	;if 1 select fg XOR bg
+	xor	ax, color_xlate[0].lo	;if 0 select bg
 
-        rol     dl,1                    ; another bit in current byte?
-        jnc     copy_1_loop
+        stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
 
-        lodsb                           ; get next byte into al
-        mov     dh,al                   ; place in dh for loop
-        or      si,si                   ; did we wrap a seg?
-        jnz     copy_1_loop             ; ..no go do some more
+@@:	cmp	bl, 20h			;byte counter (upper nibble) >= 2?
+	jb	copy_1_dec_counter
+	mov	al,ah
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
 
-        mov     ax,ds                   ; ..yes increment selector
-        add     ax,__AHINCR             ; ..and loop
-        mov     ds,ax
-        jmp     copy_1_loop
+@@:	cmp	bl, 30h			;byte counter (upper nibble) >= 3?
+	jb	copy_1_dec_counter
+	mov	ax,dx
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
 
-copy_1_done:
-        ret
+@@:	cmp	bl, 40h			;byte counter (upper nibble) >= 4?
+	jb	copy_1_dec_counter
+	mov	al,ah
+	stosb
+	test	di,di
+	jnz	copy_1_dec_counter
+	call	next_bank
+
+copy_1_dec_counter:
+	dec	bl
+	test	bl, 0Fh			;is lower nibble zero?
+	loopnz	copy_1_next_pixel
+
+	jcxz	@F
+	jmp	copy_1_next_byte
+
+@@:	ret
 
 ;----------------------------------------------------------------------------;
 ;   copy_1 with transparency
@@ -805,7 +836,7 @@ copy_1t:
         cmp     al,bh                   ; is bk color transp?
         je      @f                      ; yes
         cmp     al,bl                   ; is bk color transp?
-        jne     copy_1                  ; no copy normaly
+        ;jne     copy_1                  ; no copy normaly
         not     ah                      ; yes invert mask
         xchg    bl,bh
 @@:     mov     bh,ah                   ; bl = color, bh = mask
@@ -992,8 +1023,8 @@ copy_4  endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                     BX,DX --    unchanged
-;                     AL,CX --    destroyed
+;                        BX --    unchanged
+;                  AL,CX,DX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_8  proc    near
@@ -1007,9 +1038,28 @@ copy_8  proc    near
         and     dx, ax              ; DX amount to copy later
         sub     cx, dx              ; CX contains amount to copy now
 
-copy_8x_loop:
-        REPMOVSBXLAT es:[di], ds:[si], di, ss:[bx]
+	push	dx		    ; put "amount to copy later" on the stack
+	mov	dl,bptr colour_format[1] ; DL := bits per pixel
+	shr	dl,3		    ; DL := bytes per pixel
 
+copy_8x_loop:
+	lodsb
+	xor	ah,ah
+	xchg	ax,si
+	mov	dh,dl		    ; get #bytes into counter
+	shl	si,2		    ; index into DWORD table
+	add	si,bx
+copy_8x_byte:
+	movs	byte ptr es:[di],ss:[si]
+	test	di,di		    ; wrapped bank?
+	jnz	@F
+	call	next_bank
+@@:	dec	dh
+	jnz	copy_8x_byte
+	mov	si,ax
+	loop	copy_8x_loop
+
+	pop	cx		    ; get back "amount to copy later"
         or      si,si
         jz      copy_8x_wrap
         ret
@@ -1019,9 +1069,11 @@ copy_8x_wrap:
         add     ax,__AHINCR
         mov     ds,ax
 
-        or      cx,dx               ; cx <-- dx, note cx==0!
-        jnz     copy_8x_loop
-        ret
+        jcxz	@F
+	push	cx		    ; fix the stack to go through loop again
+	jmp	copy_8x_loop
+
+@@:	ret
 
 ;----------------------------------------------------------------------------;
 ;   copy_8 without a translate table, and without transparency
@@ -1097,13 +1149,15 @@ copy_8  endp
 ;
 ;  Returns:
 ;               DS:SI,ES:DI --    next bytes in respective areas
-;                        DX --    unchanged
-;                  AL,BX,CX --    destroyed
+;                           --    unchanged
+;               DX,AL,BX,CX --    destroyed
 ;----------------------------------------------------------------------------;
 
 copy_24 proc    near
 
 copy_24t:
+	mov	bl,bptr colour_format[1]; BL = bits per pixel
+	shr	bl,3			; BL = bytes per pixel
 
 c24_loop:
         xor     dh,dh
@@ -1124,27 +1178,80 @@ c24_get_rgb:
         lodsb                           ; al=Red, ah=Green, dl=Blue
 
 c24_compare:
-        xchg    dl,al
+
+	test	fbFlags, DEV_PALETTE
+	jz	@F
+        xchg    dl,al			; swap Red/Blue for DeviceColorMatch
         save    <es,cx>
         cCall   DeviceColorMatch, <dx,ax, lpColorInfo>
+	jmp	c24_checktrans
 
+@@:	; this situation is a bit more complicated than DeviceBitmapBits
+	; so we can't use the more efficient rgb_to_ipc_seq... Reasons:
+	; * In DeviceBitmapBits, the input (DIB) can cross a segment
+	;   boundary, but the output (device bitmap) cannot; here both
+	;   can cross a segment boundary, because we're writing directly
+	;   to the firmware-provided framebuffer.
+	; * Here, we may additionally have to deal with transparency.
+	call	sum_RGB_alt_far
+
+c24_checktrans:
         test    fbFlags, MAP_TRANSPARENT
+	mov	bh,bl			; initialize bpp counter
         jnz     c24_transparent_store
 
 c24noconvert:
         stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+	jz	c24_next
+	mov	al,ah
+	stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+	jz	c24_next
+	mov	al,dl
+	stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+	jz	c24_next
+	mov	al,dh
+	stosb
+
+	test	di,di
+	jnz	@F
+	call	next_bank
+@@:
+	dec	bh
+c24_next:
         loop    c24_loop
 
 copy_24_exit:
         ret
 
 c24_transparent_store:
-        cmp     al,bk_color
-        je      @f
-        mov     es:[di],al
-@@:     inc     di
-        loop    c24_loop
-        jmp     copy_24_exit
+        cmp     ax,bk_color.lo
+        jne	c24noconvert
+	cmp	dx,bk_color.hi
+	jne	c24noconvert
+	; right, this pixel is the background colour, so skip it
+	xor	bh,bh			; reset bpp counter
+	add	di,bx			; skip bpp bytes
+	jnc	@F
+	call	next_bank		; increment bank if necessary
+@@:	jmp     c24_next
 
 copy_24 endp
 

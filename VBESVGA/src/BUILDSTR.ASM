@@ -467,16 +467,6 @@ real_build_string endp
 	assumes ss,StrStuff
 
 non_justified_text proc near
-IF	JAK_TEXT
-	test	local_board_flags,BOARD_FLAG_ENABLE_216
-	jz	@F
-        test    excel,IS_DEVICE         ; output to real screen?
-        jz      @F                      ; no, skip the bank select
-	test	accel,IS_OPAQUE
-	jz	@F
-	jmp	jak_non_justified_text
-@@:
-ENDIF
 	mov	ColorPhase,0		; clear the left color clip phase
 	test	al,CLIPPED_LEFT
 	jnz	@F
@@ -2616,7 +2606,7 @@ psdco_print_char:
 	mov	bp,dx			; Restore frame pointer
         mov     buffer,ax               ; Save new buffer pointer
 
-        mov     bh,ch                   ; Save Phase
+        mov     bx,cx                   ; Save CH (ie Phase)
         xor     ch,ch
 ;
 ; possibly clip the length of the next character
@@ -2624,6 +2614,7 @@ psdco_print_char:
 	xchg	cx,ax
 	mul	ss_pixbytes
 	xchg	cx,ax
+	mov	dx,bp			; get frame pointer in DX again
 	cmp	cx,inner_byte_count
 	jle	@F			; not clipped, continue on...
 	mov	cx,inner_byte_count
@@ -2644,10 +2635,12 @@ psdco_print_char:
 ;    SS:DX  -->  Stack frame (including colours)
 ;    CL       =  Font width
 ;    BP       =  Font length
+;    BX       =  Font width in bytes
 ;
 	jcxz	@F
 ;	 int	 3			 ;JAK
-        mov     ch,bh                   ; CL = width CH = phase
+        ;mov     ch,bh                   ; CL = width CH = phase
+        xchg    cx,bx                   ; Restore the Phase
         call    ss_draw                 ; Invoke drawing routine
 ;
 @@:
@@ -2658,10 +2651,7 @@ psdco_print_char:
 ;
         xor     ch,ch
 	mov	ss_clip_mask,ch		; flush the shift count
-	xchg	cx,ax
-	mul	ss_pixbytes
-	xchg	cx,ax
-	sub	inner_byte_count,cx
+	sub	inner_byte_count,bx
 	jg	psdco_print_char
 ;
 ; all done with the list of characters!

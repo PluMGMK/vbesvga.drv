@@ -63,7 +63,7 @@ bltstos_passes		EQU	<[bp - 2E0H]> ;#passes for screen-to-screen copy
 color_xlat_table	EQU	<[bp - 3E0H]>	;for speed, tbl copied to stack
 cblt_code_end           EQU     <[bp - 3DEH]>   ;last byte in cblt_code
 cblt_code		EQU	<[bp - 4E0H]>	;space for compiled blt code
-local_board_flags	EQU	<[bp - 4E2H]>	;Video_Board_Flags onto stack
+;local_board_flags	EQU	<[bp - 4E2H]>	;Video_Board_Flags onto stack
 src_left_edge		EQU	<[bp - 4E4H]>	;leftedge of srcrect after clip
 src_top_edge		EQU	<[bp - 4E6H]>	;topedge of srcrect after clip
 dst_left_edge		EQU	<[bp - 4E8H]>	;leftedge of dstrect after clip
