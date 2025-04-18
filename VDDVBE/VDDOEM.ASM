@@ -734,7 +734,8 @@ VxD_DATA_ENDS
 
 	test	cl,cl			; carry flag was set?
 	jnz	short @F
-	mov	[ebp.Client_AX], AX	; Set mode (AH=0)
+	mov	[ebp.Client_AH], 0	; Set mode
+	mov	[ebp.Client_AL], AL
 	jmp	short smn_regs_setup
 
 @@:	mov	[ebp.Client_AX], 4F02h	; Set mode
@@ -986,15 +987,10 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; the CRTC registers as normal!
 	jz	short oce_not_vbe
 
-	TestMem	[ecx.VDD_Stt.V_Extend.VBE_ModeAttrs],fVModeAttr_NonVGA
-	; if it's NOT VGA-incompatible, then we should be able to
-	; program the CRTC registers as normal!
-	jz	short oce_not_vbe
-
 	; determine the non-VBE mode from the saved state...
 	call	VDD_State_Get_Mode
-	test	ah,ah			;Q: valid mode?
-	jnz	short @F		;   N: skip modeset
+	cmp	eax,-1			;Q: valid mode?
+	je	short @F		;   N: skip modeset
 	; then call the BIOS to reset the VGA to that mode!
 	; set the MSB of AL to indicate we want to preserve VRAM
 	or	al,80h
