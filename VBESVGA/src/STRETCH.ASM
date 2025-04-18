@@ -37,7 +37,6 @@ incDrawMode     = 1             ;Include GDI DrawMode definitions
 	include NJUMPS.MAC
 	.list
 
-;	externA  COLOR_FORMAT           ;Format of device bitmaps (0801)
 	externA  __AHINCR               ;offset to next selector
 	externA  __AHSHIFT              ;offset to next selector
 	externA  __WinFlags             ;WinFlags from KERNEL
@@ -981,35 +980,6 @@ stretch_init PROC NEAR
 
 stretch_init_start_clip:
         lds     si,lpClip
-
-if 0; not needed
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-;
-;   Intersect the GDI clip rect with the output rect (DstX,DstY,DstXE,DstYE)
-;
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-        mov     ax,DstX
-        mov     bx,[si].left
-        max_ax  bx
-        mov     [si].left,ax
-
-        mov     ax,DstX
-        add     ax,DstXE
-        mov     bx,[si].right
-        min_ax  bx
-        mov     [si].right,ax
-
-        mov     ax,DstY
-        mov     bx,[si].top
-        max_ax  bx
-        mov     [si].top,ax
-
-        mov     ax,DstY
-        add     ax,DstYE
-        mov     bx,[si].bottom
-        min_ax  bx
-        mov     [si].bottom,ax
-endif
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ;
