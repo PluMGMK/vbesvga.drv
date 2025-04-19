@@ -2245,6 +2245,7 @@ init_modal_realizations	proc near
 	push	bx
 	; multiply pxbytes by SIZE_PATTERN/2 to get the
 	; number of words in a pattern scanline
+	mov	ax,[pxbytes]
 	mov	bx,ax
 	xor	ah,ah
 	shl	ax,1
