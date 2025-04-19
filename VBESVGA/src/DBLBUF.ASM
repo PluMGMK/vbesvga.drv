@@ -24,6 +24,7 @@ incDevice = 1			;Include control for gdidefs.inc
 	.list
 
 	externA  __WinFlags		;Windows info bit
+	externA  SaveScreenNumWords	;in SWCURS.ASM
 	externFP AllocSelector
 	externFP FreeSelector
 	externFP SetSelectorBase
@@ -39,7 +40,7 @@ sBegin	Data
 ; Selectors
 BackBufSel	dw ?
 FrontBufSel	dw ?
-VramSel	dw ?
+VramSel		dw ?
 
 ; Handle to back-buffer memory block
 BackBufDPMIHdl	dd ?
@@ -63,9 +64,6 @@ fast_timer_irqseg dw 0
 ; Approximate time in milliseconds taken to run swap_buffers
 public	sb_period_ms
 sb_period_ms	dw ?	; swap_buffers period in milliseconds
-
-; User-specified refresh rate
-desired_fps	db 60
 
 externW	cursor_funcs		; in CURSOR.ASM
 externW	cursor_xdraw		; in CURSOR.ASM
@@ -103,6 +101,7 @@ externW		_cstods			; in CURSOR.ASM
 externFP	enable_wrcomb		; in MTRR.ASM
 externFP	enable_wrthru		; in MTRR.ASM
 externFP	disable_wrcomb		; in MTRR.ASM
+externFP	find_mtrrs		; in MTRR.ASM
 
 ; cursor functions
 dbcursor_set	proc near
@@ -514,11 +513,15 @@ TimeKillEvent_name	db "timeKillEvent",0
 ;	addresses and allocating memory for the back-buffer
 ; Entry:
 ;	DS	= Data
-;	The driver must be setup to use a linear framebuffer
+;	ES	= Code (writable)
+;	VESALinearBuf freshly populated with PHYSICAL address
+;	MemSize correctly populated with its size
 ; Returns:
+;	VESALinearBuf populated with LINEAR address (even if not double-buffing)
 ;	BackBufSel,FrontBufSel,VramSel populated, pointing at respective buffers
 ; Error Returns:
-;	BackBufSel and/or FrontBufSel and/or VramSel NULL
+;	VESALinearBuf is zero if the phys-to-linear map failed
+;	BackBufSel and/or FrontBufSel and/or VramSel NULL if not double-buffing
 ; Registers Destroyed:
 ;	FLAGS
 ; Registers Preserved:
@@ -532,12 +535,29 @@ TimeKillEvent_name	db "timeKillEvent",0
 ;--------------------------------------------------------------------------;
 cProc	setup_double_buf,<NEAR,PUBLIC>,<es,ax,bx,cx,dx,si,di,bp>
 cBegin
-	; first of all check if double-buffering is already set up
-	cmp	[VramSel],0
-	jz	@F
+	assumes	es,Code
+	; Get framebuffer size:
+	mov	di,[MemSize.lo]
+	mov	si,[MemSize.hi]
+	; And its location:
+	xor	cx,cx
+	mov	bx,cx
+	; zero it out in case we fail...
+	xchg	cx,[VESALinearBuf.lo]
+	xchg	bx,[VESALinearBuf.hi]
+	; Take this opportunity to check for MTRRs
+	call	find_mtrrs
+	; And call:
+	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
+	int	31h
+	jnc	@F
 	jmp	setup_done
 
-@@:	; has user force-disabled double buffering?
+@@:	; Now we can put the linear address back where we got the physical one
+	mov	[VESALinearBuf.lo],cx
+	mov	[VESALinearBuf.hi],bx
+
+	; has user force-disabled double buffering?
 	cmp	[sb_period_ms],0
 	jnz	@F
 	jmp	setup_done
@@ -585,6 +605,7 @@ cBegin
 	; KERNEL!
 	lea	ax,mmsystem_dll
 	cCall	LoadLibrary,<cs,ax>
+	assumes	es,nothing ; C function stomps ES
 	cmp	ax,20h	; HINSTANCE_ERROR
 	jnb	@F
 	jmp	setup_done

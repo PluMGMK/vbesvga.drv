@@ -281,7 +281,6 @@ externB		??BigFontFlags
 externW		_cstods		; in CURSOR.ASM
 externW		pxbytes		; in SWCURS.ASM
 externFP	DoInt10h	; in INT10.ASM
-externFP	find_mtrrs	; in MTRR.ASM
 
 ; This goes in the Code segment for ease of access, and in case the
 ; BankSwitch function is included in the buffer (unlikely?)
@@ -1150,6 +1149,26 @@ ModeFound:
 	test	di,di		; returning success?
 	jnz	@F
 
+	; set pxbytes now because we may need it for setup_double_buf
+	mov	al,[VESABPP]
+	shr	al,3	; bits to bytes
+	cbw
+	mov	[pxbytes],ax
+
+	; mark whether or not we end up using a three-byte mode
+	; (in theory this could be used to enable/disable awkward code paths)
+	cmp	al,3
+	jne	@@ah3b
+	inc	ah
+@@ah3b:	mov	[ThreeByte],ah
+
+	; Calculate total framebuffer size:
+	mov	ax,[MemoryWidth]
+	mul	[VESAHeight]
+	; again we may need it for setup_double_buf
+	mov	[MemSize.hi],dx
+	mov	[MemSize.lo],ax
+
 	; Prepare to fix up the far pointer if needed
 	lea	si,VESABankSwitch
 	lea	bx,VESAModeStruct
@@ -1184,25 +1203,14 @@ ifdef	INT3
 public	FindMode_setuplin
 	int	3
 endif
-	; Map the framebuffer into virtual memory if needed.
-	; Start by calculating its size:
-	mov	ax,[MemoryWidth]
-	mul	[VESAHeight]
-	mov	si,dx
-	mov	di,ax
-	; Now just set its location:
-	mov	cx,[VESALinearBuf.lo]
-	mov	bx,[VESALinearBuf.hi]
-	; Take this opportunity to check for MTRRs
-	call	find_mtrrs
-	; And call:
-	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
-	int	31h
+	; Even if we're not doing double buffering, this function handles
+	; mapping the linear framebuffer.
+	call	setup_double_buf
+	; Ensure the map succeeded
+	mov	ax,[VESALinearBuf.lo]
+	or	ax,[VESALinearBuf.hi]
 	mov	di,ERR_PROT_ALLOC
-	jc	FindMode_done
-	; Now we can put the linear address back where we got the physical one
-	mov	[VESALinearBuf.lo],cx
-	mov	[VESALinearBuf.hi],bx
+	jz	FindMode_done
 
 	; IF we're in a linear mode AND the VDD is loaded, then we need to
 	; "artificially" touch the pages in the low-memory (banked) buffer
@@ -1260,19 +1268,6 @@ FindMode_done:
 	mov	byte ptr es:[??BigFontFlags],-1
 
 @@bffisset:
-	mov	al,[VESABPP]
-	shr	al,3	; bits to bytes
-	cbw
-	mov	[pxbytes],ax
-
-	; mark whether or not we end up using a three-byte mode
-	; (in theory this could be used to enable/disable awkward code paths)
-	xor	ah,ah
-	cmp	al,3
-	jne	@F
-	inc	ah
-@@:	mov	[ThreeByte],ah
-
 	mov	dh,[VESAMemModel]
 	xor	dh,VESA_MEM_DIRECT	; zero if NO palette, else non-zero
 	mov	ah,dh
@@ -1368,9 +1363,6 @@ vesa_gdi_fixup	proc near
 	mov	ax,[VESAScanLineLen]
 	mov	cx,ax
         mov     es:[di].bmWidthBytes,ax
-        mul     bx
-        mov     es:[di].bmWidthPlanes.lo,ax
-        mov     es:[di].bmWidthPlanes.hi,dx
 	; set the # of scanlines per segment
 	mov	ax,[VESAWinSize]
 	cwd		; set DX to zero for the DIV we do below
@@ -1403,13 +1395,13 @@ vesa_gdi_fixup	proc near
         mov     ax,wptr es:[di].bmPlanes
 	mov	[ColourFormat],ax
 
-	; and the MemWidth / Size
+	; and the MemWidth
 	mov	ax,es:[di].bmWidthBytes
-	mov	bx,es:[di].bmWidthPlanes.lo
-	mov	cx,es:[di].bmWidthPlanes.hi
 	mov	[MemWidth],ax
-	mov	[MemSize.lo],bx
-	mov	[MemSize.hi],cx
+	mov	ax,[MemSize.lo]
+	mov	dx,[MemSize.hi]
+        mov     es:[di].bmWidthPlanes.lo,ax
+        mov     es:[di].bmWidthPlanes.hi,dx
 
 	; geometry
 	push	bp
@@ -1504,12 +1496,7 @@ vesa_gdi_fixup	proc near
 	; keep a copy of the raster flags in Data, as InitSeg is discardable!
 	mov	ax,es:[si].dpRaster
 	mov	[raster_flags],ax
-
-	; setup double-buffering if possible / necessary
-	test	[Vmode],VESA_FLAG_LINEAR
-	jz	@F
-	call	setup_double_buf
-@@:	ret
+	ret
 vesa_gdi_fixup	endp
 
 
