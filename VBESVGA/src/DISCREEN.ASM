@@ -589,6 +589,14 @@ init_8:
 	cmp	byte ptr colour_format[1],8	; 8 bits per pixel
 	jne	init_done
 
+	; if scanlines don't fit evenly into banks (i.e. not powers of two),
+	; this also isn't a special case...
+	mov	dx,1
+	xor	ax,ax
+	div	[next_screen_scan]
+	test	dx,dx	; check remainder
+	jnz	init_done
+
 ;----------------------------------------------------------------------------;
 ; If we are on a 386, use fast special code.  We will only do this if the
 ; DIB matches the native format of the screen (ie 8 bpp) and transparency is
