@@ -27,7 +27,6 @@ Y_RATE		equ	2			;Y mickeys/pixel rate
 CUR_ROUND_LEFT	equ	0FFF0h			;Round down to a word
 CUR_ROUND_RIGHT equ	0000Fh			;Round up   to a word
 
-;MEMORY_WIDTH	EQU	1024
 NEW_COORDS      EQU     00000001B
 DOUBLE_PUMP	EQU	00000010B
 YES_CURSOR	EQU	00000100B
