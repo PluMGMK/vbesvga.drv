@@ -34,6 +34,7 @@ incDevice = 1				;allow assembly of needed constants
 sBegin	Data
 
         externW ScreenSelector  ; the selector for display memory
+	externD	VDDDBEntry	; in DBLBUF.ASM
 
 public	VDDEntry,Ring3to0,Ring0to3
 	VDDEntry	dd 0	; entry point to Virtual Display Driver
@@ -119,7 +120,6 @@ cBegin
 
 	; now get the ring-transition entry points
 	xor	dx,dx
-	xor	cx,cx
 	mov	ax,000Ah	;VDD ring transition API
 	mov	cx,_TEXT	;desired code segment.
 	call	VDDEntry
@@ -129,6 +129,20 @@ cBegin
 	mov	[Ring3to0.sel],dx
 	mov	[Ring0to3.off],bx
 	mov	[Ring0to3.sel],cx
+
+	; check if there's a double-buf entry point too...
+	mov	dx,"DB"
+	xor	bx,bx
+	mov	ax,000Ah	;VDD ring transition API
+	mov	cx,_TEXT	;pass valid code segment for
+				; backwards compatibility
+	call	VDDEntry
+	cmp	bx,"BD"
+	jne	@F		;Double-Buf API not present.
+	test	cx,cx
+	jnz	@F		;Double-Buf API not present.
+	mov	[VDDDBEntry.off],ax
+	mov	[VDDDBEntry.sel],dx
 
 @@:	mov	ax,1		;no way to have error
 dev_init_exit:

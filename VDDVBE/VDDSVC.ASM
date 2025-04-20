@@ -1811,6 +1811,7 @@ IFDEF DspDrvrRing0Hack
 ;	    EBP = Client stack frame ptr
 ;	    Client_AX = Device function
 ;	    Client_CX = ring 3 CS
+;	    Client_DX = 0
 ;
 ;   EXIT:   Client_DX:AX -> call address to switch to ring 0
 ;	    Client_CX:BX -> call address to switch back to ring 3
@@ -1824,6 +1825,11 @@ VxD_DATA_SEG
 VDD_Return_To_Ring3_CS	dd  0
 EXTRN DspDrvInitFailed:BYTE
 VxD_DATA_ENDS
+
+	; we're gonna multiplex this call to allow the driver to get our
+	; double-buffering service entry point
+	cmp	[ebp.Client_DX],"DB"
+	je	VDD_Init_DspDrv_DblBuf
 
 	mov	eax, [VDD_Return_To_Ring3_CS]
 	or	eax, eax
@@ -1937,6 +1943,49 @@ BeginProc VDD_Jump_To_Ring3, no_log
 	retf				; ret to caller of VDD_Jump_To_Ring0
 
 EndProc VDD_Jump_To_Ring3
+
+
+;******************************************************************************
+;
+;   VDD_Init_DspDrv_DblBuf
+;
+;   DESCRIPTION:
+;
+;   ENTRY:  EBX = VM handle
+;	    EBP = Client stack frame ptr
+;	    Client_AX = Device function
+;	    Client_CX = ring 3 CS
+;	    Client_DX = "DB"
+;
+;   EXIT:   Client_DX:AX -> call address for double-buffering service
+;	    Client_CX = 0 to indicate we recognized the call
+;	    Client_BX = "BD" to indicate we recognized the call
+;
+;   USES:
+;
+;==============================================================================
+	EXTRN	VDD_DblBuf_Service:NEAR	; in DBLBUF.ASM
+BeginProc VDD_Init_DspDrv_DblBuf
+
+	mov	ax, [ebp.Client_DX]	; ax is "DB"
+	xchg	al, ah			; ax is "BD"
+	mov	[ebp.Client_BX], ax
+
+	xor	edx, edx		; no reference data
+	mov	[ebp.Client_CX], dx
+	mov	esi, OFFSET32 VDD_DblBuf_Service
+	VMMCall Allocate_PM_Call_Back
+	jnc	@F
+
+	; if we fail, return zero
+	xor	eax,eax
+
+@@:	mov	[ebp.Client_AX], ax
+	shr	eax, 16
+	mov	[ebp.Client_DX], ax
+	ret
+
+EndProc VDD_Init_DspDrv_DblBuf
 ENDIF
 
 
