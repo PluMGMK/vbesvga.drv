@@ -54,6 +54,7 @@ incDevice	= 1
 	externNP start_double_buf	;Start double-buffering timer if needed
 	externA  PHYS_DEVICE_SIZE	;Size of physical device
 	externA  __WinFlags		;Windows info bit
+        externA  __B800
 	externFP FatalExit
 	externFP AllocSelector		; allocate a new selector
 	externFP PrestoChangeoSelector	; CS <--> DS conversion
@@ -541,8 +542,25 @@ enable_read_profile_fail:
 	int	21h
 	mov	ah,8	; read character from stdin
 	int	21h
-	cCall	FatalExit,<0>
 
+	; Under WIN386 (i.e. in 386 Enhanced Mode), the DOS prompt's cursor gets
+	; reset to the top of the screen after we exit, resulting in a weird
+	; comingling of the prompt with our message. Prevent that by clearing
+	; the framebuffer, but don't do it under DOSX (Standard Mode), which
+	; handles this situation correctly!
+	mov	ax,__WinFlags
+	test	ax,WF_ENHANCED
+	jz	@F
+
+	; clear framebuffer...
+	mov	ax,__B800
+	mov	es,ax
+	xor	di,di
+	mov	ax,720h	; grey-on-black spaces
+	mov	cx,80*25
+	rep	stosw
+
+@@:	cCall	FatalExit,<0>
 	; So FatalExit can return, which is not good enough for a possible
 	; user-facing failure mode! It seems all we can do is exit directly to
 	; DOS! (I know this works because it happened successfully when we were
