@@ -41,6 +41,13 @@ VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
 VESA_ATTR_HWSTEREO	= 0000100000000000b
 VESA_ATTR_DUAL		= 0001000000000000b
 
+; VESA Window Attributes
+VESA_WINATTR_EXISTS	= 00000001b
+VESA_WINATTR_READ	= 00000010b
+VESA_WINATTR_WRITE	= 00000100b
+; Shortcut for the only type of window we know how to use (for now)
+VESA_WINATTR_NORMAL	= VESA_WINATTR_EXISTS+VESA_WINATTR_READ+VESA_WINATTR_WRITE
+
 ; VESA Mode Memory Models
 VESA_MEM_TEXT	= 0
 VESA_MEM_CGA	= 1
@@ -169,6 +176,7 @@ incDevice = 1				;Include control for gdidefs.inc
 	externA  __WinFlags		;Windows info bit
 	externFP AllocSelector		; allocate a new selector
 	externFP FreeSelector		; free an allocated selector
+	externFP GetSelectorBase
 	externFP SetSelectorBase
 	externFP AllocDSToCSAlias
 	externFP AllocCSToDSAlias
@@ -204,6 +212,7 @@ EXTRN	dac_size:byte
 externW	raster_flags		; in BMC_MAIN.ASM
 externD	setramdac
 externD	VDDEntry
+externB	bank_granfac_m1		; in BANK.INC
 
 ; From INT10.ASM
 externW	int10h_ds
@@ -1147,7 +1156,7 @@ ModeFound:
 	assumes	es,Code
 
 	test	di,di		; returning success?
-	jnz	@F
+	jnz	@@segfix_done
 
 	; set pxbytes now because we may need it for setup_double_buf
 	mov	al,[VESABPP]
@@ -1158,9 +1167,9 @@ ModeFound:
 	; mark whether or not we end up using a three-byte mode
 	; (in theory this could be used to enable/disable awkward code paths)
 	cmp	al,3
-	jne	@@ah3b
+	jne	@F
 	inc	ah
-@@ah3b:	mov	[ThreeByte],ah
+@@:	mov	[ThreeByte],ah
 
 	; Calculate total framebuffer size:
 	mov	ax,[MemoryWidth]
@@ -1183,20 +1192,25 @@ ModeFound:
 	call	FixupFarPtr
 	test	ax,ax
 	mov	di,ERR_PROT_ALLOC
-	jz	@F
+	jz	@@segfix_done
 
 	; Fix up the segments too
 	xor	cx,cx		; want data segments!
+	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
+	jz	@F
 	mov	ax,[VESAWinASeg]
 	call	SegToSel
 	mov	[VESAWinASeg],ax
 
+@@:	test	[VESAWinBAttrs],VESA_WINATTR_EXISTS
+	jz	@F
 	mov	ax,[VESAWinBSeg]
 	call	SegToSel
 	mov	[VESAWinBSeg],ax
 
-	xor	di,di	; all good!
-@@:	jmp	FindMode_done
+@@:	xor	di,di	; all good!
+@@segfix_done:
+	jmp	FindMode_done
 
 FindMode_setuplin:
 ifdef	INT3
@@ -1242,12 +1256,28 @@ endif
 	mov	[VESABankSwitch.sel],seg BankSwitchSoft
 	mov	[VESABankSwitch.off],offset BankSwitchSoft
 
-	; Also ensure the window size is correctly set to 64k
-	mov	[VESABankSize],64
+	; Also ensure the window size and granularity are correctly set to 64k
+	mov	ax,64
+	mov	[VESAWinSize],ax
+	mov	[VESAGranularity],ax
+
+	; Our soft window is read-write and definitely exists
+	mov	[VESAWinAAttrs],VESA_WINATTR_NORMAL
 
 	xor	di,di
 FindMode_done:
 	.286
+	test	di,di
+	jnz	@F
+
+	; Before fully committing to the mode, do some sanity checks on the
+	; window. These are guaranteed to pass for a linear mode (since we've
+	; just set all the window attributes ourselves) but should stop us
+	; from making fools of ourselves with banked modes. I reckon that if
+	; one otherwise-suitable mode on a user's system fails these checks,
+	; there's no point in looking for any other modes, so we just crash
+	; back out to ENABLE and get it to display some details...
+	call	vesa_win_sanity_check
 	test	di,di
 	jnz	@F
 
@@ -1309,6 +1339,230 @@ FindMode_done:
 
 FindMode_reterr:
 	mov	ax,di		; get error code
+cEnd
+
+;--------------------------------------------------------------------------;
+; vesa_win_sanity_check
+;	Once the mode structure in _TEXT has been populated, this ensures
+;	that we can use Window A to read/write VRAM in a way that is
+;	compatible with all our code.
+; Entry:
+;	DS	= Data
+;	ES	= Code
+;	
+; Returns:
+;	Error code in DI
+; Registers Destroyed:
+;	AX,DX,DI,FLAGS
+; Registers Preserved:
+;	BX,CX,SI,DS,ES,BP
+; Calls:
+;	Nothing
+; History:
+;	see Git
+;--------------------------------------------------------------------------;
+vesa_win_sanity_check	proc near
+	assumes	es,Code
+
+	; Check 1: is Window A read-write? If not, then it's probably something
+	; like Window A to read and Window B to write, or vice versa, which is
+	; cool, don't get me wrong, but not something we support here...
+	mov	di,ERR_WIN_BADATTR
+	cmp	[VESAWinAAttrs],VESA_WINATTR_NORMAL
+	jne	@F
+
+	; Check 2: is the window size 64k or smaller? We can't address more
+	; than one segment of memory at a time.
+	inc	di
+	.errnz	ERR_WIN_TOOBIG-ERR_WIN_BADATTR-1
+	mov	ax,[VESAWinSize]
+	cmp	ax,64
+	ja	@F
+	; we will reuse the results of this comparison in a minute
+	sahf
+	mov	dx,ax
+
+	; Check 3: is the window size an integer multiple of the granularity?
+	inc	di
+	.errnz	ERR_WIN_BADGRAN-ERR_WIN_TOOBIG-1
+	cbw
+	div	byte ptr [VESAGranularity]
+	test	ah,ah
+	jnz	@F
+	; while we're at it, record the multiplication factor (minus one)
+	dec	al
+	mov	[bank_granfac_m1],al
+	
+	; Check 4: is the window size either 64k or an integer multiple of
+	; the memory width? All the code that handles scanlines crossing
+	; a window boundary assumes those boundaries are at the end of a
+	; segment, i.e. 64k intervals, so don't mess with that assumption!
+	inc	di
+	.errnz	ERR_WIN_BADSIZE-ERR_WIN_BADGRAN-1
+	; get back window size and results of comparison
+	mov	ax,dx
+	lahf
+	je	@@wingood	; if equal, then WinSize == 64k, so we're good
+	; here we know we have WinSize < 64k, since we already discounted 
+	; > 64k in Check 2
+	cbw
+	shl	ax,10		; convert kiB to bytes
+	cwd
+	; FIXME: we do this exact same calculation later on in vesa_gdi_fixup,
+	; but there, unlike here, it's unconditional - even so, a bit wasteful?
+	div	[VESAScanLineLen]
+	test	dx,dx		; check remainder
+	jnz	@F
+@@wingood:
+	xor	di,di		; no error after all!
+
+@@:	ret
+	assumes	es,nothing
+vesa_win_sanity_check	endp
+
+;--------------------------------------------------------------------------;
+; print_bank_info
+;	takes a function pointer to WSPRINTF and uses it to print out a
+;	diagnostic message explaining all the properties of the window(s)
+;	associated with the selected mode.
+; Entry:
+;	DS	= Data
+;	
+; Returns:
+;	outbuf is filled with a message, and it gets printed
+; Registers Destroyed:
+;	AX,BX,CX,DX,FLAGS
+; Registers Preserved:
+;	SI,DI,DS,ES,BP
+; Calls:
+;	WSPRINTF
+;	GetSelectorBase
+; History:
+;	see Git
+;--------------------------------------------------------------------------;
+bankinfo_format	db 13,10
+		db "Selected mode %04lX has the correct resolution and depth, but has the",13,10
+		db "above-mentioned problem with the window attributes.",13,10
+		db "It is unlikely that any other mode supported by your device would have the",13,10
+		db "correct resolution / depth but also have the correct window attributes!",13,10
+		db "Generally, only really old cards seem to do this kind of interesting thing",13,10
+		db "with the windows, so maybe yours has its own proprietary Windows 3.1 driver?",13,10
+		db "If not, please raise an issue on GitHub and I'll see what I can do...",13,10
+		db 13,10
+		db "Window A Attributes: %c%c%c",13,10
+		db "Window B Attributes: %c%c%c",13,10
+		db "Window Granularity:  %u kiB",13,10
+		db "Window Size:         %u kiB",13,10
+		db "Window A Base:       %lX",13,10
+		db "Window B Base:       %lX",13,10
+		db "Scanline Size:       %u bytes",13,10,0
+
+cProc	print_bank_info,<NEAR,PUBLIC,NODATA>,<es,si,di>
+	parmD	wsprintf
+	parmD	outbuf
+cBegin
+	mov	ax,seg VESAWinAAttrs
+	mov	es,ax
+	assumes	es,Code
+
+	; format bank information
+	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
+	; arguments follow, pushed right-to-left...
+
+	; Scanline Size (single word)
+	push	[VESAScanLineLen]
+
+	; Window B Base (dword)
+	xor	ax,ax
+	cwd
+	test	[VESAWinBAttrs],VESA_WINATTR_EXISTS
+	jz	@F
+	push	es
+	cCall	GetSelectorBase,<[VESAWinBSeg]>
+	pop	es
+@@:	push	dx
+	push	ax
+	; Window A Base (dword)
+	xor	ax,ax
+	cwd
+	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
+	jz	@F
+	push	es
+	cCall	GetSelectorBase,<[VESAWinASeg]>
+	pop	es
+@@:	push	dx
+	push	ax
+
+	; Window Size (single word)
+	push	[VESAWinSize]
+	; Window Granularity (single word)
+	push	[VESAGranularity]
+
+	; Window B "Exists" (char)
+	mov	ah,[VESAWinBAttrs]
+	mov	al,'-'
+	test	ah,VESA_WINATTR_EXISTS
+	jz	@F
+	mov	al,'E'
+@@:	push	ax
+	; Window B "Readable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_READ
+	jz	@F
+	mov	al,'R'
+@@:	push	ax
+	; Window B "Writable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_WRITE
+	jz	@F
+	mov	al,'W'
+@@:	push	ax
+
+	; Window A "Exists" (char)
+	mov	ah,[VESAWinAAttrs]
+	mov	al,'-'
+	test	ah,VESA_WINATTR_EXISTS
+	jz	@F
+	mov	al,'E'
+@@:	push	ax
+	; Window A "Readable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_READ
+	jz	@F
+	mov	al,'R'
+@@:	push	ax
+	; Window A "Writable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_WRITE
+	jz	@F
+	mov	al,'W'
+@@:	push	ax
+
+	; Video Mode (dword)
+	xor	ax,ax
+	push	ax
+	push	[Vmode]
+
+	; format and output buffer
+	lea	ax,bankinfo_format
+	push	cs
+	push	ax
+	push	[outbuf.sel]
+	push	[outbuf.off]
+
+	call	[wsprintf]
+	mov	sp,si	; restore stack pointer
+
+	; then print it
+	push	ds
+	lds	di,[outbuf]
+	mov	dx,di
+	add	di,ax	; get length of output string
+	; replace null terminator with dollar terminator
+	mov	byte ptr [di],'$'
+	mov	ah,9	; write string to stdout
+	int	21h
+	pop	ds
 cEnd
 
 ;--------------------------------------------------------------------------;
