@@ -102,7 +102,28 @@ bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
 bad_interval	db	'Swap-buffers interval > 55 ms is not allowed',13,10
 		db	'(Note that a value of 0 disables double buffering)',13,10,'$'
 general_fail	db	'No usable modes found with requested resolution and bit depth',13,10,'$'
+bad_hardware	db	'VESA BIOS says function not supported by current hardware configuration',13,10,'$'
+bad_mode	db	'VESA BIOS says function not supported in current mode',13,10,'$'
+real_alloc_fail	db	'Unrecoverable DOS memory allocation error during mode search',13,10,'$'
+prot_alloc_fail	db	'Unrecoverable memory allocation / mapping error during mode search',13,10,'$'
+bad_win_attr	db	'Suitable mode found, but window A is not read-write',13,10,'$'
+bad_win_toobig	db	'Suitable mode found, but window is bigger than 64 kiB',13,10
+		db	'(the Video RAM window must fit inside a single segment)',13,10,'$'
+bad_win_gran	db	'Suitable mode found, but window size is not an integer multiple of granularity',13,10,'$'
+bad_win_size	db	'Suitable mode found, but scanlines cross window boundaries which are < 64 kiB',13,10
+		db	'(this driver only handles scanlines crossing 64k segment boundaries)',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
+
+; map of return codes from FindMode to error messages
+vesa_err_msgs	dw	offset general_fail
+		dw	offset bad_hardware
+		dw	offset bad_mode
+		dw	offset real_alloc_fail
+		dw	offset prot_alloc_fail
+		dw	offset bad_win_attr
+		dw	offset bad_win_toobig
+		dw	offset bad_win_gran
+		dw	offset bad_win_size
 
 boot_category   db      "VBESVGA.DRV",0
 
@@ -458,6 +479,15 @@ enable_read_profile	PROC	NEAR
 	cCall	FindMode,<[prefer_bank]>
 	test	ax,ax
 	jz	@F
+
+	test	ax,ax
+	jns	@@err
+	neg	ax	; FindMode can return -1 instead of 1!
+@@err:	dec	ax	; these start from 1, not 0!
+	mov	bx,ax
+	shl	bx,1
+	mov	ax,vesa_err_msgs[bx]
+	mov	[fail_reason],ax
 	jmp	enable_read_profile_fail
 	; Vmode should now be set
 
