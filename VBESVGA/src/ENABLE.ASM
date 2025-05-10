@@ -96,8 +96,8 @@ SYSINI	ENDS
 
 ; error messages
 fail_reason	dw	offset general_fail
-bad_width	db	'Width < 640 is not allowed',13,10,'$'
-bad_height	db	'Height < 480 is not allowed',13,10,'$'
+bad_width	db	'Width < 320 is not allowed',13,10,'$'
+bad_height	db	'Height < 200 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
 bad_interval	db	'Swap-buffers interval > 55 ms is not allowed',13,10
 		db	'(Note that a value of 0 disables double buffering)',13,10,'$'
@@ -416,7 +416,7 @@ enable_read_profile	PROC	NEAR
 	lea	bx,width_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
-	cmp	ax,640
+	cmp	ax,320
 	jnb	@F
 	mov	[fail_reason],offset bad_width
 	jmp	enable_read_profile_fail
@@ -426,7 +426,7 @@ enable_read_profile	PROC	NEAR
 	lea	bx,height_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
-	cmp	ax,480
+	cmp	ax,200
 	jnb	@F
 	mov	[fail_reason],offset bad_height
 	jmp	enable_read_profile_fail
