@@ -74,8 +74,8 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 
 |Parameter |Valid values |Meaning |Default value |
 --- | --- | --- | ---
-|`Width` | 640 - 65535 | Width in pixels of the desired video mode | Your monitor's preferred width, or **1024** if no EDID |
-|`Height` | 480 - 65535 | Height in scanlines of the desired video mode | Your monitor's preferred height, or **768** if no EDID |
+|`Width` | 320 - 65535 | Width in pixels of the desired video mode | Your monitor's preferred width, or **1024** if no EDID |
+|`Height` | 200 - 65535 | Height in scanlines of the desired video mode | Your monitor's preferred height, or **768** if no EDID |
 |`Depth` | 8 - 24 | Significant bits per pixel of the desired video mode ("significant" means that padding bits are excluded, so for example if you choose 24, both 24-bit and 32-bit modes will qualify) | 24 |
 |`fontsize` | `small` or `large` | Choose whether to use 96dpi or 120dpi fonts | `small` |
 |`dacdepth` | 6, 8 or `auto` | Significant bits to use per colour in 256-colour modes; `auto` means 8 if the BIOS advertises that 8 is supported, 6 otherwise; if 8 is specified then the driver attempts to use 8 regardless of what the BIOS says! | `auto` |
