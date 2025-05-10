@@ -229,6 +229,8 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
 
 	localB	use_palette_trans	;non-zero iff device uses a palette
         localB  cur_bank
+
+	localW	DstXBytes		;DstX * bytes per pixel
 cBegin
         cld
 
@@ -367,7 +369,7 @@ RleBltEOL:
         mov     di,scan_start       ; get start of scan back
         call    [fn_next_scan]      ; advance to next scan
         mov     scan_start,di
-        add     di,DstX
+        add     di,DstXBytes
         jmp     RleBltNext          ; go get some more
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -607,7 +609,15 @@ bmp_ptr_small:
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 rle_init_success:
         mov     scan_start,di       ; remember the start of scan
-        add     di,DstX
+
+	; calculate offset of starting byte from beginning of scanline
+	mov	ax,DstX
+	mov	dx,[colour_format]  ; DH := bits per pixel
+	shr	dx,3+8		    ; DX := bytes per pixel
+	mul	dx
+	mov	[DstXBytes],ax
+	add	di,ax
+
         lds     si,lpBits
         lea     bx,color_xlat
         clc
