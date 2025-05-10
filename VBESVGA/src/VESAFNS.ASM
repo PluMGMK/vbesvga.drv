@@ -1666,16 +1666,30 @@ vesa_gdi_fixup	proc near
 	mov	bx,[ScreenWidthMM]
 	mov	cx,[ScreenHeightMM]
 	test	bx,bx
-	jnz	@F
+	jnz	screen_size_known
 
 	; we failed to detect the screen width, so calculate it from the height
 	; and the aspect ratio of the specified resolution
+	cmp	bp,640
+	ja	@F
+
+	; if we're on one of those old small CGA/EGA-era resolutions, the geometry
+	; is for a 4:3 screen, even if the pixels are a bit squished!
 	mov	ax,cx
+	shl	ax,2	; multiply by 4
+	cwd
+	mov	bx,3
+	div	bx	; divide by 3
+	mov	bx,ax
+	jmp	screen_size_known
+
+@@:	mov	ax,cx
 	mul	bp
 	div	di
 	mov	bx,ax
 
-@@:	mov	es:[si].dpHorzSize,bx
+screen_size_known:
+	mov	es:[si].dpHorzSize,bx
 	mov	es:[si].dpVertSize,cx
 
 	; calculate parameters related to the physical size
@@ -1743,6 +1757,55 @@ vesa_gdi_fixup	proc near
 	;	  dpVertSize >= 2185, i.e. 2.185 metres - I'd say it's unlikely!
 	div	di
 	mov	es:[si].dpTwpWin.ycoord,ax
+
+	; lastly, correct the pixel aspect ratio if we're using an old sub-640*480 res
+	mov	dl,byte ptr es:[si].dpAspectX
+	mov	dh,byte ptr es:[si].dpAspectY
+	mov	ax,es:[si].dpAspectXY
+
+	cmp	bp,640
+	ja	geometry_done
+	jb	check_320
+
+	cmp	di,480
+	jae	geometry_done
+	; 640*400 is 4:2.5, implying 2.5:3 pixels
+	mov	dl,30	; 36*2.5/3
+	mov	ax,47	; approx sqrt(30^2 + 36^2)
+	cmp	di,400
+	jae	fix_dpi
+	; 640*350: use the values from EGA.ASM
+	mov	dl,38
+	mov	dh,48
+	mov	ax,61
+	cmp	di,350
+	jae	fix_dpi
+	; 640*200 is 4:1.25, implying 1.25:3 pixels
+	mov	dl,20	; 48*1.25/3
+	mov	ax,52	; exactly sqrt(20^2 + 48^2)
+	cmp	di,200
+	jae	fix_dpi
+	; unreachable since DI < 200 is not allowed!
+
+check_320:
+	cmp	bp,320
+	ja	geometry_done
+	cmp	di,200
+	ja	geometry_done
+	; 320*200 is 4:2.5, implying 2.5:3 pixels
+	mov	dl,30	; 36*2.5/3
+	mov	ax,47	; approx sqrt(30^2 + 36^2)
+
+fix_dpi:
+	; first set the new hypotenuse
+	mov	es:[si].dpAspectXY,ax
+	; then correct the DPI aspect ratio based on the pixel one
+	mov	al,byte ptr es:[si].dpLogPixelsX
+	mul	dl
+	div	dh
+	mov	byte ptr es:[si].dpLogPixelsY,al
+
+geometry_done:
 	; done with the geometric calculations
 	pop	di
 	pop	bp
