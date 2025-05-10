@@ -213,6 +213,7 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
         localW  fn_decode_rle           ; function to output a solid scan
         localW  fn_next_scan            ; function to jump in Y
 	localW	fn_stos			; function to store one pixel of xlated colour
+	localW	adv_dest		; function to advance by AX pixels
 	localW	fn_rep_stos		; function to store CX pixels of xlated colours
 	localW	fn_rep_stos_pair	; function to store CX pixels of two xlated colours
 
@@ -507,7 +508,9 @@ rle_init_huge:
 	dec	bx			; 1 Bpp --> offset zero
 	shl	bx,1			; convert index to offset
 	mov	ax,cs:stos_colour_table[bx]
+	mov	dx,cs:adv_dest_table[bx]
 	mov	[fn_stos],ax
+	mov	[adv_dest],dx
 	mov	ax,__WinFlags
 	test	ax,WF_CPU386 OR WF_CPU486
 	jz	@F
@@ -1455,23 +1458,48 @@ clip_rle_clipped:
 
 clip_rle  endp
 
-; advance the pointer ES:DI by AX *pixels*
-adv_dest  proc near
+; advance the pointer ES:DI by AX *pixels* and set CF on wrap
+adv_dest1 proc near
 	add	di,ax
-	cmp	colour_format[1],8	; more than 8bpp?
-	jng	@F
+	ret
+adv_dest1 endp
 
+adv_dest2 proc near
+	shl	ax,1
 	add	di,ax
-	cmp	colour_format[1],16	; more than 16bpp?
-	jng	@F
+	; need to restore AX and also preserve CF
+	adc	al,0
+	shr	ax,1
+	ret
+adv_dest2 endp
 
+adv_dest3 proc near
+	; TODO: is there a way to do this without the stack?
+	push	dx
+	mov	dx,ax
+	shl	ax,1
+	add	ax,dx
 	add	di,ax
-	cmp	colour_format[1],24	; more than 24bpp?
-	jng	@F
+	mov	ax,dx
+	pop	dx
+	ret
+adv_dest3 endp
 
+adv_dest4 proc near
+	shl	ax,2
 	add	di,ax
-@@:	ret
-adv_dest  endp
+	; need to restore AX and also preserve CF
+	adc	al,1	; adds 1 if NC, 2 if CY
+	shr	ax,1	; if we added 1, we get rid of it here
+	shr	ax,1	; if we added 2, it sets CF here
+	ret
+adv_dest4 endp
+
+adv_dest_table	label word
+	dw	offset	adv_dest1
+	dw	offset	adv_dest2
+	dw	offset	adv_dest3
+	dw	offset	adv_dest4
 
 ;--------------------------Public-Routine------------------------------;
 ; stos_colour
