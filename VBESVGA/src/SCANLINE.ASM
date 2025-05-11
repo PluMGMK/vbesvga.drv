@@ -419,19 +419,17 @@ color_main_draw_loop:
 	rol	dh	,cl			;rotate the xpar mask
 
 	mov	cx	,[bx]			;cx = xend
-	add	bx	,2
-
-	xchg	cx	,ax
-	push	dx
-	mov	dl	,pixbytes
-	xor	dh	,dh
-	mul	dx
-	pop	dx
-	xchg	cx	,ax
-
-	sub	cx	,ax			;cx = xend - xstart
+	sub	cx	,[bx-2]			;cx = xend - xstart
+	lea	bx	,[bx+2]
 	jz	color_main_draw_loop_skip
+
+	push	bx
+	mov	bl	,pixbytes
+	xor	bh	,bh
+	shl	bx	,3			;bx = pattern pitch
+	.errnz	SIZE_PATTERN-(1 SHL 3)
 	call	draw_output
+	pop	bx
 
 color_main_draw_loop_skip:
 	dec	count
