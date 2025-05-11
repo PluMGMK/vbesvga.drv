@@ -344,7 +344,8 @@ RleBltDeltaXY:
         mov     cl,ah
         xor     ch,ch               ; cx = deltaY
         mov     ah,ch               ; ax = deltaX
-        call	[fn_adv_dest_checked]; adjust curX
+	; NOT checked since we're not actually going to draw here!
+        call	[fn_adv_dest]       ; adjust curX
 ;
         mov     dx,DstY
         sub     dx,cx               ; adjust curY
@@ -378,7 +379,9 @@ RleBltEOL:
         call    [fn_next_scan]      ; advance to next scan
         mov     scan_start,di
         add     di,DstXBytes
-        jmp     RleBltNext          ; go get some more
+	jnc	@F
+	call	adv_bank
+@@:     jmp     RleBltNext          ; go get some more
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ; We have found a end of rle marker, clean up and exit.
@@ -652,11 +655,10 @@ rle_init_success:
 
 	; calculate offset of starting byte from beginning of scanline
 	mov	ax,DstX
-	mov	dx,[colour_format]  ; DH := bits per pixel
-	shr	dx,3+8		    ; DX := bytes per pixel
-	mul	dx
+	call	[adv_dest_checked]
+	mov	ax,di
+	sub	ax,[scan_start]
 	mov	[DstXBytes],ax
-	add	di,ax
 
         lds     si,lpBits
         lea     bx,color_xlat
