@@ -11,7 +11,7 @@ This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** av
 
 ## Program Manager limitations
 
-When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32*32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 * 32 * (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (accessible only with `Allow3ByteMode=1`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
+When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32*32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 * 32 * (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (not accessible with `Allow3ByteMode=0`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
 
 ## Screenshots
 
@@ -81,7 +81,7 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`dacdepth` | 6, 8 or `auto` | Significant bits to use per colour in 256-colour modes; `auto` means 8 if the BIOS advertises that 8 is supported, 6 otherwise; if 8 is specified then the driver attempts to use 8 regardless of what the BIOS says! | `auto` |
 |`SwapBuffersInterval` | 0 - 55 | Time in milliseconds between buffer swaps if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value of 0 **disables** double-buffering | 16 |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
-|`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits, which are (currently) subject to issues such as #15; disable this to prefer 32-bit modes which give the same colour depth but fewer glitches | 0 |
+|`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits; disable this to prefer 32-bit modes which give the same colour depth but use more RAM | 1 |
 
 ### Example configuration
 
@@ -116,7 +116,7 @@ When Windows boots, the driver queries the BIOS for available modes, and automat
 * Graphics mode (not text)
 * Colour mode (not black & white)
 * Resolution matches what was specified in `SYSTEM.INI`
-* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2 or 4 bytes (or 3 if `Allow3ByteMode=1`)
+* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2, 3 (unless `Allow3ByteMode=0`) or 4 bytes
 * Either packed-pixel or direct-colour framebuffer
 * Significant bit depth (i.e. red+green+blue but without padding) matches what was specified in `SYSTEM.INI`
 
@@ -126,7 +126,7 @@ Note that this automatic search is currently the only way the driver selects mod
 
 ### Having trouble finding compatible modes?
 
-If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly, and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
+If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected), and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
 
 If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output running under DOSBox-X 2024.07.01:
 ```
