@@ -455,7 +455,7 @@ enable_read_profile	PROC	NEAR
 	lea	ax,boot_category
 	lea	bx,allow3b_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1,ds,cx>
 	test	ax,ax
 	jz	@F
 	mov	al,1
