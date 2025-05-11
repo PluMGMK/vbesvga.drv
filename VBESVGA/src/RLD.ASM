@@ -1817,7 +1817,7 @@ rep_stos_colpair2_286	proc near
 	cmp	ax,bx	; colours the same?
 	je	rep_stos_colour2
 
-	mov	dx,ax
+	mov	dx,bx
 	shr	cx,1
 	; if an even number, go straight to the 32-bit routine
 	jnc	rep_stos_colour4_286
@@ -1831,7 +1831,7 @@ rep_stos_colpair2_386	proc near
 	cmp	ax,bx	; colours the same?
 	je	rep_stos_colour2
 
-	mov	dx,ax
+	mov	dx,bx
 	shr	cx,1
 	; if an even number, go straight to the 32-bit routine
 	jnc	rep_stos_colour4_386
