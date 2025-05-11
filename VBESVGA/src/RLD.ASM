@@ -1849,8 +1849,9 @@ rep_stos_colpair4_286	proc near
 	jne	@F
 	cmp	dx,bp
 	je	rep_stos_colour4_286
+	; two STOSWs per colour!
+@@:	shl	cx,1
 
-	shl	cx,1
 @@:	stosw
 	xchg	dx,ax
 	xchg	bx,dx
