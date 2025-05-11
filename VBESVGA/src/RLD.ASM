@@ -1877,8 +1877,6 @@ rep_stos_colpair4_386	proc near
 
 @@:	stosd
 	xchg	eax,ebx
-	stosd
-	xchg	eax,ebx
 	loop	@B
 
 	ror	ebx,10h
