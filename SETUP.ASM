@@ -948,16 +948,17 @@ popnextvidmode:
 	jae	popvidmode_check
 	mov	ah, al
 popvidmode_check:
-	; Not offering 3 byte video modes in config screen until they work better
-	; Once they do; this whole thing becomes much shorter
-	;test	ah, 7
-	;jnz	popnextvidmode	; Unusable (not byte aligned)
-	cmp	ah, 8 * 1
-	je	popvidmode_good
-	cmp	ah, 8 * 2
-	je	popvidmode_good
-	cmp	ah, 8 * 4
-	jne	popnextvidmode	; Unusable (not byte aligned)
+	; Current status of VBESVGA: supports any byte-aligned screens
+	; It's been broken in the past and off by default; what was can
+	; come again so long form accepting 1,2,4 is left here commented out.
+	test	ah, 7
+	jnz	popnextvidmode	; Unusable (not byte aligned)
+	;cmp	ah, 8 * 1
+	;je	popvidmode_good
+	;cmp	ah, 8 * 2
+	;je	popvidmode_good
+	;cmp	ah, 8 * 4
+	;jne	popnextvidmode	; Unusable (not 1, 2, or 4 bytes)
 
 popvidmode_good:
 	cmp	cl, 24
@@ -1422,11 +1423,12 @@ foundwindir_nadj:
 	call	copyfile
 	;No error check here as this file isn't ready yet.
 	lea	dx, [vbesvgaexes]
+	mov	si, dx
 	mov	ah, 9
 	int	21h
-	lea	si, [vbesvgaexe]
 	push	di
-	call	stpcpy0
+	call	stpcpydollar
+	mov	byte ptr [di - 1], 0	; There's a space on the end of the string; that goes too
 	pop	di
 	lea	dx, [pname2]
 	xor	cx, cx
@@ -1627,7 +1629,6 @@ vddvbe386	db	"VDDVBE.386", 0
 vidmodescom	db	"VIDMODES.COM", 0
 vbesvgatxt	db	"VBESVGA.TXT", 0
 vbesvgaexes	db	"VBESVGA.EXE $"
-vbesvgaexe	db	"VBESVGA.EXE", 0
 nowindir	db	"Windows directory not found; try running SETUP C:\WINDIR", 13, 10, "$"
 nosysdir	db	"System directory not found or DOSX.EXE missing", 13, 10, "$"
 
