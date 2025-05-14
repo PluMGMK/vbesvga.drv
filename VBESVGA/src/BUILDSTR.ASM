@@ -2619,6 +2619,12 @@ psdco_print_char:
 	jle	@F			; not clipped, continue on...
 	mov	cx,inner_byte_count
 ;
+; we've clipped the byte count, we also need to clip the PIXEL count!
+;
+	mov	ax,cx
+	div	byte ptr ss_pixbytes
+	mov	bl,al
+;
 @@:
 	mov	bp,clipped_font_height	; BP holds the font length
         mov     ax,ss_phases            ; length of map less char width
@@ -2736,6 +2742,12 @@ ppsdco_print_char:
         cmp     cx,inner_byte_count
 	jle	@F			; not clipped, continue on...
         mov     cx,inner_byte_count
+;
+; we've clipped the byte count, we also need to clip the PIXEL count!
+;
+	mov	ax,cx
+	div	byte ptr ss_pixbytes
+	mov	bl,al
 ;
 @@:
 	mov	bp,clipped_font_height	; BP holds the font length
