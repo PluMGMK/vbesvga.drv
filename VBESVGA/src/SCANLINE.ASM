@@ -520,7 +520,7 @@ do_begin_scanline proc near
         mov     bl,[si].bmBitsPixel
         mov     es:[rscan.rstype] ,bl   ;mark the type of the dst dev
 
-        cmp     bl, 8                   ;if there are 8 bits/pixel then
+        cmp     bl, [VScreen_Depth]     ;if there are 8 bits/pixel then
         je      begin_scanline_color    ;  the device is color memory
         cmp     bl, 1                   ;if there are 1 bits/pixel then
         je      begin_scanline_mono     ;  the device is mono
