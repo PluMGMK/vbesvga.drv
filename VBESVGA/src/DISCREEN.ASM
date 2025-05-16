@@ -254,6 +254,8 @@ DEV_PALETTE	equ	0001000000b	; device uses a palette
         localW  draw_proc               ; routine to call to blt a byte/scan
 	localW	SourceBytesPerScanBlt	; no of bytes in map for 1 scan blt
 	localB	bank_select		; track the current bank of display
+
+	localW	scans_copied		; return value
 cBegin
         cld
 
@@ -387,6 +389,7 @@ discreen_not_transparent:
 ; validate the bits/pel count at this point. It has to be 1/4/8 or 24        ;
 ;----------------------------------------------------------------------------;
 	xor	cx,cx			; will build up the serial no
+	mov	scans_copied,cx		; while we're at it, zero our retval
 	IRP	x,<1,4,8,24>
 	cmp	ax,x
 	je	bit_count_ok		; valid count
@@ -700,6 +703,7 @@ blt_next_scan:
 	mov	cx,xExt			; the no of pels to blt
 	push	di
         call    draw_proc               ; do the blt of a scan
+	inc	scans_copied
 	pop	di
 
 	; in case the bank rolled over during that scanline
@@ -1289,7 +1293,7 @@ discreen_exit:
 ifdef	EXCLUSION
 	call	unexclude_far		; re-draw the cursor
 endif
-        mov     ax,1                    ; success code
+        mov     ax,scans_copied         ; success code
 
 discreen_ret:
 
@@ -1552,6 +1556,7 @@ diScreen386i_Start:
 diScreen386i_Start_Scan:
         mov     cx,xExt
         REPMOVSB  es:[edi],ds:[esi]
+	inc	scans_copied
 
         dec     bx
         jz      diScreen386_Exit
@@ -1581,6 +1586,7 @@ diScreen386x_Start:
 diScreen386x_Start_Scan:
         mov     cx,xExt
         REPMOVSBXLAT es:[edi], ds:[esi], di, ss:[bx]
+	inc	scans_copied
 
         dec     yExt
         jz      diScreen386_Exit
