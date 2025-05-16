@@ -2685,6 +2685,7 @@ oor_see_about_middle:
 	push	si			; Save inner loop count
 	push	di			; Save X offset into scan
 	push	ax			; Save first/last mask
+	push	wptr CurVidSel		; Save current bank
 	call	comp_byte_interval
 	jnc	oor_output_both_sides	; There was a left and a right
 ;
@@ -2692,6 +2693,8 @@ oor_see_about_middle:
 ; and output the rectangle.
 ;
 oor_process_rhs:
+	pop	dx			; Restore bank
+	mov	CurVidSel,dl		; (it's only one byte!)
 	pop	ax			; Restore first/last mask
 	pop	di			; Restore X offset
 	pop	si			; Restore inner loop count
@@ -2736,6 +2739,8 @@ oor_output_both_sides:
 ; exist.
 ;
 oor_overlapping_middle:
+	pop	dx			; Restore bank
+	mov	CurVidSel,dl		; (it's only one byte!)
 	pop	bx			; Restore rhs first/last mask
 	pop	dx			; Restore rhs X offset
 	pop	cx			; Restore rhs inner loop count
@@ -2763,6 +2768,7 @@ oor_combine_with_lhs:
 	push	cx			; Save inner loop count
 	push	dx			; Save X offset into scan
 	push	bx			; Save first/last mask
+	push	wptr CurVidSel		; Save current bank
 ;
 oor_output_both_anyway:
 	call	oor_output_one_rect	; Do whatever for lhs
