@@ -1194,7 +1194,7 @@ c24_compare:
 	test	fbFlags, DEV_PALETTE
 	jz	@F
         xchg    dl,al			; swap Red/Blue for DeviceColorMatch
-        save    <es,cx>
+        save    <es,cx,bx>
         cCall   DeviceColorMatch, <dx,ax, lpColorInfo>
 	jmp	c24_checktrans
 
