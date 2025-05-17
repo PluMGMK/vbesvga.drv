@@ -70,6 +70,7 @@ sBegin Data
 	externW		raster_flags		; in BMC_MAIN.ASM
 
         externB         PaletteTranslationTable
+        externB         PaletteModified
         externB         bank_select_byte
 sEnd
 
@@ -269,6 +270,7 @@ cBegin
         cmp     Rop.hi, 00CCh           ; is the ROP SRCCOPY?
         jne     let_gdi_do_it           ; not get out'a here
 
+        mov     dl,PaletteModified	; needed below
 	mov	al,enabled_flag		; error if screen is not enabled
 	or	al,al
         jnz     device_is_enabled
@@ -321,12 +323,17 @@ not_encoded:
 
         mov     bx,es:[di].bkColor.lo       ; get BkColor
         mov     cx,es:[di].bkColor.hi
+
+	test	[fbFlags],DEV_PALETTE       ; using a palette?
+        jz      discreen_not_background     ; no, nothing to do
+	xor	cx,cx                       ; yes, zero all but the "index"
+        mov     bh,cl
+
         or      dl,dl                       ; are we in background mode?
         jz      discreen_not_background     ; no, nothing to do
 
         smov    es,DataBASE                 ; yes, we must pass BkColor
         assumes es,Data                     ; through PaletteTranslateTable
-        xor     bh,bh
         mov     bl,PaletteTranslationTable[bx]
         assumes es,nothing
 
@@ -349,11 +356,6 @@ discreen_not_transparent:
 ;       DS:SI --> BITMAPINFO
 ;----------------------------------------------------------------------------;
 
-; test for souce pointer to be non NULL
-
-        mov     cx,lpBits.sel           ; NULL implies error
-        jcxz    parameter_error         ; can't support NULL pointer
-
         les     di,lpPDevice            ; get the pdevice structure
 	assumes	es,nothing
 
@@ -361,6 +363,11 @@ discreen_not_transparent:
 
 	mov	cx,es:[di].bmType	; test the type of the structure
         jcxz    let_gdi_do_it           ; can't support memory bitmaps here
+
+; test for souce pointer to be non NULL
+
+        mov     cx,lpBits.sel           ; NULL implies error
+        jcxz    parameter_error         ; can't support NULL pointer
 
         mov     ax,word ptr es:[di].bmPlanes
 	cmp	ax,colour_format	; our screen format?
@@ -1526,8 +1533,8 @@ diScreen386 proc NEAR
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ;
-;  Things are ready to go, go into special iner loops depending
-;  on wether we need to do index translation or not
+;  Things are ready to go, go into special inner loops depending
+;  on whether we need to do index translation or not
 ;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
         mov     bl,fbFlags
