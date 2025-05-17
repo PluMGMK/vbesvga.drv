@@ -54,7 +54,6 @@ dst_bank		EQU	<[bp - 2D0H]> ;used in some "DST is SCREEN" blts
 src_page		EQU	<[bp - 2D2H]> ;used in some "SRC is SCREEN" blts
 src_bank		EQU	<[bp - 2D4H]> ;used in some "SRC is SCREEN" blts
 first_edge_mask_count	EQU	<[bp - 2D6H]>
-compile_colour_stos 	EQU	<[bp - 2D8H]> ;depends on bitness of dest
 pattern_row_counter	EQU	<[bp - 2DAH]>
 same_pattern_row_counter  EQU	<[bp - 2DCH]>
 src_more_than_1byte	EQU	<[bp - 2DEH]>
