@@ -36,6 +36,7 @@ extrn	roptable:byte
 extrn	oem_brush_size:word	; in ROBJECT.ASM
 extrn	pxbytes:word		; in SWCURS.ASM
 extrn	_cstods:word		; in CURSOR.ASM
+extrn	??BigFontFlags:byte	; in STRBLT.ASM
 
 ;
 ;	compile_mono_pattern_fetch
@@ -1342,18 +1343,40 @@ COLOR_STOSB_XPAR32_FIX2	=  $ - csx32f2 + 2
 COLOR_STOSB_XPAR32_PTRLW=  $ - csx32pl + 2
 COLOR_STOSB_XPAR32_PTRUB=  $ - csx32pu + 2
 
+color_stosb_xpar_template_32_386:
+	.386
+	mov	bx,di
+	and	bx,11b				;get the phase
+	cmp	bl,3
+	jb	csx33e				;byte 0/1/2, go stash it
+	shl	eax,18h				;get current byte into upper byte of EAX
+	or	eax,0123456H			;this gets updated to bytes 0/1/2
+csx33l:	cmp	eax,012345678H 			;012345678H will become bg colour
+csx33f:	je	csx33pl
+@@:	mov	es:[di-3],eax
+	jmp	short csx33pl
+csx33e:	mov	ss:[bx+05678H],al		;05678H will become csx33l-4
+csx33pl:inc	di
+	.286
+
+COLOR_STOSB_XPAR33_LEN	=  $ - color_stosb_xpar_template_32_386
+COLOR_STOSB_XPAR33_L3B	=  $ - csx33l + 4
+COLOR_STOSB_XPAR33_FIX	=  $ - csx33f + 4
+COLOR_STOSB_XPAR33_PTRL3=  $ - csx33pl + 2
+
 PUBLIC	compile_color_stosb
 compile_color_stosb	PROC	NEAR
 
 	cmp	word ptr background_mode,OPAQUE
 	jne	@F
+	; opaque: we just store the byte at ES:DI, and done
 	mov	al,I_STOSB
 	stosb
 	ret
 
 @@:	cmp	[pxbytes],1
 	ja	@F
-
+	; transparent, 1 byte per pixel
 	lea	si,color_stosb_xpar_template
 	mov	cx,COLOR_STOSB_XPAR_LEN
 	rep	movs byte ptr es:[di], cs:[si]
@@ -1363,7 +1386,8 @@ compile_color_stosb	PROC	NEAR
 
 @@:	cmp	[pxbytes],2
 	ja	@F
-
+	; transparent, 2 bytes per pixel - need to accumulate
+	; them and then check the entire pixel at once
 	lea	si,color_stosb_xpar_template_16
 	mov	cx,COLOR_STOSB_XPAR16_LEN
 	rep	movs byte ptr es:[di], cs:[si]
@@ -1375,7 +1399,8 @@ compile_color_stosb	PROC	NEAR
 
 @@:	cmp	[pxbytes],3
 	ja	@F
-
+	; transparent, 3 bytes per pixel - need to accumulate
+	; them and then check the entire pixel at once
 	lea	si,color_stosb_xpar_template_24
 	mov	cx,COLOR_STOSB_XPAR24_LEN
 	rep	movs byte ptr es:[di], cs:[si]
@@ -1392,7 +1417,12 @@ compile_color_stosb	PROC	NEAR
 	mov	es:[di - COLOR_STOSB_XPAR24_PPHS2],bx
 	ret
 
-@@:	lea	si,color_stosb_xpar_template_32
+@@:	cmp	[??BigFontFlags],0
+	jnz	@F
+	; transparent, 4 bytes per pixel, 286 - need to
+	; accumulate them and then check the entire pixel
+	; at once (in 2-byte chunks)
+	lea	si,color_stosb_xpar_template_32
 	mov	cx,COLOR_STOSB_XPAR32_LEN
 	rep	movs byte ptr es:[di], cs:[si]
 	mov	ax,word ptr bgcolour[0]
@@ -1403,6 +1433,20 @@ compile_color_stosb	PROC	NEAR
 	mov	es:[di - COLOR_STOSB_XPAR32_PTRLW],ax
 	lea	ax,[di - COLOR_STOSB_XPAR32_UB]
 	mov	es:[di - COLOR_STOSB_XPAR32_PTRUB],ax
+	ret
+
+@@:	; transparent, 4 bytes per pixel, 386 - need to
+	; accumulate them and then check the entire pixel
+	; at once (as a single 4-byte unit)
+	lea	si,color_stosb_xpar_template_32_386
+	mov	cx,COLOR_STOSB_XPAR33_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	.386
+	mov	eax,dword ptr bgcolour
+	mov	es:[di - COLOR_STOSB_XPAR33_FIX],eax
+	.286
+	lea	ax,[di - COLOR_STOSB_XPAR33_L3B]
+	mov	es:[di - COLOR_STOSB_XPAR33_PTRL3],ax
 	ret
 
 compile_color_stosb	ENDP
