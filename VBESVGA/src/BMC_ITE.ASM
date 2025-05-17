@@ -1956,25 +1956,11 @@ page
 public	copy_iXe1
 public  copy_iXe1
 copy_iXe1	proc  near
-	; abuse BP to store the bytes per pixel
-	push	bp
-	mov	al,[total_depth_bytes]
-	xor	ah,ah
-	mov	bp,ax
-
 ciXe1_next_byte:
 	mov	bl, 8
 
 ciXe1_next_pixel:
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	bp,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	; advance BP bytes
-	lea	si,[bp+si]
+	call	[lods_pixel]
 	call	ipc_to_rgb_far
 	shr	dh, 1			;get MONO_BIT into CF
 .errnz	MONO_BIT-1
@@ -1986,8 +1972,6 @@ ciXe1_next_pixel:
 	stosb
 
         loop    ciXe1_next_byte         ;next byte
-
-	pop	bp
 	ret
 
 copy_iXe1	endp
@@ -2028,23 +2012,10 @@ page
 	assumes	es, nothing
 
 copy_iXe1_partial proc near
-	; abuse BP to store the bytes per pixel
-	push	bp
-	mov	al,[total_depth_bytes]
-	xor	ah,ah
-	mov	bp,ax
 	mov	bl, 8
 
 ciXe1p_next_pixel:
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	bp,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	; advance BP bytes
-	lea	si,[bp+si]
+	call	[lods_pixel]
 	call	ipc_to_rgb_far
 	shr	dh, 1			;get MONO_BIT into CF
 .errnz	MONO_BIT-1
@@ -2058,7 +2029,6 @@ ciXe1p_next_pixel:
 	shl	bh, cl
 	mov	al, bh
 
-	pop	bp
 	jmp	store_i1_with_seg_check
 
 copy_iXe1_partial endp
@@ -2253,57 +2223,24 @@ page
 
 public	copy_iXe4
 copy_iXe4	proc near
-	mov	bx, cx
-	mov	cl,[total_depth_bytes]
-	; Abuse BP to point at the colour table
-	push	bp
-	lea	bp,color_xlate
-ciXe4_next_byte:
-	mov	ch, 4			;8 pixel/byte -	inner loop count
+	lea	bx,color_xlate
+	shl	cx, 2		;convert CX from 8pixels to bytes (2pixels)
 
 ciXe4_next_pixel:
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	cl,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	call	ipc_to_rgb_far
-	; advance CL bytes
-	mov	dh,ch
-	xor	ch,ch
-	add	si,cx
-	mov	ch,dh
-	cCall	match_to_palette_far,<ss,bp,16>
-	shiftl	al, 4			;use last 4 bits for 1st nibble
-	stosb				;store byte with first pixel
+	call	[lods_pixel]
+	call	ipc_to_rgb_far
+	cCall	match_to_palette_far,<ss,bx,16>
+	shiftl	al, 4		;use last 4 bits for 1st nibble
+	stosb			;store byte with first pixel
 
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	cl,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	call	ipc_to_rgb_far
-	; advance CL bytes
-	mov	dh,ch
-	xor	ch,ch
-	add	si,cx
-	mov	ch,dh
-	cCall	match_to_palette_far,<ss,bp,16>
-        and     al, 0fh                 ;use last 4 bits for 2nd nibble
+	call	[lods_pixel]
+	call	ipc_to_rgb_far
+	cCall	match_to_palette_far,<ss,bx,16>
+        and     al, 0fh         ;use last 4 bits for 2nd nibble
 	jz	@F
-	or	es:[di-1],al		;OR in the second pixel to stored byte
+	or	es:[di-1],al	;OR in the second pixel to stored byte
 
-@@:	dec	ch
-	jnz	ciXe4_next_pixel
-
-	dec	bx
-	jnz	ciXe4_next_byte		;next byte
-
-	pop	bp
+@@:	loop	ciXe4_next_pixel
 	ret
 
 copy_iXe4	endp
@@ -2347,63 +2284,32 @@ page
 	assumes	es, nothing
 
 copy_iXe4_partial proc near
-	mov	ch,cl
-	mov	cl,[total_depth_bytes]
-	; Abuse BP to point at the colour table
-	push	bp
-	lea	bp,color_xlate
+	lea	bx,color_xlate
 ;
 ciXe4p_next_pixel:
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	cl,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	call	ipc_to_rgb_far
-	; advance CL bytes
-	mov	dh,ch
-	xor	ch,ch
-	add	si,cx
-	mov	ch,dh
-	cCall	match_to_palette_far,<ss,bp,16>
+	call	[lods_pixel]
+	call	ipc_to_rgb_far
+	cCall	match_to_palette_far,<ss,bx,16>
 	shiftl	al, 4			;use last 4 bits for 1st nibble
-	dec	ch
+	dec	cl
 	jz	ciXe4p_store
-	mov	bh,al
+	mov	ch,al
 
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	cl,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	call	ipc_to_rgb_far
-	; advance CL bytes
-	mov	dh,ch
-	xor	ch,ch
-	add	si,cx
-	mov	ch,dh
-	cCall	match_to_palette_far,<ss,bp,16>
+	call	[lods_pixel]
+	call	ipc_to_rgb_far
+	cCall	match_to_palette_far,<ss,bx,16>
         and     al, 0fh                 ;use last 4 bits for 2nd nibble
-	dec	ch
-	or	al, bh			;get the 1st nibble
+	dec	cl
+	or	al, ch			;get the 1st nibble
 ciXe4p_store:
 	stosb				;Save the byte
 	or	di, di			;If in the next segment
 	jnz	ciXe4p_check_counter	;  then update the selector
 
-	test	ch,ch
+	test	cl,cl
 	jnz	@F
 
-	mov	ax,bp
-	pop	bp			; need the frame pointer for scanline_count
         cmp     scanline_count,1
-	push	bp
-	mov	bp,ax			; set BP back to what it was
-
 	je	ciXe4p_done		; based on CMP above
 @@:
 	push	ax
@@ -2416,11 +2322,10 @@ ciXe4p_store:
 	pop	ax
 
 ciXe4p_check_counter:
-	test	ch,ch
+	test	cl,cl
 	jnz	ciXe4p_next_pixel
 
 ciXe4p_done:
-	pop	bp
 	ret
 
 copy_iXe4_partial endp
@@ -2573,25 +2478,11 @@ page
 
 public	copy_iXe8
 copy_iXe8       proc near
-	; abuse BP to store the bytes per pixel
-	push	bp
-	mov	al,[total_depth_bytes]
-	xor	ah,ah
-	mov	bp,ax
-
 	mov	bx, cx
 ciXe8_next_byte:
 	mov	cx, 8			;8 pixel/byte
 ciXe8_next_pixel:
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	bp,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	; advance BP bytes
-	lea	si,[bp+si]
+	call	[lods_pixel]
 	call	ipc_to_rgb_far
 	; use two bits for blue, three for green, three for red
 	and	al,11100000b
@@ -2606,7 +2497,6 @@ ciXe8_next_pixel:
 	dec	bx
 	jne	ciXe8_next_byte
 
-	pop	bp
 	ret
 
 copy_iXe8	endp
@@ -2646,22 +2536,8 @@ page
 
 copy_iXe8_partial proc near
 
-	; abuse BP to store the bytes per pixel
-	push	bp
-	mov	al,[total_depth_bytes]
-	xor	ah,ah
-	mov	bp,ax
-
 ciXe8p_next_pixel:
-	; load two bytes (should be safe since scanline boundaries
-	; should be word-aligned)
-	mov	ax,[si]
-	cmp	bp,2
-	jna	@F
-	; load another two if needed
-	mov	dx,[si+2]
-@@:	; advance BP bytes
-	lea	si,[bp+si]
+	call	[lods_pixel]
 	call	ipc_to_rgb_far
 	; use two bytes for blue, three for green, three for red
 	and	al,11100000b
@@ -2678,12 +2554,7 @@ ciXe8p_next_pixel:
 	cmp	cl,1
 	jne	@F
 
-	mov	ax,bp
-	pop	bp			; need the frame pointer for scanline_count
         cmp     scanline_count,1
-	push	bp
-	mov	bp,ax			; set BP back to what it was
-
 	je	ciXe8p_check_counter	; based on CMP above
 @@:
 	push	ax
@@ -2699,7 +2570,6 @@ ciXe8p_check_counter:
 	dec	cl
 	jne	ciXe8p_next_pixel
 
-	pop	bp
 	ret
 
 copy_iXe8_partial endp
