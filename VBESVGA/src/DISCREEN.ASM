@@ -1581,6 +1581,15 @@ diScreen386i_Bank_Underflow:
 diScreen386x:
         lea     bx, color_xlate
 
+	; need to convert four-byte palette table back to single-byte
+	movzx	ebx,bx
+	mov	cx,0FFh
+	mov	edx,1
+@@:	mov	al,ss:[ebx+edx*4]
+	mov	ss:[ebx+edx],al
+	inc	dl
+	loop	@B
+
 diScreen386x_Start:
         movsx   edx,next_map_scan
 diScreen386x_Start_Scan:
