@@ -23,6 +23,7 @@ include compblt.inc
 
 externA __NEXTSEG
 externFP far_set_bank_select	; in BANK.INC
+externB bank_select_byte	; in BANK.INC
 
 .286
 sBegin	Code
@@ -34,6 +35,7 @@ assumes ss,Nothing
 extrn	roptable:byte
 extrn	oem_brush_size:word	; in ROBJECT.ASM
 extrn	pxbytes:word		; in SWCURS.ASM
+extrn	_cstods:word		; in CURSOR.ASM
 
 ;
 ;	compile_mono_pattern_fetch
@@ -1206,6 +1208,40 @@ compile_dst_splitbank_yupdate	PROC	NEAR
 compile_dst_splitbank_yupdate	ENDP
 
 
+; extra logic needed for 24-bit colour stosb at bank boundaries,
+; broken out into a separate far function to avoid cluttering the stack!
+; Entry: DI == 0 or 1, AX = two bytes to store at ES:"DI - 2"
+store_in_prev_bank	PROC	FAR
+	test	di,1
+	jz	@F
+	; if DI == 1, then AH goes in current bank!
+	mov	es:[0],ah
+
+@@:	; go back to previous bank
+	push	ds
+	mov	ds,[_cstods]
+	assumes	ds,Data
+	xor	dh,dh
+	mov	dl,[bank_select_byte]
+	pop	ds
+	assumes	ds,nothing
+	dec	dl
+	call	far_set_bank_select
+
+	test	di,1
+	jz	@F
+	; if DI == 1, then only AL goes in previous bank!
+	mov	es:[-1],al
+	jmp	@@done
+@@:	; if DI == 0, then all of AX goes in previous bank
+	mov	es:[-2],ax
+
+@@done:	; restore the current bank
+	inc	dl
+	call	far_set_bank_select
+	ret
+store_in_prev_bank	ENDP
+
 ;
 ;	compile_color_stosb
 ;
@@ -1216,8 +1252,6 @@ compile_dst_splitbank_yupdate	ENDP
 ;	background color. If the value equals the background color, the
 ;	stosb is skipped; otherwise the value gets stored in the dst bitmap.
 ;	If the blt is not a transparent blt, then the value is always stored.
-
-;	FIXME: Might be worth moving these into InitSeg and copying just one...
 
 color_stosb_xpar_template:
 	cmp	al,034H 			;034H will become the bg color
@@ -1258,10 +1292,12 @@ csx24l:	cmp	ax,01234H 			;01234H will become lower word of bg colour
 csx24f:	jne	@F
 	cmp	dl,056H				;056H will become upper byte of bg colour
 csx24f2:je	csx24p2
-@@:	cmp	di,2
-	jb	@F				;FIXME: go back to previous bank
-	mov	es:[di-2],ax
 @@:	mov	es:[di],dl
+	cmp	di,2
+	jb	@F
+	mov	es:[di-2],ax
+	jmp	short csx24p2
+@@:	call	store_in_prev_bank		;call separate far function
 	jmp	short csx24p2
 csx24e:	mov	ss:[bx+05678H],al		;05678H will become csx24l-2
 csx24pl:inc	byte ptr ss:[05678H]		;05678H will become csx24p-2
