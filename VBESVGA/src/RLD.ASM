@@ -1597,7 +1597,7 @@ adv_bank	endp
 ;
 ; Entry:
 ;       DX:AX	= physical colour
-;	ES:DI --> colour pattern destination (64*bpp bytes)
+;	ES:DI --> colour destination
 ; Returns:
 ;       None
 ; Error Returns:
@@ -1922,6 +1922,7 @@ rep_stos_colpair3	proc near
 	ret
 rep_stos_colpair3	endp
 
+public	stos_colour_table
 stos_colour_table	label word
 	dw	offset	stos_colour1
 	dw	offset	stos_colour2

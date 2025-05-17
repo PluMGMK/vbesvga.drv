@@ -60,3 +60,6 @@ CAN_CROSS_SEG           equ     00010000b
 
 	localB	total_depth_bytes
 	localB	use_palette_trans
+
+	localW	lods_pixel		;ptr to function to load pxbytes
+	localW	stos_pixel		;ptr to function to store pxbytes
