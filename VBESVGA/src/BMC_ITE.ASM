@@ -67,11 +67,6 @@ MONO_BIT		equ	00000001b
 	externFP	match_to_palette_far	; in RGB2IPC.ASM
 
 
-sBegin Data
-	externD 	GetColor_addr		; DeviceColorMatch vector
-sEnd
-
-
 createSeg _DIMAPS,DIMapSeg,word,public,CODE
 sBegin	DIMapSeg
 	assumes	cs, DIMapSeg
