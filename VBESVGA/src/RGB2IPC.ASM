@@ -337,7 +337,7 @@ cBegin
 	; Is it because other colours could change at a moment's notice?
 	; I'm too afraid to change it tbh...
 	mov	si, DataOFFSET Palette
-	cCall	match_to_palette,<ds, si, [SystemPaletteColors]>
+	cCall	match_to_palette,<ds, si, SystemPaletteColors>
 	xor	bx,bx			; zero out BX
 	xchg	bl,al			; AX := 8000h or zero, BX := index
 	shl	bx,1			; BX := offset into table

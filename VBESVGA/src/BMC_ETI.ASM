@@ -74,6 +74,7 @@ sBegin	DIMapSeg
 	assumes	cs, DIMapSeg
 
 	externNP	do_bitmap_computations	; in BMC_MAIN.ASM
+	externNP	OurDeviceColourMatch	; in DISCREEN.ASM
 
 ;----------------------------------------------------------------------------;
 ; The following	table contains the addresses of	the initialization routines  ;
@@ -1323,6 +1324,7 @@ ce24i1convertit:
 	push	ax
 	push	wptr lpColorInfo[2]
 	push	wptr lpColorInfo[0]
+	; still need to use this GDI one for the monochrome case...
         call    DeviceColorMatch
 	jmp	ce24i1converted
 @@:
@@ -1419,6 +1421,7 @@ ce24i1pconvertit:
 	push	ax
 	push	wptr lpColorInfo[2]
 	push	wptr lpColorInfo[0]
+	; still need to use this GDI one for the monochrome case...
         call    DeviceColorMatch        ; get the color for this pel
 	jmp	ce24i1pconverted
 @@:
@@ -1895,16 +1898,13 @@ ce24i8convertit:
 ;
         push    cx
         push    bx
-	push	es
 ;
-        push    dx
-	push	ax
+	xchg	dl,al			; swap Red/Blue
 	push	wptr lpColorInfo[2]
 	push	wptr lpColorInfo[0]
-        call    DeviceColorMatch
+        call    OurDeviceColourMatch
 	mov	bptr LastRGB[3],al
 ;
-        pop     es
 	pop	bx
 	pop	cx
 ;
@@ -2011,16 +2011,13 @@ ce24i8convertit_p:
 ;
         push    cx
         push    bx
-	push	es
 ;
-        push    dx
-	push	ax
+	xchg	dl,al			; swap Red/Blue
 	push	wptr lpColorInfo[2]
 	push	wptr lpColorInfo[0]
-        call    DeviceColorMatch
+        call    OurDeviceColourMatch
 	mov	bptr LastRGB[3],al
 ;
-        pop     es
 	pop	bx
 	pop	cx
 ;
