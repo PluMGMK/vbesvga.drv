@@ -227,7 +227,8 @@ cProc	DibBlt,<NEAR,PUBLIC,PASCAL>,<ds,si,di>
 	parmD	lpClipRect
         parmD   lpColorInfo		; GDI supplied value for color matching
 
-        localD  bk_color                ; background color for TRANSPARENT mode
+        localD  bk_colour               ; background colour for TRANSPARENT mode
+	localB	bk_colour_prexlate	; palette entry that maps onto background colour
 
         localB  fbFlags                 ; flag bytes
 
@@ -326,8 +327,7 @@ not_encoded:
 
 	test	[fbFlags],DEV_PALETTE       ; using a palette?
         jz      discreen_not_background     ; no, nothing to do
-	xor	cx,cx                       ; yes, zero all but the "index"
-        mov     bh,cl
+	xor	bh,bh                       ; yes, zero upper byte
 
         or      dl,dl                       ; are we in background mode?
         jz      discreen_not_background     ; no, nothing to do
@@ -338,8 +338,8 @@ not_encoded:
         assumes es,nothing
 
 discreen_not_background:
-        mov     bk_color.lo,bx
-        mov     bk_color.hi,cx
+        mov     bk_colour.lo,bx
+        mov     bk_colour.hi,cx
 
         or      fbFlags, MAP_TRANSPARENT    ; set flag
 
@@ -561,7 +561,7 @@ endif
 copy_color_table:
         mov     cx,ax
         add     si,wptr [si].biSize     ; DS:SI has the color table
-        call    create_color_table      ; translates the color into indices
+        call    create_colour_table      ; translates the color into indices
 
 no_color_table:
         xor     bh,bh                   ; get the bits per pel serial num
@@ -647,61 +647,11 @@ init_24:
         mov     DeviceColorMatch.sel,dx
         assumes es,nothing
 
-        jmp     init_done
-
-;----------------------------------------------------------------------------;
-; the color convert routine reads a color triplet from the map specific color;
-; table - converts it into an index and stores it in a table on the stack. It;
-; does the conversion for the count of triplets passed in CX                 ;
-;----------------------------------------------------------------------------;
-
-create_color_table	proc	near
-
-; CX     ---  count of triplets to converts
-; DS:SI  ---  place where the color table is stored
-
-        push    ss
-        pop     es
-        lea     di,color_xlate          ; index into xlate table on stack
-
-	test	[fbFlags],DEV_PALETTE
-	jz	colour_table_nopalette
-
-        xor     bl,bl                   ; BL will range from 0-255
-        xor     dx,dx                   ; DX is ident mapping error
-xlate_next_color:
-        lodsw                           ; get palette index from GDI
-        stosw                           ; store it on the stack
-        sub     al,bl                   ; test for a 1<-->1 translate
-        add     dx,ax                   ; accumulate the error
-	mov	ax,0FF00h		; set upper word to indicate palette idx
-	stosw
-        inc     bl
-        loop    xlate_next_color
-
-        or      dx,dx
-        jz      create_color_table_exit
-
-        or      fbFlags,MAP_TRANSLATE   ; not the identity table, set the bit
-        jmp     create_color_table_exit
-
-colour_table_nopalette:
-	mov	bx,320h	; BL:=32 == #bytes we want
-			; BH:=11b --> 4 bytes input, need to swap red and blue
-	call	rgb_to_ipc_seq
-	
-create_color_table_exit:
-	ret
-
-create_color_table	endp
 
 init_done:
 
 ;----------------------------------------------------------------------------;
 ;----------------------------------------------------------------------------;
-        assumes ds,nothing
-	assumes	es,nothing
-
         lds     si,lpBits               ; the strting point of the bits
         les     di,lp_screen            ; the start on the screen
         lea     bx,color_xlate          ; address of the xlate table
@@ -756,6 +706,83 @@ next_bank	proc near
 	assumes	ds,nothing
 	ret
 next_bank	endp
+
+;----------------------------------------------------------------------------;
+; the color convert routine reads a color triplet from the map specific color;
+; table - converts it into an index and stores it in a table on the stack. It;
+; does the conversion for the count of triplets passed in CX                 ;
+;----------------------------------------------------------------------------;
+
+create_colour_table	proc	near
+
+; CX     ---  count of triplets to convert
+; DS:SI  ---  place where the color table is stored
+
+        push    ss
+        pop     es
+        lea     di,color_xlate          ; index into xlate table on stack
+
+	test	[fbFlags],DEV_PALETTE
+	jz	colour_table_nopalette
+
+        xor     bl,bl                   ; BL will range from 0-255
+        xor     dx,dx                   ; DX is ident mapping error
+xlate_next_color:
+        lodsw                           ; get palette index from GDI
+        stosw                           ; store it on the stack
+        sub     al,bl                   ; test for a 1<-->1 translate
+        add     dx,ax                   ; accumulate the error
+	mov	ax,0FF00h		; set upper word to indicate palette idx
+	stosw
+        inc     bl
+        loop    xlate_next_color
+
+        or      dx,dx
+        jz      create_colour_table_checkxpar
+
+        or      fbFlags,MAP_TRANSLATE   ; not the identity table, set the bit
+        jmp     create_colour_table_checkxpar
+
+colour_table_nopalette:
+	mov	bx,320h	; BL:=32 == #bytes we want
+			; BH:=11b --> 4 bytes input, need to swap red and blue
+	call	rgb_to_ipc_seq
+
+create_colour_table_checkxpar:
+	test	[fbFlags],MAP_TRANSPARENT
+	jz	create_colour_table_exit
+
+	; figure out which palette entry (if any) maps to our bg colour,
+	; by going back down through them from the top.
+	lea	cx,color_xlate
+	sub	cx,di
+	neg	cx
+	shr	cx,2	; count DWORDs
+
+	; load the background colour to check it
+	mov	ax,bk_colour.lo
+	mov	dx,bk_colour.hi
+
+colour_table_xpar_loop:
+	lea	di,[di-4]
+	cmp	dx,es:[di+2]
+	jne	@F
+	cmp	ax,es:[di]
+@@:	loopne	colour_table_xpar_loop
+
+	; at this point, CX is the INDEX of the colour match we found
+	; (or it might be zero, and ZF clear, if no match found)
+	jne	@F
+	mov	[bk_colour_prexlate],cl
+	jmp	create_colour_table_exit
+
+@@:	; if NE, then we didn't find any match, so there is no transparency!
+	and	[fbFlags],NOT MAP_TRANSPARENT
+
+create_colour_table_exit:
+	ret
+
+create_colour_table	endp
 
 ;----------------------------------------------------------------------------;
 ;                       copy_1
@@ -820,7 +847,11 @@ copy_1_next_pixel:
 
 @@:	cmp	bl, 30h			;byte counter (upper nibble) >= 3?
 	jb	copy_1_dec_counter
+
 	mov	ax,dx
+	and	ax, color_xlate[8].hi	;if 1 select fg XOR bg
+	xor	ax, color_xlate[0].hi	;if 0 select bg
+
 	stosb
 	test	di,di
 	jnz	@F
@@ -848,49 +879,91 @@ copy_1_dec_counter:
 ;   copy_1 with transparency
 ;----------------------------------------------------------------------------;
 copy_1t:
-        mov     al,bk_color
+        mov     al,bk_colour_prexlate
         mov     ah,0FFh                 ; mask = FF
-        mov     bx,wptr color_xlate     ; bl=fg color, bh=bk color
 
-        cmp     al,bh                   ; is bk color transp?
+        cmp     al,1                    ; is bk color transp?
         je      @f                      ; yes
-        cmp     al,bl                   ; is bk color transp?
+        test    al,al                   ; is fg color transp?
         ;jne     copy_1                  ; no copy normaly
         not     ah                      ; yes invert mask
-        xchg    bl,bh
-@@:     mov     bh,ah                   ; bl = color, bh = mask
 
+	; move colour 1 into colour 0 slot, so we can use the same
+	; slot further down regardless of the mask value
+	mov	bx,color_xlate[4].lo
+	mov	dx,color_xlate[4].hi
+	mov	color_xlate[0].lo,bx
+	mov	color_xlate[0].hi,dx
+@@:     
         call    get_byte                ; al = first byte
-        xor     al,bh                   ; invert byte
+        xor     al,ah                   ; invert byte
         mov     dh,al                   ; dh = current byte
         mov     dl,01h                  ; dl = alignment bit
 
-        mov     ah,cl                   ; save CX
+        mov     bl,cl                   ; save CX
         mov     cl,bptr SrcX            ; align first byte
         and     cl,0111b
         shl     dx,cl
-        mov     cl,ah                   ; restore CX
+        mov     cl,bl                   ; restore CX
+
+	; get the bytes per pixel into BX...
+	mov	bx,[colour_format]
+	shiftr	bx,8+3			; bits in BH --> bytes in BX
 
 copy_1t_loop:
         shl     dh,1                    ; get the next pel into carry
-        jnc     @f
-        mov     es:[di],bl              ; write pixel
-@@:     inc     di
-        dec     cx
+        jnc     copy_1t_skip
+
+	mov	al,bptr color_xlate[0]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	cmp	bl,2
+	jb	copy_1t_dec_counter
+
+	mov	al,bptr color_xlate[1]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	cmp	bl,3
+	jb	copy_1t_dec_counter
+
+	mov	al,bptr color_xlate[2]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	cmp	bl,4
+	jb	copy_1t_dec_counter
+
+	mov	al,bptr color_xlate[3]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	jmp	short copy_1t_dec_counter
+
+copy_1t_skip:
+	add     di,bx
+	jnc	copy_1t_dec_counter
+	call	next_bank
+
+copy_1t_dec_counter:
+	dec     cx
         jz      copy_1t_done            ; another pel?
 
         rol     dl,1                    ; another bit in current byte?
         jnc     copy_1t_loop
 
-        lodsb                           ; get next byte into al
-        xor     al,bh
+        call    get_byte                ; get next byte into al
+        xor     al,ah
         mov     dh,al                   ; place in dh for loop
-        or      si,si                   ; did we wrap a seg?
-        jnz     copy_1t_loop            ; ..no go do some more
-
-        mov     ax,ds                   ; ..yes increment selector
-        add     ax,__AHINCR             ; ..and loop
-        mov     ds,ax
         jmp     copy_1t_loop
 
 copy_1t_done:
@@ -917,7 +990,17 @@ copy_1  endp
 
 copy_4  proc    near
 
-	mov	dx,[colour_format]
+	mov	dl,3			; set DL to a non-multiple-of-four
+	jmp	short @F
+
+;----------------------------------------------------------------------------;
+;   copy_4 with transparency
+;----------------------------------------------------------------------------;
+copy_4t:
+	mov	dl,[bk_colour_prexlate]
+	shl	dl,2			; set DL to transparent colour * 4
+
+@@:	mov	dh,bptr colour_format[1]
 	shr	dh,3			; output bytes per pixel in DH
 
 	push	bp
@@ -930,6 +1013,8 @@ copy_4_lownib:
 	shiftl	al,2			; index the four-byte palette table
 	mov	bp,cx			; save count
 	mov	cl,dh			; refresh bytes per pixel
+	cmp	al,dl			; transparent colour?
+	je	copy_4_lownib_skip
 	mov	ch,al			; save the index
 copy_4_lownib_xlat:
 	xlat	ss:[bx]			; get the mapping index
@@ -941,6 +1026,13 @@ copy_4_lownib_xlat:
 	dec	cl			; any bytes left to write?
 	mov	al,ch
 	jnz	copy_4_lownib_xlat
+	jmp	short copy_4_lownib_done
+copy_4_lownib_skip:
+	xor	ch,ch
+	add	di,cx
+	jnc	copy_4_lownib_done
+	call	next_bank
+copy_4_lownib_done:
 	mov	cx,bp			; get back count
         dec     cx                      ; one more pel done
         jz      copy_4_done
@@ -956,6 +1048,8 @@ copy_4_wrap_resume:
 	shiftr	al,2			; get the high nibble into middle pos
 	mov	bp,cx			; save count
 	mov	cl,dh			; refresh bytes per pixel
+	cmp	al,dl			; transparent colour?
+	je	copy_4_highnib_skip
 	mov	ch,al			; save the index
 copy_4_highnib_xlat:
 	xlat	ss:[bx]			; get the mapping index
@@ -967,6 +1061,13 @@ copy_4_highnib_xlat:
 	dec	cl			; any bytes left to write?
 	mov	al,ch
 	jnz	copy_4_highnib_xlat
+	jmp	short copy_4_highnib_done
+copy_4_highnib_skip:
+	xor	ch,ch
+	add	di,cx
+	jnc	copy_4_highnib_done
+	call	next_bank
+copy_4_highnib_done:
 	mov	cx,bp			; get back count
         mov     al,ah                   ; get back pel
         loop    copy_4_lownib           ; process all the remaining pels
@@ -980,52 +1081,6 @@ copy_4_wrap:
         add     bp,__AHINCR
         mov     ds,bp
         jmp     copy_4_wrap_resume
-
-;----------------------------------------------------------------------------;
-;   copy_4 with transparency
-;----------------------------------------------------------------------------;
-copy_4t:
-        mov     dl,bk_color
-
-        test    SrcX,1                  ; if sign is odd then do low
-        je      copy_4t_loop            ;    nibble of byte
-        call    get_byte                ; process first byte separately
-
-copy_4t_lownib:
-	and	al,0fh			; get the lower 4 bits
-        xlat    ss:[bx]                 ; get the mapping index
-        cmp     al,dl
-        je      @f
-        mov     es:[di],al
-@@:     inc     di
-        dec     cx                      ; one more pel done
-        jz      copy_4t_done
-
-copy_4t_loop:
-        lodsb                           ; get byte
-        or      si,si                   ; check for wrap
-        jz      copy_4t_wrap
-
-copy_4t_wrap_resume:
-	mov	ah,al			; save the byte
-	shiftr	al,4			; get the high nibble into low pos
-        xlat    ss:[bx]                 ; get the mapping index
-        cmp     al,dl
-        je      @f
-        mov     es:[di],al
-@@:     inc     di
-        mov     al,ah                   ; get back pel
-        loop    copy_4t_lownib          ; process all the remaining pels
-
-copy_4t_done:
-	ret
-
-copy_4t_wrap:
-        mov     si,ds
-        add     si,__AHINCR
-        mov     ds,si
-        xor     si,si
-        jmp     copy_4t_wrap_resume
 
 copy_4  endp
 
@@ -1129,30 +1184,54 @@ copy_8t:
         and     dx, ax              ; DX amount to copy later
         sub     cx, dx              ; CX contains amount to copy now
 
-        mov     ah,bk_color         ; get BkColor for compares
+	push	dx		    ; put "amount to copy later" on the stack
+	mov	dl,bptr colour_format[1] ; DL := bits per pixel
+	shr	dl,3		    ; DL := bytes per pixel
 
 copy_8t_loop:
-        lodsb                       ; get the next source byte
-        xlat    ss:[bx]             ; get the mapping index value
-        cmp     al,ah               ; compare to bkColor
-        je      @f
-        mov     es:[di],al          ; xfer it to the screen
-@@:     inc     di
-        loop    copy_8t_loop        ; repeat till all bytes processed
+	lodsb
+	cmp	al,[bk_colour_prexlate]
+	je	copy_8t_skip
 
+	xor	ah,ah
+	xchg	ax,si
+	mov	dh,dl		    ; get #bytes into counter
+	shl	si,2		    ; index into DWORD table
+	add	si,bx
+copy_8t_byte:
+	movs	byte ptr es:[di],ss:[si]
+	test	di,di		    ; wrapped bank?
+	jnz	@F
+	call	next_bank
+@@:	dec	dh
+	jnz	copy_8t_byte
+	mov	si,ax
+	loop	copy_8t_loop
+	jmp	short copy_8t_done
+
+copy_8t_skip:
+	xor	dh,dh
+	add	di,dx
+	jnc	@F
+	call	next_bank
+@@:	loop	copy_8t_loop
+
+copy_8t_done:
+	pop	cx		    ; get back "amount to copy later"
         or      si,si
         jz      copy_8t_wrap
         ret
 
 copy_8t_wrap:
-        mov     si,ds
-        add     si,__AHINCR
-        mov     ds,si
-        xor     si,si
+        mov     ax,ds
+        add     ax,__AHINCR
+        mov     ds,ax
 
-        or      cx,dx               ; cx <-- dx, note cx==0!
-        jnz     copy_8t_loop
-        ret
+        jcxz	@F
+	push	cx		    ; fix the stack to go through loop again
+	jmp	copy_8t_loop
+
+@@:	ret
 
 copy_8  endp
 
@@ -1261,11 +1340,13 @@ copy_24_exit:
         ret
 
 c24_transparent_store:
-        cmp     ax,bk_color.lo
+        cmp     ax,bk_colour.lo
         jne	c24noconvert
-	cmp	dx,bk_color.hi
+	sub	bh,2			; if <= 2 bpp, no need to check DX
+	jbe	@F
+	cmp	dx,bk_colour.hi
 	jne	c24noconvert
-	; right, this pixel is the background colour, so skip it
+@@:	; right, this pixel is the background colour, so skip it
 	xor	bh,bh			; reset bpp counter
 	add	di,bx			; skip bpp bytes
 	jnc	@F
