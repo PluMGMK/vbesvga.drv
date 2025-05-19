@@ -69,6 +69,9 @@ sBegin Data
 
 	externW		raster_flags		; in BMC_MAIN.ASM
 
+	externB		Palette			; in RGB2IPC.ASM
+	externA		NbrOfColours		; in RGB2IPC.ASM
+
         externB         PaletteTranslationTable
         externB         PaletteModified
         externB         bank_select_byte
@@ -249,7 +252,7 @@ DEV_PALETTE	equ	0001000000b	; device uses a palette
 
         localV  color_xlate,1024        ; the local color xlate table (256dword)
 
-        localD  DeviceColorMatch        ; GDI color match routine
+        localD  LastRGB                 ; holds the last RGB value
 
 	localW	colour_format		; copy of this on stack
 
@@ -638,15 +641,6 @@ cant_special_case:
 ;----------------------------------------------------------------------------;
 ;----------------------------------------------------------------------------;
 init_24:
-        mov     ax,DataBASE
-        mov     es,ax
-        assumes es,Data
-        mov     ax,es:GetColor_addr.off
-        mov     dx,es:GetColor_addr.sel
-        mov     DeviceColorMatch.off,ax
-        mov     DeviceColorMatch.sel,dx
-        assumes es,nothing
-
 
 init_done:
 
@@ -1279,10 +1273,18 @@ c24_compare:
 
 	test	fbFlags, DEV_PALETTE
 	jz	@F
-        xchg    dl,al			; swap Red/Blue for DeviceColorMatch
-        save    <es,cx,bx>
-        cCall   DeviceColorMatch, <dx,ax, lpColorInfo>
-	jmp	c24_checktrans
+;
+; if already done, skip the conversion
+;
+        cmp     ax,wptr LastRGB[0]
+	jne	c24_do_devcolourmatch
+	cmp	dl,bptr LastRGB[2]
+	jne	c24_do_devcolourmatch
+	; grab the cached value
+	mov	al,bptr LastRGB[3]
+	xor	ah,ah
+	cwd
+	jmp	short c24_checktrans
 
 @@:	; this situation is a bit more complicated than DeviceBitmapBits
 	; so we can't use the more efficient rgb_to_ipc_seq... Reasons:
@@ -1352,6 +1354,15 @@ c24_transparent_store:
 	jnc	@F
 	call	next_bank		; increment bank if necessary
 @@:	jmp     c24_next
+;
+c24_do_devcolourmatch:
+	mov	wptr LastRGB[0],ax
+	mov	bptr LastRGB[2],dl
+	xor	dh,dh
+        save    <cx,bx>
+        cCall   OurDeviceColourMatch, <lpColorInfo>
+	mov	bptr LastRGB[3],al
+	jmp	c24_checktrans
 
 copy_24 endp
 
@@ -1702,6 +1713,66 @@ diScreen386x_Bank_Underflow:
 
 diScreen386 endp
 .286
+
+;--------------------------Private-Routine------------------------------;
+; OurDeviceColourMatch - like GDI's one but checks system palette first
+;
+; Entry:
+;	AL = red
+;	AH = green
+;	DL = blue
+;
+; Returns:
+;       DX:AX = physical colour matching RGB
+;
+; Registers Preserved:
+;       DS,SI,DI,BP,ES
+; Registers Destroyed:
+;       AX,BX,CX,DX,FLAGS
+;
+; History:
+;       See Git.
+;-----------------------------------------------------------------------;
+        assumes ds,nothing
+        assumes es,nothing
+
+cProc	OurDeviceColourMatch,<NEAR,PUBLIC,PASCAL>,<ds>
+
+	parmD	lpColourInfo	; pointer to GDI info if needed
+
+cBegin
+	mov	bx,DataBASE
+	mov	ds,bx
+	assumes	ds,Data
+
+	lea	bx,Palette
+	xor	cx,cx
+colour_match_loop:
+	cmp	ax,[bx]
+	jne	@F
+	cmp	dl,[bx+2]
+	je	colour_match_found
+@@:	inc	cl
+	lea	bx,[bx+3]
+	cmp	cl,NbrOfColours
+	jb	colour_match_loop
+
+	; not found, go ask GDI
+	xchg	al,dl	; GDI needs blue first, red last
+        save    <es>
+        cCall   [GetColor_addr], <dx,ax, lpColorInfo>
+	jmp	short @F
+
+colour_match_found:
+	; found a match in the system colour table, convert it to an index
+	mov	ax,cx
+	cwd
+	cmp	al,10
+	jb	@F
+	; system colours are 0-9 and 246-255, so add 236 if >= 10
+	add	al,236
+@@:	; done
+cEnd
 
 sEnd
 
