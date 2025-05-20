@@ -184,6 +184,7 @@ dbcursor_sendtovdd:
 
 	mov	es,ax
 	xor	di,di
+	cld
 	; copy save_screen_*
 	lea	si,[save_screen_x]
 	mov	cx,SaveScreenNumWords
@@ -833,6 +834,7 @@ fnptrs_setup_done:
 	push	eax
 	push	ecx
 	push	edi
+	cld
 	mov	es,[BackBufSel]
 	xor	eax,eax
 	mov	ecx,[MemSize]
@@ -903,6 +905,7 @@ start_no_vddapi:
 
 	; eliminate stale data from the front buffer
 	.386
+	cld
 	push	eax
 	push	ecx
 	push	edi
