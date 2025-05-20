@@ -167,3 +167,9 @@ Another example can be seen in the screenshot above, running on real hardware.
 You can see that it lists all detected colour graphics modes, showing their resolutions in typical `Width*Height*NominalBitDepth` form. It then indicates the memory model for each one - only *packed-pixel* and *direct-colour* modes are usable with `VBESVGA.DRV`, so all others say "NG" (no good).
 
 Direct-colour modes may have padding bits in each pixel, so the bit depths for these modes are listed with and without padding. The "S" number is what I call the *significant depth*, which excludes padding bits, and the "T" number is the *total depth*, which is the physical size of a pixel in memory. The driver searches for modes whose significant depths match what is specified in `SYSTEM.INI` (or 24 by default), but also makes sure the total depth is divisible by eight. If it is not divisible by eight, then pixels are not byte-aligned, and so those modes are also "NG" as seen above.
+
+## Windows 3.1 refusing to boot with your GPU?
+
+Windows may get stuck on the logo when you try to boot it with certain graphics card option ROMs. This happens regardless of whether or not you try to use this driver. It may be caused by a stack overflow in the logo code in `WIN.COM` when it tries to do an `int 10h` call. Another manifestation of this, which I have personally experienced, is that Windows boots successfully, but then gets caught in a loop if you try to start a DOS prompt in Standard Mode.
+
+To work around this issue, you can try using the `AUXSTACK.COM` TSR, included in newer releases. Simply run `AUXSTACK.COM` before starting Windows, and it will allocate 1 kiB of Conventional Memory to use as an auxiliary stack and prevent the overflow from occurring. I've only tested it in the specific case I mentioned above (failure to start a DOS prompt in Standard Mode) but hopefully it will also work for other cases...
