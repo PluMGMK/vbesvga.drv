@@ -744,14 +744,20 @@ no_brush_xlat_needed:
 	mov	di	,DataOFFSET rscan.rscolor_pattern
 	; indicate whether mono or colour
 	mov	dl	,bh
+	test	dl	,dl
+	jnz	@F
+	mov	di	,DataOFFSET rscan.rsmono_pattern
 
+@@:	push	di	; save where we started
 	call	prep_pattern_far
+	pop	cx	; get back where we started
+
 	add	sp	,8
         pop     bp
 
 	; figure out how much pattern has been put at ES:DI
-	mov	cx	,di
-	sub	cx	,DataOFFSET rscan.rscolor_pattern
+	sub	cx	,di
+	neg	cx
 	; get length of a single line
 	shr	cx	,3
 	errnz	SIZE_PATTERN-8
