@@ -42,6 +42,7 @@ VxD_CODE_SEG
 	EXTRN	VDD_VM_Mem_Record_VRAM_Mod:NEAR
 	EXTRN	VDD_PH_Mem_Get_Visible_Pages:NEAR
 	EXTRN	VDD_PH_Mem_Save_Sys_Latch_Addr:NEAR
+	EXTRN	VDD_PH_Mem_Reset_Sys_Visible_Pages:NEAR
 	EXTRN	VDD_Ctl_End_Dsp_Crit:NEAR
 	EXTRN	VDD_OEM_Mode_Switch_Done:NEAR
 IFDEF SysVMin2ndBank
@@ -1468,8 +1469,19 @@ VI2F_CantRestore:
 	ClrFlag [edi.VDD_Flags], <fVDD_CanRestore OR fVDD_NoSaveRes>
 
 	VMMCall Test_Sys_VM_Handle		    ;Q: Sys VM?
-	jz	VI2F_SetTrap			    ;	Y: don't free SavedStt
-	xor	eax, eax
+	jne	short @F			    ;	N: go free SavedStt
+	; When display driver did its ENABLE routine, it may have set its
+	; latch address right before doing the "CanRestore" call, and hence
+	; set it's # visible pages and the "Aware" flag.
+	; Right now it's doing its DISABLE routine, so presumably after that
+	; it will no longer be "Aware", and the # visible pages will no
+	; longer be valid because it's going back to text mode.
+	; So, reset all that stuff here too!
+	ClrFlag	[edi.VDD_Flags], <fVDD_DspDrvrAware>
+	call	VDD_PH_Mem_Reset_Sys_Visible_Pages
+	jmp	VI2F_SetTrap
+
+@@:	xor	eax, eax
 	xchg	eax, [edi.VDD_SavedStt]
 	or	eax, eax			    ;Q: have SavedStt mem?
 	jz	VI2F_SetTrap			    ;	N: can't free SavedStt
