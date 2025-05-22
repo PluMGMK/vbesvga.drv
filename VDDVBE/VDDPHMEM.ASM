@@ -2292,9 +2292,11 @@ ap_chk_mapping:
 	jz	short ap_return 		;   N: forced A0 mapping, so exit
 	cmp	ch, 0B0h			;Q: Graphics mapping?
 	jb	short ap_no_mod 		;   Y: leave mapping alone
+	cmp	cl, 0C0h			;Q: Beyond the VRAM range?
+	jnb	short @F			;   Y: definitely remap!
 	cmp	ebx, [Vid_CRTC_VM]		;Q: VM owns CRTC?
 	jz	short ap_No_mod 		;   Y: leave mapping alone
-	sub	cl, ch				;   N: convert to A0 mapping
+@@:	sub	cl, ch				;   N: convert to A0 mapping
 	add	cl,0A0h
 	bts	[edi.VDD_Flags], bVDD_MappedA0	;Q: A0 currently mapped?
 	jc	short ap_return 		;   Y: return
