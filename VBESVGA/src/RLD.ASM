@@ -1899,27 +1899,52 @@ rep_stos_colpair3	proc near
 	or	bx,bp
 	xchg	bl,bh
 
-	test	cx,1	; odd number?
-	jz	@F
+	test	di,1	; at an odd address?
+	jz	@F	; no, go do pairs
 	stosw
 	xchg	dl,al
 	stosb
-	; swap order
-	xchg	bh,al	; since we just did XCHG DL,AL above!
-	xchg	bl,ah
-	xchg	dh,dl
+	dec	cx
+	; Swap order... At this point we have:
+	; * the first colour in AL:AH:DL (since we did XCHG DL,AL above)
+	; * the second colour in BH:BL:DH
+	; We want:
+	; * the first colour in BH:BL:DH
+	; * the second colour in DL:AH:AL
+	; So:
+	; * BH needs to become AL but DL needs to become BH
+	; * BL needs to become AH and vice versa
+	; * DH needs to become DL but AL needs to become DH
+	; The easiest way to accomplish this is to reverse the earlier
+	; XCHG and then just XCHG the usual byte regs holding the
+	; colour components
+	xchg	dl,al	; reverse earlier XCHG
+	xchg	bh,dl	; swap upper byte
+	xchg	bl,ah	; swap middle byte
+	xchg	dh,al	; swap lower byte
 
-@@:	; multiply CX by 3/2
+@@:	; multiply even part of CX by 3/2
+	shr	cx,1
+	pushf		; remember if we carried
 	mov	bp,cx
-	shr	bp,1
+	shl	cx,1
 	add	cx,bp
+	jz	@@check_last
 
-	; FIXME: this could all end up being misaligned...
 @@:	stosw
 	xchg	dx,ax
 	xchg	bx,dx
 	loop	@B
-	ret
+@@check_last:
+	; check if there's a pixel left to do...
+	popf
+	rcl	cx,1
+	jcxz	@F
+	stosw
+	xchg	dl,al
+	stosb
+	dec	cx
+@@:	ret
 rep_stos_colpair3	endp
 
 public	stos_colour_table
