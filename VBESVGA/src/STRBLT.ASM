@@ -2612,22 +2612,24 @@ oor_comp_bottom:
 	not	si
 	and	si,dx			; SI = height of bottom, or 0
 	jz	oor_comp_middle_y
-	mul	next_scan		; AX = offset to start of top scan
-	mov	CurVidSel,dl
+	mul	next_scan		; DX:AX = offset to start of top scan
 ;
 oor_comp_middle_y:
 	mov	di,o_rect.top		; Add o_rect.top and height of top
 	add	di,cx			; area to get middle Y
 ;
 oor_see_if_top_or_bottom:
+	push	dx			; Save bottom bank if applicable
 	mov	dx,si			; If both heights are 0, then
 	or	dx,cx			; no top and no bottom
+	pop	dx			; Get back bottom bank
 	jz	oor_see_about_middle
 ;
 ; There is at least a top or a bottom.  Compute the scan interval
 ; and fill the areas.
 ;
 	push	di			; Save middle area Y
+	push	dx			; Save bottom area Y bank
 	push	ax			; Save bottom area Y offset
 	push	si			; Save bottom area height
 	push	bx			; Save top    area Y offset
@@ -2653,10 +2655,12 @@ oor_see_if_top_or_bottom:
 oor_see_about_bottom:
 	pop	bx			; Get bottom area height
 	pop	cx			; Get bottom area Y offset
+	pop	dx			; Get bottom area Y bank
 	or	bx,bx
 	jz	oor_no_bottom_area	; There is no bottom area
 	add	di,cx			; --> first byte
-	adc	CurVidSel,0
+	adc	dl,dh			; DH should be zero
+	mov	CurVidSel,dl
 	call	opaque_routine
 ;
 oor_no_bottom_area:
