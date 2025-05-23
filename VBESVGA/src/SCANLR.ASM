@@ -134,9 +134,11 @@ cProc	ScanLR,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
 	parmD	color			; color for the search
 	parmW	dir_style		; control and search style
 ;
-	localW	width_bits		; actual width of scan in bits
+	localW	width_bits		; actual width of scan in pixels
 	localW	colour_format		; copy of this on stack
 	localB	is_device		; set non-zero if the device
+	localB	scan_start_bank		; bank for START of scanline
+	localB	scan_crosses_bank	; set non-zero if scanline crosses a bank
 ;
 cBegin
 ;
@@ -150,6 +152,7 @@ WriteAux	<'SCANLR'>
 	assumes ds,nothing
 ;
 	mov	cx,[si].bmType		; Get bitmap type
+	mov	[scan_crosses_bank],cl	; Zero this if not the screen!
 	jcxz	scan_30 		; Device is a memory bitmap
 	mov	is_device,al		; If not enabled, will skip unexclude
 	or	al,al			;   since AL will be 0!
@@ -193,7 +196,15 @@ endif
         mov     di,[si].bmWidthBytes    ; Need screen width in bytes
 	mul	di			; Compute Y starting address
 ;
+	mov	[scan_start_bank],dl
         SET_BANK                        ; do video h/w ram bank select
+;
+	; check if the scanline crosses a bank boundary
+	mov	bx,ax			; get offset within bank
+	add	bx,di			; add scanline width
+	jz	@F			; doesn't count if the crossing is at the very end!
+	sbb	bl,bl			; BL := FFh if carried, 0 otherwise
+@@:	mov	[scan_crosses_bank],bl
 ;
 	mov	bx,x			; Will need X later
         mov     dx,[si].bmWidth
@@ -302,7 +313,8 @@ scan_80:
 	assumes es,nothing
 	cmp	cl,COLOR_OP		; color manipulation?
 	mov	cx,bx			; (load cx with the scan line count)
-        jnz     scan_200                ; no, continue on...
+	je	scan_8bit
+        jmp     scan_200                ; no, continue on...
 
 ;
 ;----------------------------------------------------
@@ -312,28 +324,66 @@ scan_80:
 ; Currently:	DS:SI --> bitmap or display
 ;		ES:SI --> bitmap or display
 ;               BX = X coordinate
+;               CX = X coordinate
 ;		DI = scan line width
 ;
 scan_8bit:
-        add     si,bx                   ; DS:SI --> byte with start pixel
+	xchg	di,si			; we will use SCAS instructions
+	mov	ax,bx
+	cwd
+	mov	bx,[colour_format]
+	shiftr	bx,8+3			; BX := bytes per pixel
+	mul	bx			; AX counts bytes
+
+	mov	bh,[scan_crosses_bank]	; need to check this again
+
+        add     di,ax                   ; ES:DI --> byte with start pixel
+	jnc	@F
+	mov	dl,[scan_start_bank]
+	inc	dl
+	SET_BANK
+
+	; if we're going right, then we don't need to worry about
+	; crossing again...
+	test	dir_style,STEP_LEFT
+	jnz	scan_xbit_pickfunc
+	xor	bh,bh
+	jmp	short scan_xbit_pickfunc
+
+@@:	; no bank crossing to the left of our starting point,
+	; so if we're going left, we don't need to worry about that
+	test	dir_style,STEP_LEFT
+	jz	scan_xbit_pickfunc
+	xor	bh,bh
+
+scan_xbit_pickfunc:
+	dec	bl
+	shl	bl,1			; index into scas_colour_table
+	and	bh,8			; to select the "checked" functions
+	or	bl,bh
+	xor	bh,bh
+	mov	si,cs:scas_colour_table[bx]
 ;
 ; Set cx to be the byte count for searching left.  Must adjust it
 ; to include the byte pixel is in.
 ;
-;   ah  - color to search for (duped in both nibbles)
+;dx:ax  - color to search for
 ;   cx  - remaining pixel count
 ;
         std                             ; set flag for left movement
-        mov     cx,bx
+	mov	bx,-1			; set negative increment for DI
         test    dir_style,STEP_LEFT     ; moving left?
         jnz     scan_8bit_start         ; yes is left
+
         cld                             ; no, clear for right movement
+	mov	bx,1			; set positive increment for DI
         sub     cx,width_bits           ; calc length to right
         not     cx
 
 scan_8bit_start:
         inc     cx
-        mov     ah,color.pcol_Clr       ; load the color
+        mov     ax,color.lo		; load the colour
+        mov     dx,color.hi		; load the colour
 
         test    dir_style, FIND_COLOR   ; looking for a match?
         jz      scan_8bit_find_not_loop ; no, go to other loop
@@ -342,8 +392,7 @@ scan_8bit_start:
 ;   we are searching for pixel that is the given color
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 scan_8bit_find_loop:
-        lodsb                           ; get a new byte
-        cmp     al,ah
+	call	si			; SCAS the pixel
         je      scan_found
         loop    scan_8bit_find_loop
         jmp     scan_not_found          ; hey! not found
@@ -352,8 +401,7 @@ scan_8bit_find_loop:
 ;   we are searching for pixel that is not the given color
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 scan_8bit_find_not_loop:
-        lodsb                           ; get a new byte
-        cmp     al,ah
+	call	si			; SCAS the pixel
         jne     scan_found
         loop    scan_8bit_find_not_loop
         jmp     scan_not_found          ; hey! not found
@@ -579,6 +627,259 @@ scan_290:
 endif
 
 cEnd
+
+;--------------------------Public-Routine------------------------------;
+; scas_colour
+;
+;   Check one pixel of colour in DX:AX
+;
+; Entry:
+;       DX:AX	= physical colour
+;	BX	= +1 if UP, -1 if DN
+;	ES:DI --> colour buffer to check
+; Returns:
+;       ZF set or clear
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP,AX,BX,CX,DX,SI
+; Registers Destroyed:
+;       DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+scas_colour1_checked	proc near
+	sar	bl,1	; BX := 0 if UP, -1 if DN
+	cmp	di,bx	; is DI at the beginning of a bank?
+	jne	@F
+
+	GET_BANK
+	or	bl,1	; restore BX
+	add	dx,bx
+	SET_BANK
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour1
+
+@@:	or	bl,1	; restore BX
+	; fall through
+scas_colour1_checked	endp
+scas_colour1	proc near
+	scasb
+	ret
+scas_colour1	endp
+
+scas_colour2_checked	proc near
+	sar	bl,1	; BX := 0 if UP, -1 if DN
+	and	bl,0FEh	; -2 if DN
+	cmp	di,bx	; is DI at the beginning of a bank?
+	jne	@F
+
+	GET_BANK
+	or	bl,1	; restore BX
+	add	dx,bx
+	SET_BANK
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour2
+
+@@:	or	bl,1	; restore BX
+	; fall through
+scas_colour2_checked	endp
+scas_colour2	proc near
+	scasw
+	ret
+scas_colour2	endp
+
+scas_colour3_checked	proc near
+	test	bh,bh
+	js	scas_colour3_check_neg
+
+	; UP: check if DI is -2, -1 or 0
+	test	di,di
+	jnz	@F
+	; if it's zero, we just cross and load a full colour
+	jmp	scas_colour3_simple_crossing
+
+@@:	cmp	di,-2
+	jnb	@F
+	jmp	scas_colour3
+
+@@:	; if it's -2 or -1, the pixel itself crosses the bank
+	ja	scas_colour3_up_bytethenword
+	; if it's -2, we check one word, cross, then one byte
+	scasw
+	pushf		; save SCAS result
+	push	dx	; preserve upper byte of colour!
+	GET_BANK
+	inc	dl
+	SET_BANK
+	pop	dx	; restore upper byte of colour
+	popf		; restore SCAS result
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour3
+	mov	di,1	; we know where DI goes next
+	; if comparison failed we're done
+	jne	@F
+	; otherwise check upper byte too
+	cmp	es:[0],dl
+@@:	ret
+
+scas_colour3_up_bytethenword:
+	; if it's -1, we check one byte, cross, then one word
+	scasb
+	pushf		; save SCAS result
+	push	dx	; preserve upper byte of colour!
+	GET_BANK
+	inc	dl
+	SET_BANK
+	pop	dx	; restore upper byte of colour
+	popf		; restore SCAS result
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour3
+	mov	di,2	; we know where DI goes next
+	; if comparison failed we're done
+	jne	@F
+	; otherwise check upper word too
+	mov	dh,dl
+	mov	dl,ah
+	cmp	es:[0],dx
+	mov	dl,dh	; restore DL
+@@:	ret
+
+scas_colour3_check_neg:
+	; DN: check if DI is -1, -2 or -3
+	cmp	di,-3
+	; if it's -3, we just cross and load a full colour
+	je	scas_colour3_simple_crossing
+	ja	@F
+	jmp	scas_colour3
+
+@@:	; if it's -2 or -1, the pixel itself crosses the bank
+	cmp	di,-2
+	ja	scas_colour3_dn_wordthenbyte
+	; if it's -2, we check one byte, cross, then one word
+	cmp	es:[0],dl
+	pushf		; save CMP result
+	push	dx	; preserve upper byte of colour!
+	GET_BANK
+	dec	dl
+	SET_BANK
+	pop	dx	; restore upper byte of colour
+	popf		; restore SCAS result
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour3
+	mov	di,-5	; we know where DI goes next
+	; if comparison failed we're done
+	jne	@F
+	; otherwise check lower word too
+	cmp	es:[-2],ax
+@@:	ret
+
+scas_colour3_dn_wordthenbyte:
+	; if it's -1, we check one word, cross, then one byte
+	mov	dh,dl
+	mov	dl,ah
+	cmp	es:[0],dx
+	mov	dl,dh	; restore DL
+	pushf		; save CMP result
+	push	dx	; preserve upper byte of colour!
+	GET_BANK
+	dec	dl
+	SET_BANK
+	pop	dx	; restore upper byte of colour
+	popf		; restore SCAS result
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour3
+	mov	di,-4	; we know where DI goes next
+	; if comparison failed we're done
+	jne	@F
+	; otherwise check lower word too
+	cmp	es:[-1],al
+@@:	ret
+
+scas_colour3_simple_crossing:
+	push	dx	; preserve upper byte of colour!
+	GET_BANK
+	add	dx,bx
+	SET_BANK
+	pop	dx	; restore upper byte of colour
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour3
+	; fall through
+scas_colour3_checked	endp
+scas_colour3	proc near
+	cmp	dl,es:[di+2]
+	je	@F	; if upper byte matches, go check lower word
+	; nothing matches, skip the entire pixel (3 bytes)
+	lea	di,[bx+di]
+	lea	di,[bx+di]
+	lea	di,[bx+di]
+	ret
+
+@@:	scasw
+	; DI has been advanced by two bytes, need to advance it by a third
+	lea	di,[bx+di]
+	ret
+scas_colour3	endp
+
+scas_colour4_checked	proc near
+	sar	bl,1	; BX := 0 if UP, -1 if DN
+	and	bl,0FCh	; -4 if DN
+	cmp	di,bx	; is DI at the beginning of a bank?
+	jne	@F
+
+	push	dx	; preserve upper half of colour!
+	GET_BANK
+	sar	bl,1	; 0 or -2
+	inc	bl	; restore BX
+	add	dx,bx
+	SET_BANK
+	pop	dx	; restore upper half of colour
+	; we've crossed the bank, no more checking needed!
+	mov	si,offset scas_colour4
+
+@@:	sar	bl,1	; 0 or -2
+	inc	bl	; restore BX
+	; fall through
+scas_colour4_checked	endp
+scas_colour4	proc near
+	cmp	dx,es:[di+2]
+	je	@F	; if upper byte matches, go check lower word
+	; nothing matches, skip the entire pixel (4 bytes)
+	shl	bx,2
+	lea	di,[bx+di]
+	sar	bx,2	; clears ZF
+	ret
+
+@@:	scasw
+	; DI has been advanced by two bytes, need to advance it by two more
+	; while preserving ZF
+	lea	di,[bx+di]
+	lea	di,[bx+di]
+	ret
+scas_colour4	endp
+
+scas_colour_table	label word
+	dw	offset	scas_colour1
+	dw	offset	scas_colour2
+	dw	offset	scas_colour3
+	dw	offset	scas_colour4
+	dw	offset	scas_colour1_checked
+	dw	offset	scas_colour2_checked
+	dw	offset	scas_colour3_checked
+	dw	offset	scas_colour4_checked
 
 sEnd	BlueMoonSeg
         end

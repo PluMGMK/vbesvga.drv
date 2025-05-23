@@ -335,6 +335,8 @@ VESAGFieldPos	db ?
 OFF_VESA_BDEPTH	equ $-VESAModeStruct
 VESABFieldSize	db ?
 VESABFieldPos	db ?
+public	PaddingBits
+PaddingBits	label byte
 OFF_VESA_ADEPTH	equ $-VESAModeStruct
 VESAAFieldSize	db ?
 VESAAFieldPos	db ?
@@ -1078,6 +1080,9 @@ FindMode_attrsOK:
 	cmp	al,bl
 	jae	@F
 	mov	al,bl
+	; set the ADEPTH field which may be used elsewhere in the driver
+	sub	bl,ah
+	mov	es:[di.OFF_VESA_ADEPTH],bl
 
 @@:	; here AL = total depth and AH = significant depth
 	test	al,7		; is our pixel an integer number of bytes?
