@@ -65,6 +65,7 @@ assume the following values have been calculated:
              wScan          -----   offset to the next scan line for same plane
              NumScans       -----   number of scan lines per segment
              FillBytes      -----   excess bytes at the end of the segment
+             NotFillBytes   -----   last valid address of the segment
              NextSegOff     -----   segment offset to the next segment
 
 These variables must have the correct value, irrespective of whether we have
@@ -88,6 +89,7 @@ end comment ~
 ;               CX          -----  number of bits to draw                     ;
 ;       wBitmapROP          -----  XOR & AND MASK for current pen and ROP     ;
 ;        FillBytes          -----  extra bytes at the end of the segment      ;
+;     NotFillBytes          -----  last valid address in the segment          ;
 ;       NextSegOff          -----  segment offset to next segment             ;
 ;                                                                             ;
 ; RETURNS:                                                                    ;
@@ -188,6 +190,8 @@ bm8_nyloop:
 		add	di,si
 		lea	si,[bx+si]	; doesn't disturb flags
 		jc	bm8_ny_incbank
+		cmp	di,NotFillBytes	; past the end of the scanlines?
+		ja	bm8_ny_incbank
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
 bm8_nylast:
@@ -206,9 +210,10 @@ bm8_ny_incbank:
 		call	BM8_wrap
 		ret
 bm8_ny_segment:
-                mov     dx,ds             ; get current segment
-                add     dx,NextSegOff     ; positive or negative offset
-                mov     ds,dx
+                mov     ax,ds             ; get current segment
+                add     ax,NextSegOff     ; positive or negative offset
+                mov     ds,ax
+		loadcol
                 add     di,FillBytes      ; bypass the filler bytes at end
   	loopm	bm8_nyloop
 ;;	loop	bm8_nyloop
@@ -285,9 +290,10 @@ bm8_py_decbank:
 	ret
 
 bm8_py_segment:
-        mov     dx,ds             ; get current segment
-        sub     dx,NextSegOff     ; positive or negative offset
-        mov     ds,dx
+        mov     ax,ds             ; get current segment
+        sub     ax,NextSegOff     ; positive or negative offset
+        mov     ds,ax
+	loadcol
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	bm8_pyloop
 ;;loop	bm8_pyloop
@@ -456,6 +462,8 @@ Bm8_Diag_loop:
         call	BM8_wrap
 	add	di,si
 	jc	Bm8_Diag_incbank
+	cmp	di,NotFillBytes
+	ja	Bm8_Diag_incbank
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
 Bm8_diag_last_pixel:
@@ -476,9 +484,10 @@ Bm8_Diag_incbank:
 	ret
 
 bm8_diag_segment:
-	mov     dx,ds             ; get current segment
-        add     dx,NextSegOff     ; positive or negative offset
-        mov     ds,dx
+	mov     ax,ds             ; get current segment
+        add     ax,NextSegOff     ; positive or negative offset
+        mov     ds,ax
+	loadcol
         add     di,FillBytes      ; bypass the filler bytes at end
   loopm	Bm8_Diag_loop
 ;;loop	Bm8_Diag_loop
@@ -552,9 +561,10 @@ Diag_decbank:
 	ret
 
 diag_segment:
-	mov     dx,ds             ; get current segment
-        sub     dx,NextSegOff     ; positive or negative offset
-        mov     ds,dx
+	mov     ax,ds             ; get current segment
+        sub     ax,NextSegOff     ; positive or negative offset
+        mov     ds,ax
+	loadcol
         sub     di,FillBytes      ; bypass the filler bytes at end
   loopm	Diag_loop
 ;;loop	Diag_loop
@@ -589,6 +599,8 @@ PUBLIC	Bm8_Move_Negative_Y
 	add	di,si
 	lea	si,[bx+si]	; doesn't disturb flags
 	jc	@F
+	cmp	di,NotFillBytes
+	ja	@F
 	ret
 @@:	test	DeviceFlags,TYPE_IS_DEV
 	jz	@F
@@ -596,12 +608,14 @@ PUBLIC	Bm8_Move_Negative_Y
 	inc	bank_select
 	mov	dl,bank_select
 	SET_BANK	; call	SetCurrentBankDL
+	loadcol
 	add	di,FillBytes
 	ret
 @@:
-	mov	dx,ds
-        add     dx,NextSegOff   ; nect segment
-        mov     ds,dx
+	mov	ax,ds
+        add     ax,NextSegOff   ; nect segment
+        mov     ds,ax
+	loadcol
         add     di,FillBytes    ; skip over filler bytes
         ret
 
@@ -634,12 +648,14 @@ PUBLIC	Bm8_Move_Positive_Y
 	dec	bank_select
 	mov	dl,bank_select
 	SET_BANK	; call	SetCurrentBankDL
+	loadcol
 	sub	di,FillBytes
 	ret
 @@:
-	mov	dx,ds
-	sub	dx,NextSegOff	; nect segment
-        mov     ds,dx
+	mov	ax,ds
+	sub	ax,NextSegOff	; nect segment
+        mov     ds,ax
+	loadcol
         sub     di,FillBytes    ; skip over filler bytes
         ret
 

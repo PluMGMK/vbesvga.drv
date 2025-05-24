@@ -458,6 +458,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localW  NextScan                ; offset to next scan line in map
         localW  wScans                  ; no of scan lines in huge map segment
         localW  FillBytes               ; filler bytes at end of huge segment
+        localW  NotFillBytes            ; last valid address in huge segment
         localW  NextSegOff              ; offset to next hugemap segment
         localW  BM8                     ; point to BM8_... dataROT routine
 	localW	RotColour		; point to colour rotation routine
@@ -618,9 +619,12 @@ get_bitmap_info_10:
 
 ; anticipating small bitmaps we will initialize some of the variables
 
-        mov     wScans,0ffffh               ; assume 64k scan lines!
-        mov     NextSegOff,0                ; reset
-        mov     FillBytes,0                 ; reset
+	xor	ax,ax
+        mov     NextSegOff,ax               ; reset
+        mov     FillBytes,ax                ; reset
+	not	ax
+        mov     wScans,ax                   ; assume 64k scan lines!
+        mov     NotFillBytes,ax             ; assume full segment valid
 
 	mov	cx,[si].bmSegmentIndex	    ; is it a huge bitmap
         test    DeviceFlags, TYPE_IS_DEV
@@ -637,6 +641,8 @@ skip_set_size_for_screen:
 
         mov     cx,[si].bmFillBytes         ; no of filler bytes at the end
         mov     FillBytes,cx
+	not	cx
+        mov     NotFillBytes,cx
         mov     cx,[si].bmScanSegment
         mov     wScans,cx                   ; no of scan lines per segment
 
@@ -1380,13 +1386,8 @@ tests_done:
 ; we will set it to 1/2 of wScans for small bitmaps
         mov     ScansLeftFromBot,0ffffh/2
 
-if	?PARTIAL_SCANLINES
 	test	DeviceFlags,TYPE_IS_DEV
         jnz     calculate_for_screen       ; target is ega
-else
-	test	DeviceFlags,TYPE_IS_DEV
-        jnz     calculate_for_screen       ; target is ega
-endif
         test    DeviceFlags,TYPE_IS_HUGE
         jz      calculate_for_small     ; small bit maps
 
@@ -1479,11 +1480,11 @@ else
 	adc	cx,dx
 	; Now CX:BX = Offset of desired Xi,Yi point, in densely-packed case
 	; What if there are unused bytes in each segment?
-	mov	di,FillBytes
-	test	di,di
+	mov	di,NotFillBytes
+	inc	di	; change "NOT" to "NEG"
 	jz	no_fill
 
-	neg	di	; 64K - FillBytes = actual # of used bytes per segment
+	; DI == 64K - FillBytes = actual # of used bytes per segment
 	mov	dx,cx
 	mov	ax,bx
 	div	di
