@@ -440,23 +440,17 @@ assumes  es,nothing
 PUBLIC	setramdac_vbe
 setramdac_vbe	PROC	FAR
 
+	; if VBE version < 2.00, then we know immediately we need
+	; to do it the old way!
+	cmp	[VESAMajVer],2
+	jb	setramdac_need_vga
+
 	push	es
 	push	di
 
-	; fixup byte order
-	call	switcheroo
+	; hold onto the first index in a register we won't be trashing
+	mov	bx,ax
 
-	; set ES:DI = DS:SI for VBE function 09
-	mov	di,ds
-	mov	es,di	
-	mov	di,si
-
-	; set the other registers appropriately
-	mov	dx,ax	; first colour index
-	xor	bl,bl	; set primary palette
-	mov	ax,(VBE_INT10_FN SHL 8) + VBE_PALENTRIES
-
-	mov	di,ax
 	cmp	[RMPaletteSel],0
 	jnz	@F
 
@@ -464,47 +458,72 @@ setramdac_vbe	PROC	FAR
 	; 4 bytes per colour * 100h colours
 	push	bx
 	push	cx
-	push	dx
 	cCall	GlobalDosAlloc,<0,400h>	; zero-pad to dword
 	mov	[RMPaletteSel],ax
 	mov	[RMPaletteSeg],dx
-	pop	dx
 	pop	cx
 	pop	bx
 
 	test	ax,ax
 	mov	ax,(ERR_REAL_ALLOC SHL 8) + VBE_INT10_FN
+	mov	dx,bx	; need this in case we fail
 	jz	setramdac_vbe_exit
 
-@@:
-	mov	ax,[RMPaletteSeg]
+@@:	mov	ax,[RMPaletteSeg]
 	mov	[int10h_es],ax
-	mov	ax,di
-
 	; copy the palette entries into the RM buffer
 	mov	es,[RMPaletteSel]
 	xor	di,di
 
+	; Now we have 8-bit RGBA entries at DS:SI.
+	; Per the VBE spec, we require 6/8-bit BGRA entries at ES:DI.
+	; Copy them over and convert them as we go!
 	push	di
 	push	si
 	push	cx
-	shl	cx,1	; two words per colour
+
 	cld
-	rep	movsw
+	; put entry count in CH (zero means the loop runs 256 times)
+	mov	ch,cl
+	; and shift count in CL
+	mov	cl,[dac_size]
+
+@@:	; load the colour...
+	lodsw
+	mov	dx,ax
+	lodsw
+	; now we have DH=Green, DL=Red, AH=Padding, AL=Blue
+	xchg	dh,ah
+	; becomes DH=Padding, DL=Red, AH=Green, AL=Blue.
+	; now change to 6-bit if needed:
+	shr	dl,cl
+	; this may put two used bits in the upper end of AL, but
+	; the BIOS and hardware will ignore them, so it's OK:
+	shr	ax,cl
+	; store converted colour
+	stosw
+	mov	ax,dx
+	stosw
+	dec	ch
+	jnz	@B
+
 	pop	cx
 	pop	si
 	pop	di
 
+	mov	dx,bx	; first colour index
+	xor	bl,bl	; set primary palette
+	mov	ax,(VBE_INT10_FN SHL 8) + VBE_PALENTRIES
 	call	DoInt10h
 
 setramdac_vbe_exit:
-	; restore original byte order
-	call	switcheroo
 	pop	di
 	pop	es
 
 	; success?
 	cmp	ax,VBE_INT10_FN
+	; get back the index into AX
+	mov	ax,dx
 	jne	setramdac_need_vga
         ret
 
@@ -512,34 +531,10 @@ setramdac_need_vga:
 	; VBE cannot be used to set RAMDAC, so fall back to VGA implementation
 	; by updating the function pointer and jumping to it
 	mov	[setramdac.lo],offset setramdac_vga
-	; get back the index into AX
-	mov	ax,dx
 	; go to the VGA function
 	jmp	[setramdac]
 
 setramdac_vbe	ENDP
-
-; At least some BIOS implementations expect a big-endian list of colours, i.e.
-; where blue is the LSB, whereas Windows gives red as the LSB (which also agrees
-; with what is written in the RBIL for int 10H AH=4F09H...)
-; This function deals with that - TODO: check if always needed, and if not,
-; create a way to turn it off...
-switcheroo	proc near
-	push	ax
-	push	si
-	push	cx
-
-@@:	mov	al,[si]
-	xchg	al,[si+2]
-	mov	[si],al
-	lea	si,[si+4]
-	loop	@B
-
-	pop	cx
-	pop	si
-	pop	ax
-	ret
-switcheroo	endp
 
 sEnd	PaletteSeg
 
