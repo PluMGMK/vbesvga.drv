@@ -23,6 +23,7 @@ include compblt.inc
 
 externA __NEXTSEG
 externFP far_set_bank_select	; in BANK.INC
+externB bank_select_byte	; in BANK.INC
 
 .286
 sBegin	Code
@@ -34,6 +35,8 @@ assumes ss,Nothing
 extrn	roptable:byte
 extrn	oem_brush_size:word	; in ROBJECT.ASM
 extrn	pxbytes:word		; in SWCURS.ASM
+extrn	_cstods:word		; in CURSOR.ASM
+extrn	??BigFontFlags:byte	; in STRBLT.ASM
 
 ;
 ;	compile_mono_pattern_fetch
@@ -1206,6 +1209,40 @@ compile_dst_splitbank_yupdate	PROC	NEAR
 compile_dst_splitbank_yupdate	ENDP
 
 
+; extra logic needed for 24-bit colour stosb at bank boundaries,
+; broken out into a separate far function to avoid cluttering the stack!
+; Entry: DI == 0 or 1, AX = two bytes to store at ES:"DI - 2"
+store_in_prev_bank	PROC	FAR
+	test	di,1
+	jz	@F
+	; if DI == 1, then AH goes in current bank!
+	mov	es:[0],ah
+
+@@:	; go back to previous bank
+	push	ds
+	mov	ds,[_cstods]
+	assumes	ds,Data
+	xor	dh,dh
+	mov	dl,[bank_select_byte]
+	pop	ds
+	assumes	ds,nothing
+	dec	dl
+	call	far_set_bank_select
+
+	test	di,1
+	jz	@F
+	; if DI == 1, then only AL goes in previous bank!
+	mov	es:[-1],al
+	jmp	@@done
+@@:	; if DI == 0, then all of AX goes in previous bank
+	mov	es:[-2],ax
+
+@@done:	; restore the current bank
+	inc	dl
+	call	far_set_bank_select
+	ret
+store_in_prev_bank	ENDP
+
 ;
 ;	compile_color_stosb
 ;
@@ -1217,8 +1254,6 @@ compile_dst_splitbank_yupdate	ENDP
 ;	stosb is skipped; otherwise the value gets stored in the dst bitmap.
 ;	If the blt is not a transparent blt, then the value is always stored.
 
-;	FIXME: Might be worth moving these into InitSeg and copying just one...
-
 color_stosb_xpar_template:
 	cmp	al,034H 			;034H will become the bg color
 cstxf:	je	@F
@@ -1229,143 +1264,192 @@ cstxf:	je	@F
 COLOR_STOSB_XPAR_LEN	=  $ - color_stosb_xpar_template
 COLOR_STOSB_XPAR_FIX	=  $ - cstxf + 1
 
+color_stosb_xpar_template_16:
+	test	di,1
+	jz	csx16e				;even byte, go stash it
+	mov	ah,al
+	mov	al,034H				;this gets updated every second byte
+csx16l:	cmp	ax,01234H 			;01234H will become the bg color
+csx16f:	je	csx16pl
+	mov	es:[di-1],ax
+	jmp	short csx16pl
+csx16e:	mov	ss:[05678H],al			;05678H will become csx16l-1
+csx16pl:inc	di
+
+COLOR_STOSB_XPAR16_LEN	=  $ - color_stosb_xpar_template_16
+COLOR_STOSB_XPAR16_LB	=  $ - csx16l + 1
+COLOR_STOSB_XPAR16_FIX	=  $ - csx16f + 2
+COLOR_STOSB_XPAR16_PTRLB=  $ - csx16pl + 2
+
+color_stosb_xpar_template_24:
+	mov	bx,01234H			;this becomes the phase (0/1/2)
+csx24p:	cmp	bl,2
+	jb	csx24e				;byte 0 or 1, go stash it
+	xor	dl,dl				;reset the phase
+	mov	byte ptr ss:[05678H],dl		;05678H will become csx24p-2
+csx24p1:mov	dl,al
+	mov	ax,01234H			;this gets updated to bytes 0 and 1
+csx24l:	cmp	ax,01234H 			;01234H will become lower word of bg colour
+csx24f:	jne	@F
+	cmp	dl,056H				;056H will become upper byte of bg colour
+csx24f2:je	csx24p2
+@@:	mov	es:[di],dl
+	cmp	di,2
+	jb	@F
+	mov	es:[di-2],ax
+	jmp	short csx24p2
+@@:	call	store_in_prev_bank		;call separate far function
+	jmp	short csx24p2
+csx24e:	mov	ss:[bx+05678H],al		;05678H will become csx24l-2
+csx24pl:inc	byte ptr ss:[05678H]		;05678H will become csx24p-2
+csx24p2:inc	di
+
+COLOR_STOSB_XPAR24_LEN	=  $ - color_stosb_xpar_template_24
+COLOR_STOSB_XPAR24_PHASE=  $ - csx24p + 2
+COLOR_STOSB_XPAR24_PPHS1=  $ - csx24p1 + 2
+COLOR_STOSB_XPAR24_PPHS2=  $ - csx24p2 + 2
+COLOR_STOSB_XPAR24_LW	=  $ - csx24l + 2
+COLOR_STOSB_XPAR24_FIX	=  $ - csx24f + 2
+COLOR_STOSB_XPAR24_FIX2	=  $ - csx24f2 + 1
+COLOR_STOSB_XPAR24_PTRLW=  $ - csx24pl + 2
+
+color_stosb_xpar_template_32:
+	mov	bx,di
+	and	bx,11b				;get the phase
+	test	bl,2
+	jz	csx32e				;byte 0 or 1, go stash it
+	test	bl,1
+	jz	csx32t				;byte 2, go stash it
+	mov	dh,al
+	mov	ax,01234H			;this gets updated to bytes 0 and 1
+csx32l:	mov	dl,056H				;this gets updated to byte 2
+csx32u:	cmp	ax,01234H 			;01234H will become lower word of bg colour
+csx32f:	jne	@F
+	cmp	dx,05678H			;05678H will become upper word of bg colour
+csx32f2:je	csx32pl
+@@:	mov	es:[di-3],ax
+	mov	es:[di-1],dx
+	jmp	short csx32pl
+csx32t:	mov	ss:[05678H],al			;05678H will become csx32u-1
+csx32pu:jmp	short csx32pl
+csx32e:	mov	ss:[bx+05678H],al		;05678H will become csx32l-2
+csx32pl:inc	di
+
+COLOR_STOSB_XPAR32_LEN	=  $ - color_stosb_xpar_template_32
+COLOR_STOSB_XPAR32_LW	=  $ - csx32l + 2
+COLOR_STOSB_XPAR32_UB	=  $ - csx32u + 1
+COLOR_STOSB_XPAR32_FIX	=  $ - csx32f + 2
+COLOR_STOSB_XPAR32_FIX2	=  $ - csx32f2 + 2
+COLOR_STOSB_XPAR32_PTRLW=  $ - csx32pl + 2
+COLOR_STOSB_XPAR32_PTRUB=  $ - csx32pu + 2
+
+color_stosb_xpar_template_32_386:
+	.386
+	mov	bx,di
+	and	bx,11b				;get the phase
+	cmp	bl,3
+	jb	csx33e				;byte 0/1/2, go stash it
+	shl	eax,18h				;get current byte into upper byte of EAX
+	or	eax,0123456H			;this gets updated to bytes 0/1/2
+csx33l:	cmp	eax,012345678H 			;012345678H will become bg colour
+csx33f:	je	csx33pl
+@@:	mov	es:[di-3],eax
+	jmp	short csx33pl
+csx33e:	mov	ss:[bx+05678H],al		;05678H will become csx33l-4
+csx33pl:inc	di
+	.286
+
+COLOR_STOSB_XPAR33_LEN	=  $ - color_stosb_xpar_template_32_386
+COLOR_STOSB_XPAR33_L3B	=  $ - csx33l + 4
+COLOR_STOSB_XPAR33_FIX	=  $ - csx33f + 4
+COLOR_STOSB_XPAR33_PTRL3=  $ - csx33pl + 2
+
 PUBLIC	compile_color_stosb
 compile_color_stosb	PROC	NEAR
 
 	cmp	word ptr background_mode,OPAQUE
 	jne	@F
+	; opaque: we just store the byte at ES:DI, and done
 	mov	al,I_STOSB
 	stosb
 	ret
 
-@@:	lea	si,color_stosb_xpar_template
+@@:	cmp	[pxbytes],1
+	ja	@F
+	; transparent, 1 byte per pixel
+	lea	si,color_stosb_xpar_template
 	mov	cx,COLOR_STOSB_XPAR_LEN
 	rep	movs byte ptr es:[di], cs:[si]
 	mov	al,byte ptr [bgcolour]
 	mov	es:[di - COLOR_STOSB_XPAR_FIX],al
 	ret
 
+@@:	cmp	[pxbytes],2
+	ja	@F
+	; transparent, 2 bytes per pixel - need to accumulate
+	; them and then check the entire pixel at once
+	lea	si,color_stosb_xpar_template_16
+	mov	cx,COLOR_STOSB_XPAR16_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,word ptr [bgcolour]
+	mov	es:[di - COLOR_STOSB_XPAR16_FIX],ax
+	lea	ax,[di - COLOR_STOSB_XPAR16_LB]
+	mov	es:[di - COLOR_STOSB_XPAR16_PTRLB],ax
+	ret
+
+@@:	cmp	[pxbytes],3
+	ja	@F
+	; transparent, 3 bytes per pixel - need to accumulate
+	; them and then check the entire pixel at once
+	lea	si,color_stosb_xpar_template_24
+	mov	cx,COLOR_STOSB_XPAR24_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,word ptr bgcolour[0]
+	mov	dl,byte ptr bgcolour[2]
+	mov	es:[di - COLOR_STOSB_XPAR24_FIX],ax
+	mov	es:[di - COLOR_STOSB_XPAR24_FIX2],dl
+	lea	ax,[di - COLOR_STOSB_XPAR24_LW]
+	mov	es:[di - COLOR_STOSB_XPAR24_PTRLW],ax
+	lea	bx,[di - COLOR_STOSB_XPAR24_PHASE]
+	xor	ax,ax	; initialize phase to zero
+	mov	es:[bx],ax
+	mov	es:[di - COLOR_STOSB_XPAR24_PPHS1],bx
+	mov	es:[di - COLOR_STOSB_XPAR24_PPHS2],bx
+	ret
+
+@@:	cmp	[??BigFontFlags],0
+	jnz	@F
+	; transparent, 4 bytes per pixel, 286 - need to
+	; accumulate them and then check the entire pixel
+	; at once (in 2-byte chunks)
+	lea	si,color_stosb_xpar_template_32
+	mov	cx,COLOR_STOSB_XPAR32_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	mov	ax,word ptr bgcolour[0]
+	mov	dx,word ptr bgcolour[2]
+	mov	es:[di - COLOR_STOSB_XPAR32_FIX],ax
+	mov	es:[di - COLOR_STOSB_XPAR32_FIX2],dx
+	lea	ax,[di - COLOR_STOSB_XPAR32_LW]
+	mov	es:[di - COLOR_STOSB_XPAR32_PTRLW],ax
+	lea	ax,[di - COLOR_STOSB_XPAR32_UB]
+	mov	es:[di - COLOR_STOSB_XPAR32_PTRUB],ax
+	ret
+
+@@:	; transparent, 4 bytes per pixel, 386 - need to
+	; accumulate them and then check the entire pixel
+	; at once (as a single 4-byte unit)
+	lea	si,color_stosb_xpar_template_32_386
+	mov	cx,COLOR_STOSB_XPAR33_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	.386
+	mov	eax,dword ptr bgcolour
+	mov	es:[di - COLOR_STOSB_XPAR33_FIX],eax
+	.286
+	lea	ax,[di - COLOR_STOSB_XPAR33_L3B]
+	mov	es:[di - COLOR_STOSB_XPAR33_PTRL3],ax
+	ret
+
 compile_color_stosb	ENDP
-
-
-color_stosw_xpar_template:
-	cmp	ax,01234H 			;01234H will become the bg color
-cstwxf:	je	@F
-	stosw
-	dec	di
-	dec	di
-@@:	inc	di
-	inc	di
-
-COLOR_STOSW_XPAR_LEN	=  $ - color_stosw_xpar_template
-COLOR_STOSW_XPAR_FIX	=  $ - cstwxf + 2
-
-PUBLIC	compile_color_stosw
-compile_color_stosw	PROC	NEAR
-
-	cmp	word ptr background_mode,OPAQUE
-	jne	@F
-	mov	al,I_STOSW
-	stosb
-	ret
-
-@@:	lea	si,color_stosw_xpar_template
-	mov	cx,COLOR_STOSW_XPAR_LEN
-	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,word ptr [bgcolour]
-	mov	es:[di - COLOR_STOSW_XPAR_FIX],ax
-	ret
-
-compile_color_stosw	ENDP
-
-
-color_stos3b_xpar_template:
-	cmp	ax,01234H 			;1234H will become the bg colour
-cst3xf:	jne	cst3xg
-	cmp	dl,78H				;  78H will become the bg colour
-cst3xg:	je	@F
-colour_stos3b_uncond:
-	stosw
-	mov	al,dl
-	stosb
-colour_stos3b_uncond_end:
-	sub	di,3
-@@:	add	di,3
-
-COLOR_STOS3B_XPAR_LEN	=  $ - color_stos3b_xpar_template
-COLOR_STOS3B_XPAR_FIX	=  $ - cst3xf + 2
-COLOR_STOS3B_XPAR_FIXA	=  $ - cst3xg + 1
-
-COLOUR_STOS3B_UNCOND_LEN=  colour_stos3b_uncond_end - colour_stos3b_uncond
-
-PUBLIC	compile_color_stos3b
-compile_color_stos3b	PROC	NEAR
-
-	cmp	word ptr background_mode,OPAQUE
-	jne	@F
-	lea	si,colour_stos3b_uncond
-	mov	cx,COLOUR_STOS3B_UNCOND_LEN
-	rep	movs byte ptr es:[di], cs:[si]
-	ret
-
-@@:	lea	si,color_stos3b_xpar_template
-	mov	cx,COLOR_STOS3B_XPAR_LEN
-	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,word ptr [bgcolour]
-	mov	es:[di - COLOR_STOS3B_XPAR_FIX],ax
-	mov	dl,byte ptr [bgcolour+2]
-	mov	es:[di - COLOR_STOS3B_XPAR_FIXA],dl
-	ret
-
-compile_color_stos3b	ENDP
-
-
-color_stosd_xpar_template:
-	cmp	ax,01234H 			;1234H will become the bg colour
-cstdxf:	jne	cstdxg
-	cmp	dx,05678H			;5678H will become the bg colour
-cstdxg:	je	@F
-colour_stosd_uncond:
-	stosw
-	mov	ax,dx
-	stosw
-colour_stosd_uncond_end:
-	sub	di,4
-@@:	add	di,4
-
-COLOR_STOSD_XPAR_LEN	=  $ - color_stosd_xpar_template
-COLOR_STOSD_XPAR_FIX	=  $ - cstdxf + 2
-COLOR_STOSD_XPAR_FIXA	=  $ - cstdxg + 2
-
-COLOUR_STOSD_UNCOND_LEN	=  colour_stosd_uncond_end - colour_stosd_uncond
-
-PUBLIC	compile_color_stosd
-compile_color_stosd	PROC	NEAR
-
-	cmp	word ptr background_mode,OPAQUE
-	jne	@F
-	lea	si,colour_stosd_uncond
-	mov	cx,COLOUR_STOSD_UNCOND_LEN
-	rep	movs byte ptr es:[di], cs:[si]
-	ret
-
-@@:	lea	si,color_stosd_xpar_template
-	mov	cx,COLOR_STOSD_XPAR_LEN
-	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,word ptr [bgcolour]
-	mov	es:[di - COLOR_STOSD_XPAR_FIX],ax
-	mov	dx,word ptr [bgcolour+2]
-	mov	es:[di - COLOR_STOSD_XPAR_FIXA],dx
-	ret
-
-compile_color_stosd	ENDP
-
-public	compile_colour_stos_table
-compile_colour_stos_table	label word
-	dw	offset compile_color_stosb
-	dw	offset compile_color_stosw
-	dw	offset compile_color_stos3b
-	dw	offset compile_color_stosd
 
 sEnd
 

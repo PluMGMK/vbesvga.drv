@@ -24,6 +24,7 @@ incDevice = 1			;Include control for gdidefs.inc
 	.list
 
 	externA  __WinFlags		;Windows info bit
+	externA  SaveScreenNumWords	;in SWCURS.ASM
 	externFP AllocSelector
 	externFP FreeSelector
 	externFP SetSelectorBase
@@ -39,13 +40,17 @@ sBegin	Data
 ; Selectors
 BackBufSel	dw ?
 FrontBufSel	dw ?
-VramSel	dw ?
+VramSel		dw ?
+VDDCursorSel	dw ?
 
 ; Handle to back-buffer memory block
 BackBufDPMIHdl	dd ?
 
 ; VTDAPI entry point (preferred to MMSYSTEM if available)
 VTDAPIEntry	dd ?
+; VDDVBE double-buffer API entry point
+public	VDDDBEntry
+VDDDBEntry	dd ?
 
 ; Function pointers in MMSYSTEM.DLL
 TimeGetDevCaps	dd ?
@@ -63,9 +68,6 @@ fast_timer_irqseg dw 0
 ; Approximate time in milliseconds taken to run swap_buffers
 public	sb_period_ms
 sb_period_ms	dw ?	; swap_buffers period in milliseconds
-
-; User-specified refresh rate
-desired_fps	db 60
 
 externW	cursor_funcs		; in CURSOR.ASM
 externW	cursor_xdraw		; in CURSOR.ASM
@@ -103,6 +105,7 @@ externW		_cstods			; in CURSOR.ASM
 externFP	enable_wrcomb		; in MTRR.ASM
 externFP	enable_wrthru		; in MTRR.ASM
 externFP	disable_wrcomb		; in MTRR.ASM
+externFP	find_mtrrs		; in MTRR.ASM
 
 ; cursor functions
 dbcursor_set	proc near
@@ -117,7 +120,13 @@ dbcursor_set	proc near
 	; recalculate where to draw the cursor
 	call	swcursor_setaddr
 
-	; check if we have a stale TIMER.DRV segment
+	; if using the VDD API, we need to copy the data,
+	; but we don't need to care about the timer.
+	cmp	[VDDCursorSel],0
+	jz	@F
+	jmp	dbcursor_sendtovdd
+
+@@:	; check if we have a stale TIMER.DRV segment
 	mov	ax,[fast_timer_irqseg]
 	test	ax,ax
 	jz	@F
@@ -163,6 +172,35 @@ start_fast_timer endp
 dbcursor_off	proc near
 	; this is a no-op as cursor_flags is maintained in CURSOR.ASM
 	; and tells us whether or not to draw anything
+dbcursor_sendtovdd:
+	; send data to the VDD if necessary
+	mov	ax,[VDDCursorSel]
+	test	ax,ax
+	jz	dbcursor_exclude ; dummy label
+
+	push	es
+	push	di
+	push	si
+
+	mov	es,ax
+	xor	di,di
+	cld
+	; copy save_screen_*
+	lea	si,[save_screen_x]
+	mov	cx,SaveScreenNumWords
+	rep	movsw
+	; copy cursor data itself
+	lea	si,[swcursor_data]
+	mov	cx,CURSOR_WIDTH*CURSOR_HEIGHT*4*2
+	rep	movsw
+	; copy cursor flags
+	mov	ax,[cursor_flags]
+	stosw
+
+	pop	si
+	pop	di
+	pop	es
+
 dbcursor_exclude:
 dbcursor_unexclude:
 	; also no-ops as the double-buffered cursor doesn't need to
@@ -180,7 +218,8 @@ dbcursor_move	proc near
 
 	; calculate where to draw the cursor
 	call	swcursor_setaddr
-	ret
+	; and inform the VDD if necessary
+	jmp	dbcursor_sendtovdd
 dbcursor_move	endp
 
 start_fast_timer_far	proc far
@@ -193,9 +232,11 @@ dbcursor_check	proc near
 	; We'll take that in a pinch, but once the faster MMSYSTEM
 	; timer becomes available, then this slow function doesn't
 	; need to do anything anymore.
+	cmp	[VDDCursorSel],0
+	jnz	@F
 	cmp	[fast_timer_hdl],0
 	jz	swap_buffers
-	ret
+@@:	ret
 dbcursor_check	endp
 
 ; This initially gets called every 54.925 milliseconds, and once we
@@ -514,11 +555,15 @@ TimeKillEvent_name	db "timeKillEvent",0
 ;	addresses and allocating memory for the back-buffer
 ; Entry:
 ;	DS	= Data
-;	The driver must be setup to use a linear framebuffer
+;	ES	= Code (writable)
+;	VESALinearBuf freshly populated with PHYSICAL address
+;	MemSize correctly populated with its size
 ; Returns:
+;	VESALinearBuf populated with LINEAR address (even if not double-buffing)
 ;	BackBufSel,FrontBufSel,VramSel populated, pointing at respective buffers
 ; Error Returns:
-;	BackBufSel and/or FrontBufSel and/or VramSel NULL
+;	VESALinearBuf is zero if the phys-to-linear map failed
+;	BackBufSel and/or FrontBufSel and/or VramSel NULL if not double-buffing
 ; Registers Destroyed:
 ;	FLAGS
 ; Registers Preserved:
@@ -532,12 +577,71 @@ TimeKillEvent_name	db "timeKillEvent",0
 ;--------------------------------------------------------------------------;
 cProc	setup_double_buf,<NEAR,PUBLIC>,<es,ax,bx,cx,dx,si,di,bp>
 cBegin
-	; first of all check if double-buffering is already set up
-	cmp	[VramSel],0
-	jz	@F
+	assumes	es,Code
+	; Get framebuffer size:
+	mov	di,[MemSize.lo]
+	mov	si,[MemSize.hi]
+	; And its location:
+	xor	cx,cx
+	mov	bx,cx
+	; zero it out in case we fail...
+	xchg	cx,[VESALinearBuf.lo]
+	xchg	bx,[VESALinearBuf.hi]
+	; Take this opportunity to check for MTRRs
+	call	find_mtrrs
+
+	; What we do next depends on the presence / absence of the VDD
+	; double-buffering API...
+	cmp	[VDDDBEntry.sel],0
+	jz	setup_no_vddapi
+
+	.386
+	pushad
+	; AX := 0 = setup double buffering
+	xor	ax,ax
+	; get the 32-bit pointer from BX:CX into ECX
+	movzx	ecx,cx
+	shl	ebx,10h
+	or	ecx,ebx
+	; set pxbytes and period
+	mov	bx,[pxbytes]
+	mov	bh,[sb_period_ms]
+	; set scanline width
+	mov	dx,[MemoryWidth]
+	; get the 32-bit size from SI:DI into EDI
+	movzx	edi,di
+	shl	esi,10h
+	or	edi,esi
+	; swap size and pointer...
+	xchg	edi,ecx
+	; get the number of words to copy
+	mov	si,SaveScreenNumWords
+	; call the API with all those parameters
+	call	[VDDDBEntry]
+	; check if we got a selector back
+	test	ax,ax
+	mov	[VDDCursorSel],ax
+	; set linear address of VRAM (NOT back buffer since we're not ready
+	; to write to it yet!)
+	mov	[VESALinearBuf],edi
+	popad
+
+	.286
+	jz	setup_no_vddapi
 	jmp	setup_done
 
-@@:	; has user force-disabled double buffering?
+setup_no_vddapi:
+	; Call DPMI:
+	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
+	int	31h
+	jnc	@F
+	jmp	setup_done
+
+@@:	; Now we can put the linear address back where we got the physical one
+	mov	[VESALinearBuf.lo],cx
+	mov	[VESALinearBuf.hi],bx
+
+	; has user force-disabled double buffering?
 	cmp	[sb_period_ms],0
 	jnz	@F
 	jmp	setup_done
@@ -585,6 +689,7 @@ cBegin
 	; KERNEL!
 	lea	ax,mmsystem_dll
 	cCall	LoadLibrary,<cs,ax>
+	assumes	es,nothing ; C function stomps ES
 	cmp	ax,20h	; HINSTANCE_ERROR
 	jnb	@F
 	jmp	setup_done
@@ -729,6 +834,7 @@ fnptrs_setup_done:
 	push	eax
 	push	ecx
 	push	edi
+	cld
 	mov	es,[BackBufSel]
 	xor	eax,eax
 	mov	ecx,[MemSize]
@@ -768,17 +874,38 @@ cEnd
 ;--------------------------------------------------------------------------;
 cProc	start_double_buf,<NEAR,PUBLIC>,<es,ax,bx,cx,dx,si,di>
 cBegin
-	; first of all check if double-buffering is actually set up
-	cmp	[VramSel],0
-	jz	start_done
-
 	; make sure it's not already started
 	lea	ax,dbcursor_set
 	cmp	[cursor_funcs],ax
 	je	start_done
 
+	; check if the VDD API is in use
+	cmp	[VDDCursorSel],0
+	jz	start_no_vddapi
+
+	mov	ax,seg VESALinearBuf
+	mov	es,ax
+	lea	di,[VESALinearBuf]
+	mov	ax,1	; 1 = start double buffering
+	call	[VDDDBEntry]
+
+	test	ax,ax
+	jnz	start_no_vddapi
+	; Now force the bank to be reset since our buffer pointer is changed
+	mov	dl,-1
+	xchg	dl,[bank_select_byte]
+	SET_BANK
+	; all done! :)
+	jmp	short start_successful
+
+start_no_vddapi:
+	; first of all check if double-buffering is actually set up
+	cmp	[VramSel],0
+	jz	start_done
+
 	; eliminate stale data from the front buffer
 	.386
+	cld
 	push	eax
 	push	ecx
 	push	edi
@@ -800,16 +927,19 @@ cBegin
 	pop	eax
 	.286
 
+start_successful:
 	; setup write combining if possible so swap_buffers isn't slow
 	call	enable_wrcomb
-
 	; install our cursor functions
 	call	swap_cursor_funcs
 
-	; now point the driver bitmap at the back buffer
+	; only run this next bit if not using the VDD API
 	mov	di,[BackBufSel]
-	call	change_lin_buf
+	test	di,di
+	jz	start_done
 
+	; now point the driver bitmap at the back buffer
+	call	change_lin_buf
 	; attempt to start the fast timer, but if we fail it's OK
 	call	start_fast_timer_far
 
@@ -841,6 +971,24 @@ cBegin
 	; disable it by putting back the swcurs functions
 	call	swap_cursor_funcs
 
+	; check if the VDD API is in use
+	cmp	[VDDCursorSel],0
+	jz	stop_no_vddapi
+
+	mov	ax,seg VESALinearBuf
+	mov	es,ax
+	lea	di,[VESALinearBuf]
+	mov	ax,2	; 2 = stop double buffering
+	call	[VDDDBEntry]
+
+	; Now force the bank to be reset since our buffer pointer is changed
+	mov	dl,-1
+	xchg	dl,[bank_select_byte]
+	SET_BANK
+	; all done! :)
+	jmp	short stop_done
+
+stop_no_vddapi:
 	; disable the timer event too
 	mov	ax,[VTDAPIEntry.sel]
 	test	ax,ax
@@ -860,7 +1008,7 @@ timer_disabled:
 	call	change_lin_buf
 
 stop_done:
-	; make front buffer uncacheable again - do this unconditionally
+	; make VRAM buffer uncacheable again - do this unconditionally
 	; since even if we abandoned double-buffereing we may have enabled
 	; write-through instead!
 	call	disable_wrcomb
@@ -888,7 +1036,7 @@ change_lin_buf	proc near
 	; It is imperative that nothing interrupts us while this is going on.
 	EnterCrit
 	; Save the selector params
-	.386	; if we get this far we have a 386 (required for lin framebuf)
+	.386	; if we get this far we have a 386 (required for double-buf)
 	push	eax
 	db	66h,0Fh,03h,0C7h	;lsl eax,edi
 	push	eax

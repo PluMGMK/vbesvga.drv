@@ -36,9 +36,10 @@ SAVED_STATE	EQU	00000010B
 
 sBegin  Data
 EXTRN   ScreenSelector:word
+PUBLIC	save_screen_x,save_screen_y,save_screen_yclip,save_screen_xclip,save_screen_longaddr,save_screen_height,save_screen_width
+; These MUST be in the same order as VDDDBUF.ASM!
 save_screen_x		DW	0
 save_screen_y		DW	0
-PUBLIC	save_screen_x,save_screen_y,save_screen_yclip,save_screen_xclip,save_screen_longaddr,save_screen_height,save_screen_width
 save_screen_width	DW	CURSOR_WIDTH
 save_screen_height	DW	CURSOR_HEIGHT
 save_screen_xclip	DW	CURSOR_WIDTH
@@ -46,6 +47,8 @@ save_screen_yclip	DW	CURSOR_HEIGHT
 save_screen_longaddr	LABEL	DWORD
 save_screen_address     DW      0
 save_screen_bank	DW	0
+PUBLIC	SaveScreenNumWords
+SaveScreenNumWords	EQU	($-save_screen_x) SHR 1
 ; CURSOR_WIDTH * CURSOR_HEIGHT pixels, times (up to) four bytes per pixel
 save_screen_buffer	DW	CURSOR_WIDTH*CURSOR_HEIGHT*4 DUP(0)
 

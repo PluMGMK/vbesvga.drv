@@ -236,6 +236,44 @@ VxD_CODE_SEG
 
 ;******************************************************************************
 ;
+;   VDD_PH_Mem_Reset_Sys_Visible_Pages
+;
+;   DESCRIPTION:    Display driver is unloading, so all the info about latch
+;		    addresses and visible pages becomes invalid
+;
+;   ENTRY:	    none
+;
+;   EXIT:	    Vid_Sys_Visible_Pages == -1
+;
+;   USES:	    EAX,Flags
+;
+;==============================================================================
+BeginProc VDD_PH_Mem_Reset_Sys_Visible_Pages
+
+	; reset visible pages
+	xor	eax,eax
+	mov	[Vid_Sys_First_Visible], ax
+	not	eax
+	mov	[Vid_Sys_Visible_Pages], eax
+
+	; reset sys latch address
+	not	eax
+	mov	[Vid_Sys_VM_Latch_Bank], al
+	mov	[Vid_Sys_VM_Latch_Addr], eax
+
+	; reset general latch address
+	mov	[Vid_Latch_Bank], al
+	mov	eax,[Vid_PhysA0000]
+	add	eax,0AFFFFh-0A0000h
+	mov	[Vid_Latch_Addr], eax
+
+	; done
+	ret
+
+EndProc VDD_PH_Mem_Reset_Sys_Visible_Pages
+
+;******************************************************************************
+;
 ;   VDD_PH_Mem_Set_Sys_Latch_Addr
 ;
 ;   DESCRIPTION:
@@ -2254,9 +2292,11 @@ ap_chk_mapping:
 	jz	short ap_return 		;   N: forced A0 mapping, so exit
 	cmp	ch, 0B0h			;Q: Graphics mapping?
 	jb	short ap_no_mod 		;   Y: leave mapping alone
+	cmp	cl, 0C0h			;Q: Beyond the VRAM range?
+	jnb	short @F			;   Y: definitely remap!
 	cmp	ebx, [Vid_CRTC_VM]		;Q: VM owns CRTC?
 	jz	short ap_No_mod 		;   Y: leave mapping alone
-	sub	cl, ch				;   N: convert to A0 mapping
+@@:	sub	cl, ch				;   N: convert to A0 mapping
 	add	cl,0A0h
 	bts	[edi.VDD_Flags], bVDD_MappedA0	;Q: A0 currently mapped?
 	jc	short ap_return 		;   Y: return

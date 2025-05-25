@@ -9,6 +9,10 @@ This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** av
 * Because my AMD Radeon RX 5500 XT doesn't support 256-colour modes, rendering the old [VESA Patch](http://www.win3x.org/win3board/viewtopic.php?t=5408&hilit=svga) useless for me
 * To help out any fellow enthusiasts who like running old software on new hardware!
 
+## Program Manager limitations
+
+When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32*32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 * 32 * (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (not accessible with `Allow3ByteMode=0`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
+
 ## Screenshots
 
 ### Using standard Program Manager shell
@@ -70,14 +74,14 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 
 |Parameter |Valid values |Meaning |Default value |
 --- | --- | --- | ---
-|`Width` | 640 - 65535 | Width in pixels of the desired video mode | Your monitor's preferred width, or **1024** if no EDID |
-|`Height` | 480 - 65535 | Height in scanlines of the desired video mode | Your monitor's preferred height, or **768** if no EDID |
+|`Width` | 320 - 65535 | Width in pixels of the desired video mode | Your monitor's preferred width, or **1024** if no EDID |
+|`Height` | 200 - 65535 | Height in scanlines of the desired video mode | Your monitor's preferred height, or **768** if no EDID |
 |`Depth` | 8 - 24 | Significant bits per pixel of the desired video mode ("significant" means that padding bits are excluded, so for example if you choose 24, both 24-bit and 32-bit modes will qualify) | 24 |
 |`fontsize` | `small` or `large` | Choose whether to use 96dpi or 120dpi fonts | `small` |
 |`dacdepth` | 6, 8 or `auto` | Significant bits to use per colour in 256-colour modes; `auto` means 8 if the BIOS advertises that 8 is supported, 6 otherwise; if 8 is specified then the driver attempts to use 8 regardless of what the BIOS says! | `auto` |
 |`SwapBuffersInterval` | 0 - 55 | Time in milliseconds between buffer swaps if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value of 0 **disables** double-buffering | 16 |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
-|`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits, which are (currently) subject to issues such as #15; disable this to prefer 32-bit modes which give the same colour depth but fewer glitches | 0 |
+|`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits; disable this to prefer 32-bit modes which give the same colour depth but use more RAM | 1 |
 
 ### Example configuration
 
@@ -100,7 +104,7 @@ When using a linear framebuffer, on a 386 or newer, the driver also attempts to 
 
 Basically, if you're using 386 Enhanced Mode (or Standard Mode without `EMM386`), with a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust how often the screen is redrawn using the `SwapBuffersInterval=` setting in `SYSTEM.INI`!
 
-The default is 16 ms, which means that the screen is redrawn just over sixty times a second. Unfortunately I haven't found a way to synchronize it to your monitor's blanking interval, meaning that "sixty times a second" and "60fps" won't necessarily line up as well as one might hope (see discussion [here](https://github.com/PluMGMK/vbesvga.drv/issues/55)). Shorter intervals lead to smoother drawing - as long as your CPU can keep up! Going shorter than 15 ms even causes problems for me, on a Core i7 4790K, at least when trying to use windowed DOS prompts in 386 Enhanced Mode. I plan to investigate adding buffer-swap code to `VDDVBE.386`, to improve performance in that situation...
+The default is 16 ms, which means that the screen is redrawn just over sixty times a second. Unfortunately I haven't found a way to synchronize it to your monitor's blanking interval, meaning that "sixty times a second" and "60fps" won't necessarily line up as well as one might hope (see discussion [here](https://github.com/PluMGMK/vbesvga.drv/issues/55)). Shorter intervals lead to smoother drawing - as long as your CPU can keep up!
 
 If you suspect there are problems with Double Buffering, you can force-disable it by setting `SwapBuffersInterval=0`. This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
 
@@ -112,7 +116,7 @@ When Windows boots, the driver queries the BIOS for available modes, and automat
 * Graphics mode (not text)
 * Colour mode (not black & white)
 * Resolution matches what was specified in `SYSTEM.INI`
-* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2 or 4 bytes (or 3 if `Allow3ByteMode=1`)
+* Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2, 3 (unless `Allow3ByteMode=0`) or 4 bytes
 * Either packed-pixel or direct-colour framebuffer
 * Significant bit depth (i.e. red+green+blue but without padding) matches what was specified in `SYSTEM.INI`
 
@@ -122,7 +126,7 @@ Note that this automatic search is currently the only way the driver selects mod
 
 ### Having trouble finding compatible modes?
 
-If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly, and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
+If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected), and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
 
 If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output running under DOSBox-X 2024.07.01:
 ```
@@ -163,3 +167,9 @@ Another example can be seen in the screenshot above, running on real hardware.
 You can see that it lists all detected colour graphics modes, showing their resolutions in typical `Width*Height*NominalBitDepth` form. It then indicates the memory model for each one - only *packed-pixel* and *direct-colour* modes are usable with `VBESVGA.DRV`, so all others say "NG" (no good).
 
 Direct-colour modes may have padding bits in each pixel, so the bit depths for these modes are listed with and without padding. The "S" number is what I call the *significant depth*, which excludes padding bits, and the "T" number is the *total depth*, which is the physical size of a pixel in memory. The driver searches for modes whose significant depths match what is specified in `SYSTEM.INI` (or 24 by default), but also makes sure the total depth is divisible by eight. If it is not divisible by eight, then pixels are not byte-aligned, and so those modes are also "NG" as seen above.
+
+## Windows 3.1 refusing to boot with your GPU?
+
+Windows may get stuck on the logo when you try to boot it with certain graphics card option ROMs. This happens regardless of whether or not you try to use this driver. It may be caused by a stack overflow in the logo code in `WIN.COM` when it tries to do an `int 10h` call. Another manifestation of this, which I have personally experienced, is that Windows boots successfully, but then gets caught in a loop if you try to start a DOS prompt in Standard Mode.
+
+To work around this issue, you can try using the `AUXSTACK.COM` TSR, included in newer releases. Simply run `AUXSTACK.COM` before starting Windows, and it will allocate 1 kiB of Conventional Memory to use as an auxiliary stack and prevent the overflow from occurring. I've only tested it in the specific case I mentioned above (failure to start a DOS prompt in Standard Mode) but hopefully it will also work for other cases...

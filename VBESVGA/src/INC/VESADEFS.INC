@@ -45,6 +45,11 @@ VBE_ERR_BADMODE	= 3
 ; Extra Error Codes for our wrapper functions
 ERR_REAL_ALLOC	= 4
 ERR_PROT_ALLOC	= 5
+; Error codes for unsuitable window attributes
+ERR_WIN_BADATTR	= 6
+ERR_WIN_TOOBIG	= 7
+ERR_WIN_BADGRAN	= 8
+ERR_WIN_BADSIZE	= 9
 
 ; CRT Controller Info Block (taken straight from VBE 3.0 spec)
 CRTCInfoBlock	struc

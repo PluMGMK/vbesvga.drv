@@ -54,6 +54,7 @@ incDevice	= 1
 	externNP start_double_buf	;Start double-buffering timer if needed
 	externA  PHYS_DEVICE_SIZE	;Size of physical device
 	externA  __WinFlags		;Windows info bit
+        externA  __B800
 	externFP FatalExit
 	externFP AllocSelector		; allocate a new selector
 	externFP PrestoChangeoSelector	; CS <--> DS conversion
@@ -95,13 +96,34 @@ SYSINI	ENDS
 
 ; error messages
 fail_reason	dw	offset general_fail
-bad_width	db	'Width < 640 is not allowed',13,10,'$'
-bad_height	db	'Height < 480 is not allowed',13,10,'$'
+bad_width	db	'Width < 320 is not allowed',13,10,'$'
+bad_height	db	'Height < 200 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
 bad_interval	db	'Swap-buffers interval > 55 ms is not allowed',13,10
 		db	'(Note that a value of 0 disables double buffering)',13,10,'$'
 general_fail	db	'No usable modes found with requested resolution and bit depth',13,10,'$'
+bad_hardware	db	'VESA BIOS says function not supported by current hardware configuration',13,10,'$'
+bad_mode	db	'VESA BIOS says function not supported in current mode',13,10,'$'
+real_alloc_fail	db	'Unrecoverable DOS memory allocation error during mode search',13,10,'$'
+prot_alloc_fail	db	'Unrecoverable memory allocation / mapping error during mode search',13,10,'$'
+bad_win_attr	db	'Suitable mode found, but window A is not read-write',13,10,'$'
+bad_win_toobig	db	'Suitable mode found, but window is bigger than 64 kiB',13,10
+		db	'(the Video RAM window must fit inside a single segment)',13,10,'$'
+bad_win_gran	db	'Suitable mode found, but window size is not an integer multiple of granularity',13,10,'$'
+bad_win_size	db	'Suitable mode found, but scanlines cross window boundaries which are < 64 kiB',13,10
+		db	'(this driver only handles scanlines crossing 64k segment boundaries)',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
+
+; map of return codes from FindMode to error messages
+vesa_err_msgs	dw	offset general_fail
+		dw	offset bad_hardware
+		dw	offset bad_mode
+		dw	offset real_alloc_fail
+		dw	offset prot_alloc_fail
+		dw	offset bad_win_attr
+		dw	offset bad_win_toobig
+		dw	offset bad_win_gran
+		dw	offset bad_win_size
 
 boot_category   db      "VBESVGA.DRV",0
 
@@ -156,6 +178,7 @@ assumes cs,InitSeg
 
 	externNP FindMode		;from vesafns.asm
 	externNP QueryGeometry		;from vesafns.asm
+	externNP print_bank_info	;from vesafns.asm
 	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
 	externB  physical_device	;Device physical data
@@ -393,7 +416,7 @@ enable_read_profile	PROC	NEAR
 	lea	bx,width_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
-	cmp	ax,640
+	cmp	ax,320
 	jnb	@F
 	mov	[fail_reason],offset bad_width
 	jmp	enable_read_profile_fail
@@ -403,7 +426,7 @@ enable_read_profile	PROC	NEAR
 	lea	bx,height_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
         cCall   GetPrivateProfileInt,<ds,ax,ds,bx,-1,ds,cx>
-	cmp	ax,480
+	cmp	ax,200
 	jnb	@F
 	mov	[fail_reason],offset bad_height
 	jmp	enable_read_profile_fail
@@ -432,7 +455,7 @@ enable_read_profile	PROC	NEAR
 	lea	ax,boot_category
 	lea	bx,allow3b_member
 	lea	cx,aszSystemIni 		;ptr to "system.ini" string
-        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1,ds,cx>
 	test	ax,ax
 	jz	@F
 	mov	al,1
@@ -457,6 +480,15 @@ enable_read_profile	PROC	NEAR
 	cCall	FindMode,<[prefer_bank]>
 	test	ax,ax
 	jz	@F
+
+	test	ax,ax
+	jns	@@err
+	neg	ax	; FindMode can return -1 instead of 1!
+@@err:	dec	ax	; these start from 1, not 0!
+	mov	bx,ax
+	shl	bx,1
+	mov	ax,vesa_err_msgs[bx]
+	mov	[fail_reason],ax
 	jmp	enable_read_profile_fail
 	; Vmode should now be set
 
@@ -541,8 +573,25 @@ enable_read_profile_fail:
 	int	21h
 	mov	ah,8	; read character from stdin
 	int	21h
-	cCall	FatalExit,<0>
 
+	; Under WIN386 (i.e. in 386 Enhanced Mode), the DOS prompt's cursor gets
+	; reset to the top of the screen after we exit, resulting in a weird
+	; comingling of the prompt with our message. Prevent that by clearing
+	; the framebuffer, but don't do it under DOSX (Standard Mode), which
+	; handles this situation correctly!
+	mov	ax,__WinFlags
+	test	ax,WF_ENHANCED
+	jz	@F
+
+	; clear framebuffer...
+	mov	ax,__B800
+	mov	es,ax
+	xor	di,di
+	mov	ax,720h	; grey-on-black spaces
+	mov	cx,80*25
+	rep	stosw
+
+@@:	cCall	FatalExit,<0>
 	; So FatalExit can return, which is not good enough for a possible
 	; user-facing failure mode! It seems all we can do is exit directly to
 	; DOS! (I know this works because it happened successfully when we were
@@ -597,7 +646,17 @@ cBegin
 @@:	mov	[wsprintf.off],ax
 	mov	[wsprintf.sel],dx
 
-	; format configuration information
+	; Since the error messages are in order, the fail_reason will
+	; point at or beyond the first bank-related one only if we're
+	; failing for a bank-related reason! In that case, print bank
+	; info instead of generic info...
+	cmp	[fail_reason],offset bad_win_attr
+	jb	@F
+	lea	ax,outbuf
+	cCall	print_bank_info,<[wsprintf.sel],[wsprintf.off],ss,ax>
+	jmp	print_info_done
+
+@@:	; format configuration information
 	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
 	xor	ax,ax
 	mov	al,[VScreen_Depth]

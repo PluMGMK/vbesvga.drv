@@ -213,8 +213,14 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
         localW  fn_decode_rle           ; function to output a solid scan
         localW  fn_next_scan            ; function to jump in Y
 	localW	fn_stos			; function to store one pixel of xlated colour
+	localW	fn_adv_dest		; function to advance by AX pixels
 	localW	fn_rep_stos		; function to store CX pixels of xlated colours
 	localW	fn_rep_stos_pair	; function to store CX pixels of two xlated colours
+
+	localW	fn_stos_checked		; fn_stos with wrap checking
+	localW	fn_adv_dest_checked	; fn_adv_dest with wrap checking
+	localW	fn_rep_stos_checked	; fn_rep_stos with wrap checking
+	localW	fn_rep_stos_pair_checked; fn_rep_stos_pair with wrap checking
 
         localW  scan_start              ; start of current scan
 
@@ -228,6 +234,8 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
 
 	localB	use_palette_trans	;non-zero iff device uses a palette
         localB  cur_bank
+
+	localW	DstXBytes		;DstX * bytes per pixel
 cBegin
         cld
 
@@ -291,9 +299,10 @@ RleBltEscape:
 
         inc     al
         cmp     ah,al
-        je      RleBltEOF
+	jne	@F
+        jmp     RleBltEOF
 
-        inc     al
+@@:     inc     al
         cmp     ah,al
         je      RleBltDelta
         errn$   RleBltUnencodedRun
@@ -328,14 +337,15 @@ RleBltDelta:
         jnz     RleBltDeltaXY
 
 RleBltDeltaX:
-        call	adv_dest
+        call	[fn_adv_dest_checked]
         jmp     short RleBltNext
 
 RleBltDeltaXY:
         mov     cl,ah
         xor     ch,ch               ; cx = deltaY
         mov     ah,ch               ; ax = deltaX
-        call	adv_dest            ; adjust curX
+	; NOT checked since we're not actually going to draw here!
+        call	[fn_adv_dest]       ; adjust curX
 ;
         mov     dx,DstY
         sub     dx,cx               ; adjust curY
@@ -350,8 +360,10 @@ RleBltDeltaYLoop:
         call    [fn_next_scan]
         loop    RleBltDeltaYLoop
         mov     scan_start,di       ; save start of scan
-        call	adv_dest            ; get back curX
-        jmp     RleBltNext
+        add	di,ax               ; get back curX
+	jnc	@F
+	call	adv_bank
+@@:     jmp     RleBltNext
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ; We have found a end of line marker, point ES:DI to the begining of the
@@ -366,8 +378,10 @@ RleBltEOL:
         mov     di,scan_start       ; get start of scan back
         call    [fn_next_scan]      ; advance to next scan
         mov     scan_start,di
-        add     di,DstX
-        jmp     RleBltNext          ; go get some more
+        add     di,DstXBytes
+	jnc	@F
+	call	adv_bank
+@@:     jmp     RleBltNext          ; go get some more
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ; We have found a end of rle marker, clean up and exit.
@@ -507,7 +521,11 @@ rle_init_huge:
 	dec	bx			; 1 Bpp --> offset zero
 	shl	bx,1			; convert index to offset
 	mov	ax,cs:stos_colour_table[bx]
+	mov	dx,cs:adv_dest_table[bx]
 	mov	[fn_stos],ax
+	mov	[fn_stos_checked],ax
+	mov	[fn_adv_dest],dx
+	mov	[fn_adv_dest_checked],dx
 	mov	ax,__WinFlags
 	test	ax,WF_CPU386 OR WF_CPU486
 	jz	@F
@@ -516,7 +534,9 @@ rle_init_huge:
 	mov	ax,cs:rep_stos_colour_table[bx]
 	mov	dx,cs:rep_stos_colpair_table[bx]
 	mov	[fn_rep_stos],ax
+	mov	[fn_rep_stos_checked],ax
 	mov	[fn_rep_stos_pair],dx
+	mov	[fn_rep_stos_pair_checked],dx
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -573,6 +593,34 @@ endif
         mov     cur_bank,dl
         SET_BANK
 
+	; setup the "checked" versions of the functions if necessary
+	; start by checking if (10000h-FillBytes)/WidthBytes leaves a remainder
+	mov	ax,[FillBytes]
+	cwd
+	neg	ax
+	test	ax,ax
+	jnz	@F
+	mov	dx,1	; FillBytes=0 => our numerator is 10000h
+@@:	div	[WidthBytes]
+
+	test	dx,dx	; remainder?
+	jz	rle_init_no_wrapcheck
+
+	; if there is a remainder, we need to bring in the wrap checks!
+	lea	ax,adv_dest_checked
+	lea	dx,stos_colour_checked
+	cmp	bptr colour_format[1],24
+	jne	@F
+	lea	dx,stos_colour3_checked     ; special case...
+@@:	mov	[fn_adv_dest_checked],ax
+	mov	[fn_stos_checked],dx
+
+	lea	ax,rep_stos_colour_checked
+	lea	dx,rep_stos_colpair_checked
+	mov	[fn_rep_stos_checked],ax
+	mov	[fn_rep_stos_pair_checked],dx
+
+rle_init_no_wrapcheck:
         or      BltFlags,RLE_DEVICE         ; mark the fact it is the device
         jmps    rle_init_success
 
@@ -604,7 +652,14 @@ bmp_ptr_small:
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 rle_init_success:
         mov     scan_start,di       ; remember the start of scan
-        add     di,DstX
+
+	; calculate offset of starting byte from beginning of scanline
+	mov	ax,DstX
+	call	[adv_dest_checked]
+	mov	ax,di
+	sub	ax,[scan_start]
+	mov	[DstXBytes],ax
+
         lds     si,lpBits
         lea     bx,color_xlat
         clc
@@ -791,6 +846,16 @@ next_scan   proc near
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
+next_scan_device_restbank:
+	; if adv_bank has moved the bank forward, this gets called to
+	; move it back before doing the next scanline
+        mov     dl,cur_bank
+        SET_BANK
+	; set the pointer back to normal to avoid excessive calls to
+	; SET_BANK...
+	lea	dx,next_scan_device
+	mov	[fn_next_scan],dx
+	
 next_scan_device:
         sub     di,WidthBytes
         jc      next_scan_device_wrap
@@ -889,7 +954,7 @@ decode_abs_8_clip_huge:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8_huge
 
-        call	adv_dest
+        call	[fn_adv_dest_checked]
 
 @@:     add     si,ax
         jnc     @f
@@ -900,7 +965,7 @@ decode_abs_8_clip_huge:
 @@:     jcxz    @f
         call    decode_abs_8_huge
 	mov	ax,dx
-        call	adv_dest
+        call	[fn_adv_dest_checked]
         add     si,ax
         jnc     @f
         mov     ax,ds
@@ -912,12 +977,12 @@ decode_abs_8_clip:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8
 
-        call	adv_dest
+        call	[fn_adv_dest_checked]
         add     si,ax
         jcxz    @f
         call    decode_abs_8
         mov     ax,dx
-        call	adv_dest
+        call	[fn_adv_dest_checked]
         add     si,ax
 @@:     ret
 
@@ -952,7 +1017,7 @@ decode_abs_8_clip_xlat_huge:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8_xlat_huge
 
-        call	adv_dest            ; update dest
+        call	[fn_adv_dest_checked]; update dest
 
 @@:     add     si,ax
         jnc     @f
@@ -963,7 +1028,7 @@ decode_abs_8_clip_xlat_huge:
 @@:     jcxz    @f
         call    decode_abs_8_xlat_huge
 	mov	ax,dx
-        call	adv_dest
+        call	[fn_adv_dest_checked]
         add     si,ax
         jnc     @f
         mov     ax,ds
@@ -974,12 +1039,12 @@ decode_abs_8_clip_xlat_huge:
 decode_abs_8_clip_xlat:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_8_xlat
-        call	adv_dest            ; update dest
+        call	[fn_adv_dest_checked]; update dest
         add     si,ax
         jcxz    @f
         call    decode_abs_8_xlat
 	mov	ax,dx
-        call	adv_dest            ; update dest
+        call	[fn_adv_dest_checked]; update dest
         add     si,ax
 @@:     ret
 
@@ -996,7 +1061,7 @@ decode_abs_8_xlat_loop:
         lodsb
 
         call	load_xlated_colour
-        call	[fn_stos]
+        call	[fn_stos_checked]
 
         loop    decode_abs_8_xlat_loop
 
@@ -1057,7 +1122,7 @@ decode_abs_4_clip:
         call    clip_rle            ; returns AX=clip_left, DX=clip_right
         jnc     decode_abs_4
 
-        call	adv_dest            ; advance dest
+        call	[fn_adv_dest_checked]; advance dest
 
         shr     ax,1                ; test for a odd nibble clip!
         jnc     decode_abs_4_clip_even
@@ -1073,7 +1138,7 @@ decode_abs_4_clip:
         and     al,0Fh
 	push	dx
 	call	load_xlated_colour
-        call	[fn_stos]
+        call	[fn_stos_checked]
 	pop	dx
         loop    decode_abs_4_clip_out
         ret
@@ -1094,7 +1159,7 @@ decode_abs_4_clip_out:
         push    ax
         call    decode_abs_4
 	mov	ax,dx
-        call	adv_dest
+        call	[fn_adv_dest_checked]
         mov     ax,si
         pop     si
         cmp     si,ax
@@ -1130,13 +1195,13 @@ decode_abs_4_loop:
 
         push	ax
 	call	load_xlated_colour
-        call	[fn_stos]
+        call	[fn_stos_checked]
 	pop	ax
 
         xchg    al,ah
         and     al,0Fh
 	call	load_xlated_colour
-        call	[fn_stos]
+        call	[fn_stos_checked]
 
         loop    decode_abs_4_loop
 	pop	dx
@@ -1154,7 +1219,7 @@ decode_abs_4_odd:
         shr     al,4
 	push	dx	; save this in case we're called from clip version
 	call	load_xlated_colour
-        call	[fn_stos]
+        call	[fn_stos_checked]
 	pop	dx
         ret
 
@@ -1213,14 +1278,14 @@ decode_rle_8_clip:
 	push	dx
         push    ax
         call    clip_rle
-        call	adv_dest
+        call	[fn_adv_dest_checked]
 	mov	bx,dx	; save second clip retval in BX
         pop     ax
 	pop	dx
         jcxz    @f
-        call	[fn_rep_stos]
+        call	[fn_rep_stos_checked]
 	mov	ax,bx
-        call	adv_dest
+        call	[fn_adv_dest_checked]
 @@:	pop	bx
 	ret
 
@@ -1229,7 +1294,7 @@ decode_rle_8_clip:
 decode_rle_8_xlat:
         call	load_xlated_colour
 decode_rle_8:
-        call	[fn_rep_stos]
+        call	[fn_rep_stos_checked]
         ret
 
 decode_rle8  endp
@@ -1272,7 +1337,7 @@ decode_rle_4_clip:
         call    clip_rle
         jnc     decode_rle_4_not_clipped
 
-        call	adv_dest
+        call	[fn_adv_dest_checked]
 
         pop     ax
         jnc     @f
@@ -1280,7 +1345,7 @@ decode_rle_4_clip:
 @@:     jcxz    @f
         call    decode_rle_4_xlat
 	mov	ax,dx
-        call	adv_dest
+        call	[fn_adv_dest_checked]
 @@:     ret
 
 decode_rle_4_not_clipped:
@@ -1455,23 +1520,75 @@ clip_rle_clipped:
 
 clip_rle  endp
 
-; advance the pointer ES:DI by AX *pixels*
-adv_dest  proc near
+; advance the pointer ES:DI by AX *pixels* and set CF on wrap
+adv_dest1 proc near
 	add	di,ax
-	cmp	colour_format[1],8	; more than 8bpp?
-	jng	@F
+	ret
+adv_dest1 endp
 
+adv_dest2 proc near
+	shl	ax,1
 	add	di,ax
-	cmp	colour_format[1],16	; more than 16bpp?
-	jng	@F
+	; need to restore AX and also preserve CF
+	adc	al,0
+	shr	ax,1
+	ret
+adv_dest2 endp
 
+adv_dest3 proc near
+	; TODO: is there a way to do this without the stack?
+	push	dx
+	mov	dx,ax
+	shl	ax,1
+	add	ax,dx
 	add	di,ax
-	cmp	colour_format[1],24	; more than 24bpp?
-	jng	@F
+	mov	ax,dx
+	pop	dx
+	ret
+adv_dest3 endp
 
+adv_dest4 proc near
+	shl	ax,2
 	add	di,ax
-@@:	ret
-adv_dest  endp
+	; need to restore AX and also preserve CF
+	adc	al,1	; adds 1 if NC, 2 if CY
+	shr	ax,1	; if we added 1, we get rid of it here
+	shr	ax,1	; if we added 2, it sets CF here
+	ret
+adv_dest4 endp
+
+adv_dest_table	label word
+	dw	offset	adv_dest1
+	dw	offset	adv_dest2
+	dw	offset	adv_dest3
+	dw	offset	adv_dest4
+
+adv_dest_checked proc near
+	call	[fn_adv_dest]
+	jc	adv_bank
+	ret
+adv_dest_checked endp
+
+adv_bank	proc near
+	push	dx
+
+	; don't update cur_bank, because that's supposed to indicate
+	; the BEGINNING of the current scanline! We will never be in
+	; a situation where "inc dl" doesn't suffice, because that
+	; would imply that a single scanline crosses more than one
+	; bank, which is impossible...
+	mov	dl,cur_bank
+	inc	dl
+	SET_BANK
+
+	; make sure the current bank is restored when we're ready to
+	; go up to the next scanline...
+	lea	dx,next_scan_device_restbank
+	mov	[fn_next_scan],dx
+
+	pop	dx
+	ret
+adv_bank	endp
 
 ;--------------------------Public-Routine------------------------------;
 ; stos_colour
@@ -1480,7 +1597,7 @@ adv_dest  endp
 ;
 ; Entry:
 ;       DX:AX	= physical colour
-;	ES:DI --> colour pattern destination (64*bpp bytes)
+;	ES:DI --> colour destination
 ; Returns:
 ;       None
 ; Error Returns:
@@ -1528,6 +1645,40 @@ stos_colour4	proc near
 	stosw
 	ret
 stos_colour4	endp
+
+stos_colour_checked	proc near
+	call	[fn_stos]
+	test	di,di
+	jz	@F
+	ret
+
+@@:	jmp	adv_bank
+stos_colour_checked	endp
+
+stos_colour3_checked	proc near
+	; this case is a bit more complicated than the others because
+	; the pixel itself could cross a bank boundary!
+	cmp	di,-3		; will the pixel cross the bank end?
+	jb	stos_colour3	; nope, just do the normal thing...
+	; first byte
+	stosb
+	test	di,di
+	jnz	@F
+	call	adv_bank
+@@:	; second byte
+	mov	al,ah
+	stosb
+	test	di,di
+	jnz	@F
+	call	adv_bank
+@@:	; third byte
+	mov	al,dl
+	stosb
+	test	di,di
+	jnz	@F
+	call	adv_bank
+@@:	ret
+stos_colour3_checked	endp
 
 ;--------------------------Public-Routine------------------------------;
 ; rep_stos_colour
@@ -1606,7 +1757,7 @@ rep_stos_colour4_386	proc near
 	ror	eax,10h
 	xchg	ax,dx	; restore the upper half of EAX from DX
 	ror	eax,10h
-	.8086
+	.286
 	ret
 rep_stos_colour4_386	endp
 
@@ -1666,7 +1817,7 @@ rep_stos_colpair2_286	proc near
 	cmp	ax,bx	; colours the same?
 	je	rep_stos_colour2
 
-	mov	dx,ax
+	mov	dx,bx
 	shr	cx,1
 	; if an even number, go straight to the 32-bit routine
 	jnc	rep_stos_colour4_286
@@ -1680,7 +1831,7 @@ rep_stos_colpair2_386	proc near
 	cmp	ax,bx	; colours the same?
 	je	rep_stos_colour2
 
-	mov	dx,ax
+	mov	dx,bx
 	shr	cx,1
 	; if an even number, go straight to the 32-bit routine
 	jnc	rep_stos_colour4_386
@@ -1698,8 +1849,9 @@ rep_stos_colpair4_286	proc near
 	jne	@F
 	cmp	dx,bp
 	je	rep_stos_colour4_286
+	; two STOSWs per colour!
+@@:	shl	cx,1
 
-	shl	cx,1
 @@:	stosw
 	xchg	dx,ax
 	xchg	bx,dx
@@ -1726,8 +1878,6 @@ rep_stos_colpair4_386	proc near
 
 @@:	stosd
 	xchg	eax,ebx
-	stosd
-	xchg	eax,ebx
 	loop	@B
 
 	ror	ebx,10h
@@ -1736,7 +1886,7 @@ rep_stos_colpair4_386	proc near
 	ror	eax,10h
 	xchg	ax,dx	; restore the upper half of EAX from DX
 	ror	eax,10h
-	.8086
+	.286
 	ret
 rep_stos_colpair4_386	endp
 
@@ -1749,29 +1899,55 @@ rep_stos_colpair3	proc near
 	or	bx,bp
 	xchg	bl,bh
 
-	test	cx,1	; odd number?
-	jz	@F
+	test	di,1	; at an odd address?
+	jz	@F	; no, go do pairs
 	stosw
 	xchg	dl,al
 	stosb
-	; swap order
-	xchg	bh,al	; since we just did XCHG DL,AL above!
-	xchg	bl,ah
-	xchg	dh,dl
+	dec	cx
+	; Swap order... At this point we have:
+	; * the first colour in AL:AH:DL (since we did XCHG DL,AL above)
+	; * the second colour in BH:BL:DH
+	; We want:
+	; * the first colour in BH:BL:DH
+	; * the second colour in DL:AH:AL
+	; So:
+	; * BH needs to become AL but DL needs to become BH
+	; * BL needs to become AH and vice versa
+	; * DH needs to become DL but AL needs to become DH
+	; The easiest way to accomplish this is to reverse the earlier
+	; XCHG and then just XCHG the usual byte regs holding the
+	; colour components
+	xchg	dl,al	; reverse earlier XCHG
+	xchg	bh,dl	; swap upper byte
+	xchg	bl,ah	; swap middle byte
+	xchg	dh,al	; swap lower byte
 
-@@:	; multiply CX by 3/2
+@@:	; multiply even part of CX by 3/2
+	shr	cx,1
+	pushf		; remember if we carried
 	mov	bp,cx
-	shr	bp,1
+	shl	cx,1
 	add	cx,bp
+	jz	@@check_last
 
-	; FIXME: this could all end up being misaligned...
 @@:	stosw
 	xchg	dx,ax
 	xchg	bx,dx
 	loop	@B
-	ret
+@@check_last:
+	; check if there's a pixel left to do...
+	popf
+	rcl	cx,1
+	jcxz	@F
+	stosw
+	xchg	dl,al
+	stosb
+	dec	cx
+@@:	ret
 rep_stos_colpair3	endp
 
+public	stos_colour_table
 stos_colour_table	label word
 	dw	offset	stos_colour1
 	dw	offset	stos_colour2
@@ -1795,6 +1971,136 @@ rep_stos_colpair_table	label word
 	dw	offset	rep_stos_colpair2_386
 	dw	offset	rep_stos_colpair3
 	dw	offset	rep_stos_colpair4_386
+
+rep_stos_colour_checked	proc near
+	push	di
+	xchg	cx,ax
+	call	[fn_adv_dest]	; NOT checked: we only want to know CF
+	xchg	cx,ax
+	pop	di
+	jc	@F
+	jmp	[fn_rep_stos]
+
+@@:	; if we get here, it means advancing DI by CX pixels moves past
+	; the end of the current bank, so we need to handle that!
+	push	ax
+	push	cx
+
+	; figure out how many pixels will fit in the rest of the
+	; current bank...
+	push	ax
+	push	dx
+	mov	ax,di
+	neg	ax
+	cwd	; AX should always be <8000h in this situation
+	mov	cx,[colour_format]
+	shr	cx,3+8
+	div	cx
+	; now AX = whole pixels remaining in bank, and DX = leftover bytes
+	mov	cx,ax	; fill this many pixels
+	test	dx,dx	; check for remainder
+	; get back our colour:
+	pop	dx
+	pop	ax
+
+	; and save the pixel count, and the flags so we remember whether
+	; or not there was a remainder:
+	push	cx
+	pushf
+	; fill the rest of the bank
+	call	[fn_rep_stos]
+	; get back flags and count
+	popf
+	pop	cx
+
+	; if there was a remainder, then do an extra checked pixel...
+	jz	@F
+	push	ax
+	push	dx
+	call	[fn_stos_checked] ; destroys AX/DX
+	pop	dx
+	pop	ax
+	inc	cx
+	jmp	rep_stos_checked_innextbank
+
+@@:	call	adv_bank
+rep_stos_checked_innextbank:
+	pop	ax	; get back the original count
+	sub	ax,cx	; subtract the pixels we've done so far
+	mov	cx,ax	; make that our new count
+	pop	ax	; get back the colour
+	; and go!
+	jmp	[fn_rep_stos]
+rep_stos_colour_checked	endp
+
+rep_stos_colpair_checked	proc near
+	push	di
+	xchg	cx,ax
+	shl	ax,1
+	call	[fn_adv_dest]	; NOT checked: we only want to know CF
+	; need to restore AX and also preserve CF
+	adc	al,0
+	shr	ax,1
+	xchg	cx,ax
+	pop	di
+	jc	@F
+	jmp	[fn_rep_stos_pair]
+
+@@:	; if we get here, it means advancing DI by CX pixels moves past
+	; the end of the current bank, so we need to handle that!
+	push	ax
+	push	cx
+
+	; figure out how many pixels will fit in the rest of the
+	; current bank...
+	push	ax
+	push	dx
+	mov	ax,di
+	neg	ax
+	cwd	; AX should always be <8000h in this situation
+	mov	cx,[colour_format]
+	shr	cx,3+8-1; -1 since we're counting pixel pairs
+	and	cl,not 1
+	div	cx
+	; now AX = whole pixels remaining in bank, and DX = leftover bytes
+	mov	cx,ax	; fill this many pixels
+	test	dx,dx	; check for remainder
+	; get back our first colour:
+	pop	dx
+	pop	ax
+
+	; and save the pixel pair count, and the flags so we remember whether
+	; or not there was a remainder:
+	push	cx
+	pushf
+	; fill the rest of the bank
+	call	[fn_rep_stos]
+	; get back flags and count
+	popf
+	pop	cx
+
+	; if there was a remainder, then do an extra pair of checked pixels...
+	jz	@F
+	push	ax
+	push	dx
+	call	[fn_stos_checked] ; destroys AX/DX
+	mov	ax,bx
+	mov	dx,bp
+	call	[fn_stos_checked] ; destroys AX/DX
+	pop	dx
+	pop	ax
+	inc	cx
+	jmp	rep_stos_pair_checked_innextbank
+
+@@:	call	adv_bank
+rep_stos_pair_checked_innextbank:
+	pop	ax	; get back the original count
+	sub	ax,cx	; subtract the pixels we've done so far
+	mov	cx,ax	; make that our new count
+	pop	ax	; get back the colour
+	; and go!
+	jmp	[fn_rep_stos_pair]
+rep_stos_colpair_checked	endp
 
 sEnd
 end

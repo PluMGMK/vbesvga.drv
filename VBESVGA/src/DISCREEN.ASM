@@ -69,7 +69,11 @@ sBegin Data
 
 	externW		raster_flags		; in BMC_MAIN.ASM
 
+	externB		Palette			; in RGB2IPC.ASM
+	externA		NbrOfColours		; in RGB2IPC.ASM
+
         externB         PaletteTranslationTable
+        externB         PaletteModified
         externB         bank_select_byte
 sEnd
 
@@ -226,7 +230,8 @@ cProc	DibBlt,<NEAR,PUBLIC,PASCAL>,<ds,si,di>
 	parmD	lpClipRect
         parmD   lpColorInfo		; GDI supplied value for color matching
 
-        localD  bk_color                ; background color for TRANSPARENT mode
+        localD  bk_colour               ; background colour for TRANSPARENT mode
+	localB	bk_colour_prexlate	; palette entry that maps onto background colour
 
         localB  fbFlags                 ; flag bytes
 
@@ -247,13 +252,15 @@ DEV_PALETTE	equ	0001000000b	; device uses a palette
 
         localV  color_xlate,1024        ; the local color xlate table (256dword)
 
-        localD  DeviceColorMatch        ; GDI color match routine
+        localD  LastRGB                 ; holds the last RGB value
 
 	localW	colour_format		; copy of this on stack
 
         localW  draw_proc               ; routine to call to blt a byte/scan
 	localW	SourceBytesPerScanBlt	; no of bytes in map for 1 scan blt
 	localB	bank_select		; track the current bank of display
+
+	localW	scans_copied		; return value
 cBegin
         cld
 
@@ -267,6 +274,7 @@ cBegin
         cmp     Rop.hi, 00CCh           ; is the ROP SRCCOPY?
         jne     let_gdi_do_it           ; not get out'a here
 
+        mov     dl,PaletteModified	; needed below
 	mov	al,enabled_flag		; error if screen is not enabled
 	or	al,al
         jnz     device_is_enabled
@@ -319,18 +327,22 @@ not_encoded:
 
         mov     bx,es:[di].bkColor.lo       ; get BkColor
         mov     cx,es:[di].bkColor.hi
+
+	test	[fbFlags],DEV_PALETTE       ; using a palette?
+        jz      discreen_not_background     ; no, nothing to do
+	xor	bh,bh                       ; yes, zero upper byte
+
         or      dl,dl                       ; are we in background mode?
         jz      discreen_not_background     ; no, nothing to do
 
         smov    es,DataBASE                 ; yes, we must pass BkColor
         assumes es,Data                     ; through PaletteTranslateTable
-        xor     bh,bh
         mov     bl,PaletteTranslationTable[bx]
         assumes es,nothing
 
 discreen_not_background:
-        mov     bk_color.lo,bx
-        mov     bk_color.hi,cx
+        mov     bk_colour.lo,bx
+        mov     bk_colour.hi,cx
 
         or      fbFlags, MAP_TRANSPARENT    ; set flag
 
@@ -347,11 +359,6 @@ discreen_not_transparent:
 ;       DS:SI --> BITMAPINFO
 ;----------------------------------------------------------------------------;
 
-; test for souce pointer to be non NULL
-
-        mov     cx,lpBits.sel           ; NULL implies error
-        jcxz    parameter_error         ; can't support NULL pointer
-
         les     di,lpPDevice            ; get the pdevice structure
 	assumes	es,nothing
 
@@ -359,6 +366,11 @@ discreen_not_transparent:
 
 	mov	cx,es:[di].bmType	; test the type of the structure
         jcxz    let_gdi_do_it           ; can't support memory bitmaps here
+
+; test for souce pointer to be non NULL
+
+        mov     cx,lpBits.sel           ; NULL implies error
+        jcxz    parameter_error         ; can't support NULL pointer
 
         mov     ax,word ptr es:[di].bmPlanes
 	cmp	ax,colour_format	; our screen format?
@@ -387,6 +399,7 @@ discreen_not_transparent:
 ; validate the bits/pel count at this point. It has to be 1/4/8 or 24        ;
 ;----------------------------------------------------------------------------;
 	xor	cx,cx			; will build up the serial no
+	mov	scans_copied,cx		; while we're at it, zero our retval
 	IRP	x,<1,4,8,24>
 	cmp	ax,x
 	je	bit_count_ok		; valid count
@@ -551,7 +564,7 @@ endif
 copy_color_table:
         mov     cx,ax
         add     si,wptr [si].biSize     ; DS:SI has the color table
-        call    create_color_table      ; translates the color into indices
+        call    create_colour_table      ; translates the color into indices
 
 no_color_table:
         xor     bh,bh                   ; get the bits per pel serial num
@@ -589,6 +602,14 @@ init_8:
 	cmp	byte ptr colour_format[1],8	; 8 bits per pixel
 	jne	init_done
 
+	; if scanlines don't fit evenly into banks (i.e. not powers of two),
+	; this also isn't a special case...
+	mov	dx,1
+	xor	ax,ax
+	div	[next_screen_scan]
+	test	dx,dx	; check remainder
+	jnz	init_done
+
 ;----------------------------------------------------------------------------;
 ; If we are on a 386, use fast special code.  We will only do this if the
 ; DIB matches the native format of the screen (ie 8 bpp) and transparency is
@@ -620,70 +641,11 @@ cant_special_case:
 ;----------------------------------------------------------------------------;
 ;----------------------------------------------------------------------------;
 init_24:
-        mov     ax,DataBASE
-        mov     es,ax
-        assumes es,Data
-        mov     ax,es:GetColor_addr.off
-        mov     dx,es:GetColor_addr.sel
-        mov     DeviceColorMatch.off,ax
-        mov     DeviceColorMatch.sel,dx
-        assumes es,nothing
-
-        jmp     init_done
-
-;----------------------------------------------------------------------------;
-; the color convert routine reads a color triplet from the map specific color;
-; table - converts it into an index and stores it in a table on the stack. It;
-; does the conversion for the count of triplets passed in CX                 ;
-;----------------------------------------------------------------------------;
-
-create_color_table	proc	near
-
-; CX     ---  count of triplets to converts
-; DS:SI  ---  place where the color table is stored
-
-        push    ss
-        pop     es
-        lea     di,color_xlate          ; index into xlate table on stack
-
-	test	[fbFlags],DEV_PALETTE
-	jz	colour_table_nopalette
-
-        xor     bl,bl                   ; BL will range from 0-255
-        xor     dx,dx                   ; DX is ident mapping error
-xlate_next_color:
-        lodsw                           ; get palette index from GDI
-        stosw                           ; store it on the stack
-        sub     al,bl                   ; test for a 1<-->1 translate
-        add     dx,ax                   ; accumulate the error
-	mov	ax,0FF00h		; set upper word to indicate palette idx
-	stosw
-        inc     bl
-        loop    xlate_next_color
-
-        or      dx,dx
-        jz      create_color_table_exit
-
-        or      fbFlags,MAP_TRANSLATE   ; not the identity table, set the bit
-        jmp     create_color_table_exit
-
-colour_table_nopalette:
-	mov	bx,320h	; BL:=32 == #bytes we want
-			; BH:=11b --> 4 bytes input, need to swap red and blue
-	call	rgb_to_ipc_seq
-	
-create_color_table_exit:
-	ret
-
-create_color_table	endp
 
 init_done:
 
 ;----------------------------------------------------------------------------;
 ;----------------------------------------------------------------------------;
-        assumes ds,nothing
-	assumes	es,nothing
-
         lds     si,lpBits               ; the strting point of the bits
         les     di,lp_screen            ; the start on the screen
         lea     bx,color_xlate          ; address of the xlate table
@@ -692,6 +654,7 @@ blt_next_scan:
 	mov	cx,xExt			; the no of pels to blt
 	push	di
         call    draw_proc               ; do the blt of a scan
+	inc	scans_copied
 	pop	di
 
 	; in case the bank rolled over during that scanline
@@ -737,6 +700,83 @@ next_bank	proc near
 	assumes	ds,nothing
 	ret
 next_bank	endp
+
+;----------------------------------------------------------------------------;
+; the color convert routine reads a color triplet from the map specific color;
+; table - converts it into an index and stores it in a table on the stack. It;
+; does the conversion for the count of triplets passed in CX                 ;
+;----------------------------------------------------------------------------;
+
+create_colour_table	proc	near
+
+; CX     ---  count of triplets to convert
+; DS:SI  ---  place where the color table is stored
+
+        push    ss
+        pop     es
+        lea     di,color_xlate          ; index into xlate table on stack
+
+	test	[fbFlags],DEV_PALETTE
+	jz	colour_table_nopalette
+
+        xor     bl,bl                   ; BL will range from 0-255
+        xor     dx,dx                   ; DX is ident mapping error
+xlate_next_color:
+        lodsw                           ; get palette index from GDI
+        stosw                           ; store it on the stack
+        sub     al,bl                   ; test for a 1<-->1 translate
+        add     dx,ax                   ; accumulate the error
+	mov	ax,0FF00h		; set upper word to indicate palette idx
+	stosw
+        inc     bl
+        loop    xlate_next_color
+
+        or      dx,dx
+        jz      create_colour_table_checkxpar
+
+        or      fbFlags,MAP_TRANSLATE   ; not the identity table, set the bit
+        jmp     create_colour_table_checkxpar
+
+colour_table_nopalette:
+	mov	bx,320h	; BL:=32 == #bytes we want
+			; BH:=11b --> 4 bytes input, need to swap red and blue
+	call	rgb_to_ipc_seq
+
+create_colour_table_checkxpar:
+	test	[fbFlags],MAP_TRANSPARENT
+	jz	create_colour_table_exit
+
+	; figure out which palette entry (if any) maps to our bg colour,
+	; by going back down through them from the top.
+	lea	cx,color_xlate
+	sub	cx,di
+	neg	cx
+	shr	cx,2	; count DWORDs
+
+	; load the background colour to check it
+	mov	ax,bk_colour.lo
+	mov	dx,bk_colour.hi
+
+colour_table_xpar_loop:
+	lea	di,[di-4]
+	cmp	dx,es:[di+2]
+	jne	@F
+	cmp	ax,es:[di]
+@@:	loopne	colour_table_xpar_loop
+
+	; at this point, CX is the INDEX of the colour match we found
+	; (or it might be zero, and ZF clear, if no match found)
+	jne	@F
+	mov	[bk_colour_prexlate],cl
+	jmp	create_colour_table_exit
+
+@@:	; if NE, then we didn't find any match, so there is no transparency!
+	and	[fbFlags],NOT MAP_TRANSPARENT
+
+create_colour_table_exit:
+	ret
+
+create_colour_table	endp
 
 ;----------------------------------------------------------------------------;
 ;                       copy_1
@@ -801,7 +841,11 @@ copy_1_next_pixel:
 
 @@:	cmp	bl, 30h			;byte counter (upper nibble) >= 3?
 	jb	copy_1_dec_counter
+
 	mov	ax,dx
+	and	ax, color_xlate[8].hi	;if 1 select fg XOR bg
+	xor	ax, color_xlate[0].hi	;if 0 select bg
+
 	stosb
 	test	di,di
 	jnz	@F
@@ -829,49 +873,91 @@ copy_1_dec_counter:
 ;   copy_1 with transparency
 ;----------------------------------------------------------------------------;
 copy_1t:
-        mov     al,bk_color
+        mov     al,bk_colour_prexlate
         mov     ah,0FFh                 ; mask = FF
-        mov     bx,wptr color_xlate     ; bl=fg color, bh=bk color
 
-        cmp     al,bh                   ; is bk color transp?
+        cmp     al,1                    ; is bk color transp?
         je      @f                      ; yes
-        cmp     al,bl                   ; is bk color transp?
+        test    al,al                   ; is fg color transp?
         ;jne     copy_1                  ; no copy normaly
         not     ah                      ; yes invert mask
-        xchg    bl,bh
-@@:     mov     bh,ah                   ; bl = color, bh = mask
 
+	; move colour 1 into colour 0 slot, so we can use the same
+	; slot further down regardless of the mask value
+	mov	bx,color_xlate[4].lo
+	mov	dx,color_xlate[4].hi
+	mov	color_xlate[0].lo,bx
+	mov	color_xlate[0].hi,dx
+@@:     
         call    get_byte                ; al = first byte
-        xor     al,bh                   ; invert byte
+        xor     al,ah                   ; invert byte
         mov     dh,al                   ; dh = current byte
         mov     dl,01h                  ; dl = alignment bit
 
-        mov     ah,cl                   ; save CX
+        mov     bl,cl                   ; save CX
         mov     cl,bptr SrcX            ; align first byte
         and     cl,0111b
         shl     dx,cl
-        mov     cl,ah                   ; restore CX
+        mov     cl,bl                   ; restore CX
+
+	; get the bytes per pixel into BX...
+	mov	bx,[colour_format]
+	shiftr	bx,8+3			; bits in BH --> bytes in BX
 
 copy_1t_loop:
         shl     dh,1                    ; get the next pel into carry
-        jnc     @f
-        mov     es:[di],bl              ; write pixel
-@@:     inc     di
-        dec     cx
+        jnc     copy_1t_skip
+
+	mov	al,bptr color_xlate[0]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	cmp	bl,2
+	jb	copy_1t_dec_counter
+
+	mov	al,bptr color_xlate[1]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	cmp	bl,3
+	jb	copy_1t_dec_counter
+
+	mov	al,bptr color_xlate[2]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	cmp	bl,4
+	jb	copy_1t_dec_counter
+
+	mov	al,bptr color_xlate[3]
+	stosb
+	test	di,di
+	jnz	@F
+	call	next_bank
+
+@@:	jmp	short copy_1t_dec_counter
+
+copy_1t_skip:
+	add     di,bx
+	jnc	copy_1t_dec_counter
+	call	next_bank
+
+copy_1t_dec_counter:
+	dec     cx
         jz      copy_1t_done            ; another pel?
 
         rol     dl,1                    ; another bit in current byte?
         jnc     copy_1t_loop
 
-        lodsb                           ; get next byte into al
-        xor     al,bh
+        call    get_byte                ; get next byte into al
+        xor     al,ah
         mov     dh,al                   ; place in dh for loop
-        or      si,si                   ; did we wrap a seg?
-        jnz     copy_1t_loop            ; ..no go do some more
-
-        mov     ax,ds                   ; ..yes increment selector
-        add     ax,__AHINCR             ; ..and loop
-        mov     ds,ax
         jmp     copy_1t_loop
 
 copy_1t_done:
@@ -898,7 +984,17 @@ copy_1  endp
 
 copy_4  proc    near
 
-	mov	dx,[colour_format]
+	mov	dl,3			; set DL to a non-multiple-of-four
+	jmp	short @F
+
+;----------------------------------------------------------------------------;
+;   copy_4 with transparency
+;----------------------------------------------------------------------------;
+copy_4t:
+	mov	dl,[bk_colour_prexlate]
+	shl	dl,2			; set DL to transparent colour * 4
+
+@@:	mov	dh,bptr colour_format[1]
 	shr	dh,3			; output bytes per pixel in DH
 
 	push	bp
@@ -911,6 +1007,8 @@ copy_4_lownib:
 	shiftl	al,2			; index the four-byte palette table
 	mov	bp,cx			; save count
 	mov	cl,dh			; refresh bytes per pixel
+	cmp	al,dl			; transparent colour?
+	je	copy_4_lownib_skip
 	mov	ch,al			; save the index
 copy_4_lownib_xlat:
 	xlat	ss:[bx]			; get the mapping index
@@ -922,6 +1020,13 @@ copy_4_lownib_xlat:
 	dec	cl			; any bytes left to write?
 	mov	al,ch
 	jnz	copy_4_lownib_xlat
+	jmp	short copy_4_lownib_done
+copy_4_lownib_skip:
+	xor	ch,ch
+	add	di,cx
+	jnc	copy_4_lownib_done
+	call	next_bank
+copy_4_lownib_done:
 	mov	cx,bp			; get back count
         dec     cx                      ; one more pel done
         jz      copy_4_done
@@ -937,6 +1042,8 @@ copy_4_wrap_resume:
 	shiftr	al,2			; get the high nibble into middle pos
 	mov	bp,cx			; save count
 	mov	cl,dh			; refresh bytes per pixel
+	cmp	al,dl			; transparent colour?
+	je	copy_4_highnib_skip
 	mov	ch,al			; save the index
 copy_4_highnib_xlat:
 	xlat	ss:[bx]			; get the mapping index
@@ -948,6 +1055,13 @@ copy_4_highnib_xlat:
 	dec	cl			; any bytes left to write?
 	mov	al,ch
 	jnz	copy_4_highnib_xlat
+	jmp	short copy_4_highnib_done
+copy_4_highnib_skip:
+	xor	ch,ch
+	add	di,cx
+	jnc	copy_4_highnib_done
+	call	next_bank
+copy_4_highnib_done:
 	mov	cx,bp			; get back count
         mov     al,ah                   ; get back pel
         loop    copy_4_lownib           ; process all the remaining pels
@@ -961,52 +1075,6 @@ copy_4_wrap:
         add     bp,__AHINCR
         mov     ds,bp
         jmp     copy_4_wrap_resume
-
-;----------------------------------------------------------------------------;
-;   copy_4 with transparency
-;----------------------------------------------------------------------------;
-copy_4t:
-        mov     dl,bk_color
-
-        test    SrcX,1                  ; if sign is odd then do low
-        je      copy_4t_loop            ;    nibble of byte
-        call    get_byte                ; process first byte separately
-
-copy_4t_lownib:
-	and	al,0fh			; get the lower 4 bits
-        xlat    ss:[bx]                 ; get the mapping index
-        cmp     al,dl
-        je      @f
-        mov     es:[di],al
-@@:     inc     di
-        dec     cx                      ; one more pel done
-        jz      copy_4t_done
-
-copy_4t_loop:
-        lodsb                           ; get byte
-        or      si,si                   ; check for wrap
-        jz      copy_4t_wrap
-
-copy_4t_wrap_resume:
-	mov	ah,al			; save the byte
-	shiftr	al,4			; get the high nibble into low pos
-        xlat    ss:[bx]                 ; get the mapping index
-        cmp     al,dl
-        je      @f
-        mov     es:[di],al
-@@:     inc     di
-        mov     al,ah                   ; get back pel
-        loop    copy_4t_lownib          ; process all the remaining pels
-
-copy_4t_done:
-	ret
-
-copy_4t_wrap:
-        mov     si,ds
-        add     si,__AHINCR
-        mov     ds,si
-        xor     si,si
-        jmp     copy_4t_wrap_resume
 
 copy_4  endp
 
@@ -1110,30 +1178,54 @@ copy_8t:
         and     dx, ax              ; DX amount to copy later
         sub     cx, dx              ; CX contains amount to copy now
 
-        mov     ah,bk_color         ; get BkColor for compares
+	push	dx		    ; put "amount to copy later" on the stack
+	mov	dl,bptr colour_format[1] ; DL := bits per pixel
+	shr	dl,3		    ; DL := bytes per pixel
 
 copy_8t_loop:
-        lodsb                       ; get the next source byte
-        xlat    ss:[bx]             ; get the mapping index value
-        cmp     al,ah               ; compare to bkColor
-        je      @f
-        mov     es:[di],al          ; xfer it to the screen
-@@:     inc     di
-        loop    copy_8t_loop        ; repeat till all bytes processed
+	lodsb
+	cmp	al,[bk_colour_prexlate]
+	je	copy_8t_skip
 
+	xor	ah,ah
+	xchg	ax,si
+	mov	dh,dl		    ; get #bytes into counter
+	shl	si,2		    ; index into DWORD table
+	add	si,bx
+copy_8t_byte:
+	movs	byte ptr es:[di],ss:[si]
+	test	di,di		    ; wrapped bank?
+	jnz	@F
+	call	next_bank
+@@:	dec	dh
+	jnz	copy_8t_byte
+	mov	si,ax
+	loop	copy_8t_loop
+	jmp	short copy_8t_done
+
+copy_8t_skip:
+	xor	dh,dh
+	add	di,dx
+	jnc	@F
+	call	next_bank
+@@:	loop	copy_8t_loop
+
+copy_8t_done:
+	pop	cx		    ; get back "amount to copy later"
         or      si,si
         jz      copy_8t_wrap
         ret
 
 copy_8t_wrap:
-        mov     si,ds
-        add     si,__AHINCR
-        mov     ds,si
-        xor     si,si
+        mov     ax,ds
+        add     ax,__AHINCR
+        mov     ds,ax
 
-        or      cx,dx               ; cx <-- dx, note cx==0!
-        jnz     copy_8t_loop
-        ret
+        jcxz	@F
+	push	cx		    ; fix the stack to go through loop again
+	jmp	copy_8t_loop
+
+@@:	ret
 
 copy_8  endp
 
@@ -1181,10 +1273,18 @@ c24_compare:
 
 	test	fbFlags, DEV_PALETTE
 	jz	@F
-        xchg    dl,al			; swap Red/Blue for DeviceColorMatch
-        save    <es,cx>
-        cCall   DeviceColorMatch, <dx,ax, lpColorInfo>
-	jmp	c24_checktrans
+;
+; if already done, skip the conversion
+;
+        cmp     ax,wptr LastRGB[0]
+	jne	c24_do_devcolourmatch
+	cmp	dl,bptr LastRGB[2]
+	jne	c24_do_devcolourmatch
+	; grab the cached value
+	mov	al,bptr LastRGB[3]
+	xor	ah,ah
+	cwd
+	jmp	short c24_checktrans
 
 @@:	; this situation is a bit more complicated than DeviceBitmapBits
 	; so we can't use the more efficient rgb_to_ipc_seq... Reasons:
@@ -1242,16 +1342,27 @@ copy_24_exit:
         ret
 
 c24_transparent_store:
-        cmp     ax,bk_color.lo
+        cmp     ax,bk_colour.lo
         jne	c24noconvert
-	cmp	dx,bk_color.hi
+	sub	bh,2			; if <= 2 bpp, no need to check DX
+	jbe	@F
+	cmp	dx,bk_colour.hi
 	jne	c24noconvert
-	; right, this pixel is the background colour, so skip it
+@@:	; right, this pixel is the background colour, so skip it
 	xor	bh,bh			; reset bpp counter
 	add	di,bx			; skip bpp bytes
 	jnc	@F
 	call	next_bank		; increment bank if necessary
 @@:	jmp     c24_next
+;
+c24_do_devcolourmatch:
+	mov	wptr LastRGB[0],ax
+	mov	bptr LastRGB[2],dl
+	xor	dh,dh
+        save    <cx,bx>
+        cCall   OurDeviceColourMatch, <lpColorInfo>
+	mov	bptr LastRGB[3],al
+	jmp	c24_checktrans
 
 copy_24 endp
 
@@ -1281,7 +1392,7 @@ discreen_exit:
 ifdef	EXCLUSION
 	call	unexclude_far		; re-draw the cursor
 endif
-        mov     ax,1                    ; success code
+        mov     ax,scans_copied         ; success code
 
 discreen_ret:
 
@@ -1514,8 +1625,8 @@ diScreen386 proc NEAR
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
 ;
-;  Things are ready to go, go into special iner loops depending
-;  on wether we need to do index translation or not
+;  Things are ready to go, go into special inner loops depending
+;  on whether we need to do index translation or not
 ;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
         mov     bl,fbFlags
@@ -1544,6 +1655,7 @@ diScreen386i_Start:
 diScreen386i_Start_Scan:
         mov     cx,xExt
         REPMOVSB  es:[edi],ds:[esi]
+	inc	scans_copied
 
         dec     bx
         jz      diScreen386_Exit
@@ -1568,11 +1680,21 @@ diScreen386i_Bank_Underflow:
 diScreen386x:
         lea     bx, color_xlate
 
+	; need to convert four-byte palette table back to single-byte
+	movzx	ebx,bx
+	mov	cx,0FFh
+	mov	edx,1
+@@:	mov	al,ss:[ebx+edx*4]
+	mov	ss:[ebx+edx],al
+	inc	dl
+	loop	@B
+
 diScreen386x_Start:
         movsx   edx,next_map_scan
 diScreen386x_Start_Scan:
         mov     cx,xExt
         REPMOVSBXLAT es:[edi], ds:[esi], di, ss:[bx]
+	inc	scans_copied
 
         dec     yExt
         jz      diScreen386_Exit
@@ -1592,141 +1714,64 @@ diScreen386x_Bank_Underflow:
 diScreen386 endp
 .286
 
-;--------------------------------------------------------------------------;
+;--------------------------Private-Routine------------------------------;
+; OurDeviceColourMatch - like GDI's one but checks system palette first
 ;
-;   StretchDIBits()
-;       Stretch the source DIB onto the destination bitmap/device.
+; Entry:
+;	AL = red
+;	AH = green
+;	DL = blue
 ;
-;   Entry:
-;       Stack based parameters as described below.
+; Returns:
+;       DX:AX = physical colour matching RGB
 ;
-;   Returns:
-;       num scans handled if successfully stretched
-;       else -1 indicating bailed out, GDI should handle it
+; Registers Preserved:
+;       DS,SI,DI,BP,ES
+; Registers Destroyed:
+;       AX,BX,CX,DX,FLAGS
 ;
-;   Registers Preserved:
-;       SI,DI,BP,DS
-;
-;   Registers Destroyed:
-;       AX,BX,CX,DX,ES,flags
-;
-;   Calls:
-;       DibBlt
-;
-;   History:
-;       Wed May 30 1990 -by- ToddLa
-;       Created.
-;
-;   Notes:
-;       either calls DibBlt for 1:1 blt or, calls StretchBlt()
-;
-;--------------------------------------------------------------------------;
+; History:
+;       See Git.
+;-----------------------------------------------------------------------;
         assumes ds,nothing
         assumes es,nothing
 
-cProc   StretchDIBits,<FAR,PUBLIC,WIN,PASCAL>,<>
-        parmD   lpPDevice               ; PDevice;  bitmap or surface
-        parmW   GetOrSet                ; 0 --> set;  1-->get (FUTURE)
-        parmW   DstX                    ; in dest's logical coords
-        parmW   DstY
-        parmW   DstXE
-        parmW   DstYE
-        parmW   SrcX                    ; in DIB'S (inverted) coords
-        parmW   SrcY
-        parmW   SrcXE
-        parmW   SrcYE
-        parmD   lpBits                  ; -->DIB's bitmap
-        parmD   lpbi
-        parmD   lpTranslate             ; (ignored by non-pal devices)
-	parmD	Rop
-        parmD   lpBrush                 ; current brush
-        parmD   lpDrawMode
-        parmD   lpClipRect
+cProc	OurDeviceColourMatch,<NEAR,PUBLIC,PASCAL>,<ds>
 
-        localV  dib_src,%(SIZE int_phys_device) ; source device (DIB) data
+	parmD	lpColourInfo	; pointer to GDI info if needed
+
 cBegin
-        cmp     GetOrSet,1
-        je      FailStretchDIBits       ; only handle a set operation
+	mov	bx,DataBASE
+	mov	ds,bx
+	assumes	ds,Data
 
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-;   check for RLE,  we don't do RLE here.
-;   because we need GDI to fix up a clipping rect and call
-;   SetDIBitsToDevice()
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-        les     bx,lpbi
-        test    wptr es:[bx].biCompression, 0FFFFh
-        jnz     FailStretchDIBits
+	lea	bx,Palette
+	xor	cx,cx
+colour_match_loop:
+	cmp	ax,[bx]
+	jne	@F
+	cmp	dl,[bx+2]
+	je	colour_match_found
+@@:	inc	cl
+	lea	bx,[bx+3]
+	cmp	cl,NbrOfColours
+	jb	colour_match_loop
 
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-; test for a 1:1 stretch
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-        mov     ax,SrcYE
-        cmp     ax,DstYE
-        jne     StretchDIBitsNot1to1
-        or      ax,ax
-        js      StretchDIBitsNot1to1
+	; not found, go ask GDI
+	xchg	al,dl	; GDI needs blue first, red last
+        save    <es>
+        cCall   [GetColor_addr], <dx,ax, lpColorInfo>
+	jmp	short @F
 
-        mov     ax,SrcXE
-        cmp     ax,DstXE
-        jne     StretchDIBitsNot1to1
-        or      ax,ax
-        js      StretchDIBitsNot1to1
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-StretchDIBits1to1:
-        arg     lpPDevice           ; dest device
-        arg     <DstX,DstY>         ; DstX, DstY
-        arg     lpbi                ; source device
-        arg     lpBits
-        arg     <SrcX,SrcY>         ; SrcX, SrcY
-        arg     <SrcXE,SrcYE>       ; xExt, yExt
-        arg     Rop                 ; Rop
-        arg     lpBrush             ; brush = NULL
-        arg     lpDrawMode          ; draw mode = NULL
-        arg     lpClipRect
-        arg     lpTranslate         ; GDI supplied value for color matching
-
-	cCall	DibBlt
-        jmp     ExitStretchDIBits
-
-FailStretchDIBits:
-        mov     ax,-1
-        jmp     ExitStretchDIBits
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-StretchDIBitsNot1to1:
-
-; init the DIB's device struct
-        lea     ax,dib_src
-        farPtr  lpDIB,ss,ax
-        cCall   FarDeviceSelectDIB,<lpDIB,lpbi,lpBits>
-        or      ax,ax
-        jz      FailStretchDIBits
-
-; pass the paramaters through for StretchBlt to do all the work
-	mov	ax,dib_src.bmHeight     ; transform SrcY to be relative to top
-        sub     ax,SrcY
-        sub     ax,SrcYE
-        mov     SrcY,ax
-
-        lea     ax,dib_src
-        farPtr  lpDIB,ss,ax
-
-        arg     <lpPDevice>
-        arg     <DstX, DstY, DstXE, DstYE>
-        arg     <lpDIB>
-        arg     <SrcX, SrcY, SrcXE, SrcYE>
-        arg     <Rop,lpBrush,lpDrawMode,lpClipRect>
-
-        cCall   StretchBlt
-        errn$   ExitStretchDIBits
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ;
-ExitStretchDIBits:
-
+colour_match_found:
+	; found a match in the system colour table, convert it to an index
+	mov	ax,cx
+	cwd
+	cmp	al,10
+	jb	@F
+	; system colours are 0-9 and 246-255, so add 236 if >= 10
+	add	al,236
+@@:	; done
 cEnd
 
 sEnd

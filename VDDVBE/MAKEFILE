@@ -57,6 +57,9 @@ vddproc.obj vddproc.lst: vddproc.asm ..\include\vddgrb.inc \
 vddstate.obj vddstate.lst: vddstate.asm vdddef.inc ..\include\vmdavga.inc \
 	 ..\include\debug.inc ..\include\opttest.inc ..\include\vmm.inc
 
+vdddbuf.obj vdddbuf.lst: vdddbuf.asm ..\include\debug.inc ..\include\vtd.inc \
+	 ..\include\vmm.inc
+
 vddsvc.obj vddsvc.lst: vddsvc.asm ..\include\shell.inc ..\include\shellfsc.inc \
 	 vdddef.inc ..\include\vmdavga.inc ..\include\debug.inc \
 	 ..\include\vdd.inc ..\include\opttest.inc ..\include\vmm.inc
@@ -80,7 +83,7 @@ vddmsg.obj vddmsg.lst: $(RES_DIR)\vddmsg.asm \
 
 OBJS =  vddctl.obj vddgrab.obj vddoem.obj vddstate.obj vddvga.obj \
         vdddebug.obj vddint.obj vddphmem.obj vddsvc.obj vddvmmem.obj \
-        vddfonts.obj vddmsg.obj vddproc.obj vddtio.obj 
+        vddfonts.obj vddmsg.obj vddproc.obj vddtio.obj vdddbuf.obj 
 
 vddvga.386: iclean vddvga.def $(OBJS)
         link386 @vddvga.lnk

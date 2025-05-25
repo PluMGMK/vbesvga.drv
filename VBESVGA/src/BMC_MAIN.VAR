@@ -48,8 +48,8 @@ CAN_CROSS_SEG           equ     00010000b
 	localB	bit_position
 	localW	encode_rle		;ptr to specific encoding routine
 	localW	encode_absolute 	;ptr to specific encoding routine
-	localW	decode_rle		;ptr to specific encoding routine
-	localW	decode_absolute 	;ptr to specific encoding routine
+	localW	lods_pixel		;ptr to function to load pxbytes
+	localW	stos_pixel		;ptr to function to store pxbytes
 	localW	encode_scanline
 	localW	maximum_encodedline_length
         localW  neg_filler_bytes

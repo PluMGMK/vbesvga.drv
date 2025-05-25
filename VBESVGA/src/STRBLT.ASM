@@ -2612,22 +2612,24 @@ oor_comp_bottom:
 	not	si
 	and	si,dx			; SI = height of bottom, or 0
 	jz	oor_comp_middle_y
-	mul	next_scan		; AX = offset to start of top scan
-	mov	CurVidSel,dl
+	mul	next_scan		; DX:AX = offset to start of top scan
 ;
 oor_comp_middle_y:
 	mov	di,o_rect.top		; Add o_rect.top and height of top
 	add	di,cx			; area to get middle Y
 ;
 oor_see_if_top_or_bottom:
+	push	dx			; Save bottom bank if applicable
 	mov	dx,si			; If both heights are 0, then
 	or	dx,cx			; no top and no bottom
+	pop	dx			; Get back bottom bank
 	jz	oor_see_about_middle
 ;
 ; There is at least a top or a bottom.  Compute the scan interval
 ; and fill the areas.
 ;
 	push	di			; Save middle area Y
+	push	dx			; Save bottom area Y bank
 	push	ax			; Save bottom area Y offset
 	push	si			; Save bottom area height
 	push	bx			; Save top    area Y offset
@@ -2653,10 +2655,12 @@ oor_see_if_top_or_bottom:
 oor_see_about_bottom:
 	pop	bx			; Get bottom area height
 	pop	cx			; Get bottom area Y offset
+	pop	dx			; Get bottom area Y bank
 	or	bx,bx
 	jz	oor_no_bottom_area	; There is no bottom area
 	add	di,cx			; --> first byte
-	adc	CurVidSel,0
+	adc	dl,dh			; DH should be zero
+	mov	CurVidSel,dl
 	call	opaque_routine
 ;
 oor_no_bottom_area:
@@ -2685,6 +2689,7 @@ oor_see_about_middle:
 	push	si			; Save inner loop count
 	push	di			; Save X offset into scan
 	push	ax			; Save first/last mask
+	push	wptr CurVidSel		; Save current bank
 	call	comp_byte_interval
 	jnc	oor_output_both_sides	; There was a left and a right
 ;
@@ -2692,6 +2697,8 @@ oor_see_about_middle:
 ; and output the rectangle.
 ;
 oor_process_rhs:
+	pop	dx			; Restore bank
+	mov	CurVidSel,dl		; (it's only one byte!)
 	pop	ax			; Restore first/last mask
 	pop	di			; Restore X offset
 	pop	si			; Restore inner loop count
@@ -2736,6 +2743,8 @@ oor_output_both_sides:
 ; exist.
 ;
 oor_overlapping_middle:
+	pop	dx			; Restore bank
+	mov	CurVidSel,dl		; (it's only one byte!)
 	pop	bx			; Restore rhs first/last mask
 	pop	dx			; Restore rhs X offset
 	pop	cx			; Restore rhs inner loop count
@@ -2763,6 +2772,7 @@ oor_combine_with_lhs:
 	push	cx			; Save inner loop count
 	push	dx			; Save X offset into scan
 	push	bx			; Save first/last mask
+	push	wptr CurVidSel		; Save current bank
 ;
 oor_output_both_anyway:
 	call	oor_output_one_rect	; Do whatever for lhs

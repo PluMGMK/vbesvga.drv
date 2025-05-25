@@ -70,6 +70,7 @@ assumes cs,Code
         externA  BW_THRESHOLD           ;Where black becomes white
 	externW _cstods
 	externW	ColourFormat_CS		;in VESAFNS.ASM
+	externB	PaddingBits		;in VESAFNS.ASM
 	externB	??BigFontFlags
 ;
 ; The following are the definitions for the hatch patterns. They are defined
@@ -625,6 +626,9 @@ realize_solid   proc    near
 ;
 ; quick check for a white brush
 ;
+	cmp	[PaddingBits],0		; can't do a quick white brush if we
+	jnz	@F			; have padding bits (screws up ScanLR)
+
 	mov	bl, 0FFH
 	and	bl, al
 	and	bl, dl
@@ -637,7 +641,7 @@ realize_solid   proc    near
 ; the sum is (R+B)/4 + G/2						     ;
 ;----------------------------------------------------------------------------;
 
-	mov	bl	,al
+@@:	mov	bl	,al
 	sub	bh	,bh
 	add	bl	,dl		;R+B
 	adc	bh	,0
@@ -2245,6 +2249,7 @@ init_modal_realizations	proc near
 	push	bx
 	; multiply pxbytes by SIZE_PATTERN/2 to get the
 	; number of words in a pattern scanline
+	mov	ax,[pxbytes]
 	mov	bx,ax
 	xor	ah,ah
 	shl	ax,1

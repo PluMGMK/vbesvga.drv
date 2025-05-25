@@ -64,7 +64,6 @@ include roptable.blt
 externW _cstods
 externW	pattern_copy_numwords		; in ROBJECT.ASM
 externW	oem_brush_size			; in ROBJECT.ASM
-externW	compile_colour_stos_table	; in COMPBLT.ASM
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
@@ -463,11 +462,6 @@ zero_alignment:
 	shr	bx,3				;convert bits to bytes
 	mul	bx
 	mov	dst_xExt_bytes,ax		;may be >inner_loop_count
-
-	; set the appropriate compile_colour_stosX function
-	shl	bx,1
-	mov	ax,compile_colour_stos_table[bx-2]
-	mov	[compile_colour_stos],ax
 
 bitblt_prep_dst_done:
 	ret

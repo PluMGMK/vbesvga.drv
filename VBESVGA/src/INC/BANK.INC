@@ -12,6 +12,9 @@ sBegin  Data
 bank_select_byte label byte
 bank_select         db      0FFh        ;Used to keep track of VRAM VGA's
                                         ; currently selected bank
+	public bank_granfac_m1
+bank_granfac_m1     db      0		;size-to-granularity multiplication
+					; factor, minus one
 sEnd    Data
 
 sBegin  Code
@@ -28,10 +31,6 @@ far_set_bank_select proc far
         ;
         ;   compare requested bank against the current one
         ;
-;	cmp	dl,7Eh	; TODO: Remove this, just sanity-checking my own setup
-;	jna	@F
-;	int	3
-;@@:
         cmp     dl,ds:[bank_select]
         jz      far_sbs_exit
         ;
@@ -42,12 +41,24 @@ far_set_bank_select proc far
         push    bx
         push    dx
 
-        EnterCrit
+	; get the size-to-granularity multiplication factor, minus 1
+	mov	ah,ds:[bank_granfac_m1]
+	test	ah,ah
+	jz	@F			; factor == 1 so no need to multiply
+
+	inc	ah
+	mov	al,dl
+	mul	ah
+	mov	dl,al
+
+@@:	EnterCrit
 ;
 	xor	bx,bx			; BH = 0 = "set", BL = 0 = window 0
 	xor	dh,dh			; DX = DL = bank number (gran. units)
 	push	es			; some firmware trashes ES (e.g. VMware)
+	pushf				; to maintain DF during blits!
 	call	VESABankSwitch
+	popf
 	pop	es
 ;
 	LeaveCrit  a			; Okay to interrupt now
@@ -79,10 +90,6 @@ set_bank_select proc    near
         ;
         ;   compare requested bank against the current one
         ;
-; 	cmp	dl,7Eh	; TODO: Remove this, just sanity-checking my own setup
-; 	jna	@F
-; 	int	3
-; @@:
         cmp     dl,ds:[bank_select]
         jz      sbs_exit
         ;
@@ -93,12 +100,24 @@ set_bank_select proc    near
         push    bx
         push    dx
 
-        EnterCrit
+	; get the size-to-granularity multiplication factor, minus 1
+	mov	ah,ds:[bank_granfac_m1]
+	test	ah,ah
+	jz	@F			; factor == 1 so no need to multiply
+
+	inc	ah
+	mov	al,dl
+	mul	ah
+	mov	dl,al
+
+@@:	EnterCrit
 ;
 	xor	bx,bx			; BH = 0 = "set", BL = 0 = window 0
 	xor	dh,dh			; DX = DL = bank number (gran. units)
 	push	es			; some firmware trashes ES (e.g. VMware)
+	pushf				; to maintain DF during blits!
 	call	VESABankSwitch
+	popf
 	pop	es
 ;
 	LeaveCrit  a			; Okay to interrupt now

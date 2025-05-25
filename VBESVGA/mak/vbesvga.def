@@ -61,8 +61,8 @@ EXPORTS
     GetPaletteTranslate @25
     UpdateColors	@26			;translate pixels on screen
 
-    StretchBlt		@27
-    StretchDIBits       @28
+;   StretchBlt		@27
+;   StretchDIBits       @28
 
 ;   SaveScreenBitmap	@92			;not used with VGA
 

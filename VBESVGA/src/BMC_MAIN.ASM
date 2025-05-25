@@ -75,6 +75,7 @@ sBegin	DIMapSeg
 	externNP	SetDeviceBitmapBits	; in BMC_ETI.ASM
 	externNP	GetDeviceBitmapBits	; in BMC_ITE.ASM
 	externNP	RleBlt			; in RLD.ASM
+	externW		stos_colour_table	; in RLD.ASM
 
 	assumes	ds, Data		; this is a CProc after all!
 	assumes	es, nothing
@@ -94,9 +95,17 @@ WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	lds	si, lp_dest_dev 	; DS:SI points to internal BM struc
 	assumes	ds, nothing
 
-	mov	al,[si].bmBitsPixel
-	shr	al,3			; bits --> bytes
-	mov	total_depth_bytes,al
+	mov	bl,[si].bmBitsPixel
+	shr	bl,3			; bits --> bytes
+	mov	total_depth_bytes,bl
+
+	xor	bh,bh
+	dec	bl			; to zero-index the tables
+	shl	bl,1
+	mov	ax,cs:stos_colour_table[bx]
+	mov	dx,cs:lods_colour_table[bx]
+	mov	[stos_pixel],ax
+	mov	[lods_pixel],dx
 
 ;----------------------------------------------------------------------------;
 ; we shall do a	few validations	out here. The number of	pels per row and the ;
@@ -407,6 +416,73 @@ eti_finish_y_calc:
 do_computations_ret:
 
 cEnd
+
+;--------------------------Public-Routine------------------------------;
+; lods_colour
+;
+;   Read one pixel of colour into DX:AX
+;
+; Entry:
+;	DS:SI --> colour source
+; Returns:
+;       DX:AX	= physical colour
+; Error Returns:
+;       None
+; Registers Preserved:
+;       ES,DS,BP,BX,DX,SI
+; Registers Destroyed:
+;       AX,CX,DI,FLAGS
+; Calls:
+;       None
+; History:
+;       See Git.
+;
+;-----------------------------------------------------------------------;
+;
+;
+;------------------------------Pseudo-Code------------------------------;
+; {
+; }
+;-----------------------------------------------------------------------;
+;
+        assumes ds,nothing
+        assumes es,nothing
+
+lods_colour1	proc near
+	lodsb
+	xor	ah,ah
+	cwd
+	ret
+lods_colour1	endp
+
+lods_colour2	proc near
+	lodsw
+	xor	dx,dx
+	ret
+lods_colour2	endp
+
+lods_colour3	proc near
+	lodsw
+	mov	dx,ax
+	lodsb
+	xchg	ax,dx
+	xor	dh,dh
+	ret
+lods_colour3	endp
+
+lods_colour4	proc near
+	lodsw
+	mov	dx,ax
+	lodsw
+	xchg	ax,dx
+	ret
+lods_colour4	endp
+
+lods_colour_table	label word
+	dw	offset	lods_colour1
+	dw	offset	lods_colour2
+	dw	offset	lods_colour3
+	dw	offset	lods_colour4
 
 sEnd	DIMapSeg
 END

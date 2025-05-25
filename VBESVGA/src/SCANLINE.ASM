@@ -59,6 +59,7 @@ sBegin  Data
         externW ScratchSel
 	externB abPaletteAccl
 	externW ScreenSelector
+	externW ColourFormat		; in VGA.ASM
 public	rscan
 rscan           db      (size rscan_type) DUP (?)
 
@@ -419,19 +420,17 @@ color_main_draw_loop:
 	rol	dh	,cl			;rotate the xpar mask
 
 	mov	cx	,[bx]			;cx = xend
-	add	bx	,2
-
-	xchg	cx	,ax
-	push	dx
-	mov	dl	,pixbytes
-	xor	dh	,dh
-	mul	dx
-	pop	dx
-	xchg	cx	,ax
-
-	sub	cx	,ax			;cx = xend - xstart
+	sub	cx	,[bx-2]			;cx = xend - xstart
+	lea	bx	,[bx+2]
 	jz	color_main_draw_loop_skip
+
+	push	bx
+	mov	bl	,pixbytes
+	xor	bh	,bh
+	shl	bx	,3			;bx = pattern pitch
+	.errnz	SIZE_PATTERN-(1 SHL 3)
 	call	draw_output
+	pop	bx
 
 color_main_draw_loop_skip:
 	dec	count
@@ -522,7 +521,7 @@ do_begin_scanline proc near
         mov     bl,[si].bmBitsPixel
         mov     es:[rscan.rstype] ,bl   ;mark the type of the dst dev
 
-        cmp     bl, 8                   ;if there are 8 bits/pixel then
+        cmp     bl, bptr ColourFormat[1];if there are 8 bits/pixel then
         je      begin_scanline_color    ;  the device is color memory
         cmp     bl, 1                   ;if there are 1 bits/pixel then
         je      begin_scanline_mono     ;  the device is mono
@@ -745,14 +744,20 @@ no_brush_xlat_needed:
 	mov	di	,DataOFFSET rscan.rscolor_pattern
 	; indicate whether mono or colour
 	mov	dl	,bh
+	test	dl	,dl
+	jnz	@F
+	mov	di	,DataOFFSET rscan.rsmono_pattern
 
+@@:	push	di	; save where we started
 	call	prep_pattern_far
+	pop	cx	; get back where we started
+
 	add	sp	,8
         pop     bp
 
 	; figure out how much pattern has been put at ES:DI
-	mov	cx	,di
-	sub	cx	,DataOFFSET rscan.rscolor_pattern
+	sub	cx	,di
+	neg	cx
 	; get length of a single line
 	shr	cx	,3
 	errnz	SIZE_PATTERN-8

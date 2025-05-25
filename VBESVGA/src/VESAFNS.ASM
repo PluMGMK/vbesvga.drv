@@ -41,6 +41,13 @@ VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
 VESA_ATTR_HWSTEREO	= 0000100000000000b
 VESA_ATTR_DUAL		= 0001000000000000b
 
+; VESA Window Attributes
+VESA_WINATTR_EXISTS	= 00000001b
+VESA_WINATTR_READ	= 00000010b
+VESA_WINATTR_WRITE	= 00000100b
+; Shortcut for the only type of window we know how to use (for now)
+VESA_WINATTR_NORMAL	= VESA_WINATTR_EXISTS+VESA_WINATTR_READ+VESA_WINATTR_WRITE
+
 ; VESA Mode Memory Models
 VESA_MEM_TEXT	= 0
 VESA_MEM_CGA	= 1
@@ -169,6 +176,7 @@ incDevice = 1				;Include control for gdidefs.inc
 	externA  __WinFlags		;Windows info bit
 	externFP AllocSelector		; allocate a new selector
 	externFP FreeSelector		; free an allocated selector
+	externFP GetSelectorBase
 	externFP SetSelectorBase
 	externFP AllocDSToCSAlias
 	externFP AllocCSToDSAlias
@@ -204,6 +212,7 @@ EXTRN	dac_size:byte
 externW	raster_flags		; in BMC_MAIN.ASM
 externD	setramdac
 externD	VDDEntry
+externB	bank_granfac_m1		; in BANK.INC
 
 ; From INT10.ASM
 externW	int10h_ds
@@ -281,7 +290,6 @@ externB		??BigFontFlags
 externW		_cstods		; in CURSOR.ASM
 externW		pxbytes		; in SWCURS.ASM
 externFP	DoInt10h	; in INT10.ASM
-externFP	find_mtrrs	; in MTRR.ASM
 
 ; This goes in the Code segment for ease of access, and in case the
 ; BankSwitch function is included in the buffer (unlikely?)
@@ -327,6 +335,8 @@ VESAGFieldPos	db ?
 OFF_VESA_BDEPTH	equ $-VESAModeStruct
 VESABFieldSize	db ?
 VESABFieldPos	db ?
+public	PaddingBits
+PaddingBits	label byte
 OFF_VESA_ADEPTH	equ $-VESAModeStruct
 VESAAFieldSize	db ?
 VESAAFieldPos	db ?
@@ -430,23 +440,17 @@ assumes  es,nothing
 PUBLIC	setramdac_vbe
 setramdac_vbe	PROC	FAR
 
+	; if VBE version < 2.00, then we know immediately we need
+	; to do it the old way!
+	cmp	[VESAMajVer],2
+	jb	setramdac_need_vga
+
 	push	es
 	push	di
 
-	; fixup byte order
-	call	switcheroo
+	; hold onto the first index in a register we won't be trashing
+	mov	bx,ax
 
-	; set ES:DI = DS:SI for VBE function 09
-	mov	di,ds
-	mov	es,di	
-	mov	di,si
-
-	; set the other registers appropriately
-	mov	dx,ax	; first colour index
-	xor	bl,bl	; set primary palette
-	mov	ax,(VBE_INT10_FN SHL 8) + VBE_PALENTRIES
-
-	mov	di,ax
 	cmp	[RMPaletteSel],0
 	jnz	@F
 
@@ -454,47 +458,72 @@ setramdac_vbe	PROC	FAR
 	; 4 bytes per colour * 100h colours
 	push	bx
 	push	cx
-	push	dx
 	cCall	GlobalDosAlloc,<0,400h>	; zero-pad to dword
 	mov	[RMPaletteSel],ax
 	mov	[RMPaletteSeg],dx
-	pop	dx
 	pop	cx
 	pop	bx
 
 	test	ax,ax
 	mov	ax,(ERR_REAL_ALLOC SHL 8) + VBE_INT10_FN
+	mov	dx,bx	; need this in case we fail
 	jz	setramdac_vbe_exit
 
-@@:
-	mov	ax,[RMPaletteSeg]
+@@:	mov	ax,[RMPaletteSeg]
 	mov	[int10h_es],ax
-	mov	ax,di
-
 	; copy the palette entries into the RM buffer
 	mov	es,[RMPaletteSel]
 	xor	di,di
 
+	; Now we have 8-bit RGBA entries at DS:SI.
+	; Per the VBE spec, we require 6/8-bit BGRA entries at ES:DI.
+	; Copy them over and convert them as we go!
 	push	di
 	push	si
 	push	cx
-	shl	cx,1	; two words per colour
+
 	cld
-	rep	movsw
+	; put entry count in CH (zero means the loop runs 256 times)
+	mov	ch,cl
+	; and shift count in CL
+	mov	cl,[dac_size]
+
+@@:	; load the colour...
+	lodsw
+	mov	dx,ax
+	lodsw
+	; now we have DH=Green, DL=Red, AH=Padding, AL=Blue
+	xchg	dh,ah
+	; becomes DH=Padding, DL=Red, AH=Green, AL=Blue.
+	; now change to 6-bit if needed:
+	shr	dl,cl
+	; this may put two used bits in the upper end of AL, but
+	; the BIOS and hardware will ignore them, so it's OK:
+	shr	ax,cl
+	; store converted colour
+	stosw
+	mov	ax,dx
+	stosw
+	dec	ch
+	jnz	@B
+
 	pop	cx
 	pop	si
 	pop	di
 
+	mov	dx,bx	; first colour index
+	xor	bl,bl	; set primary palette
+	mov	ax,(VBE_INT10_FN SHL 8) + VBE_PALENTRIES
 	call	DoInt10h
 
 setramdac_vbe_exit:
-	; restore original byte order
-	call	switcheroo
 	pop	di
 	pop	es
 
 	; success?
 	cmp	ax,VBE_INT10_FN
+	; get back the index into AX
+	mov	ax,dx
 	jne	setramdac_need_vga
         ret
 
@@ -502,34 +531,10 @@ setramdac_need_vga:
 	; VBE cannot be used to set RAMDAC, so fall back to VGA implementation
 	; by updating the function pointer and jumping to it
 	mov	[setramdac.lo],offset setramdac_vga
-	; get back the index into AX
-	mov	ax,dx
 	; go to the VGA function
 	jmp	[setramdac]
 
 setramdac_vbe	ENDP
-
-; At least some BIOS implementations expect a big-endian list of colours, i.e.
-; where blue is the LSB, whereas Windows gives red as the LSB (which also agrees
-; with what is written in the RBIL for int 10H AH=4F09H...)
-; This function deals with that - TODO: check if always needed, and if not,
-; create a way to turn it off...
-switcheroo	proc near
-	push	ax
-	push	si
-	push	cx
-
-@@:	mov	al,[si]
-	xchg	al,[si+2]
-	mov	[si],al
-	lea	si,[si+4]
-	loop	@B
-
-	pop	cx
-	pop	si
-	pop	ax
-	ret
-switcheroo	endp
 
 sEnd	PaletteSeg
 
@@ -1070,6 +1075,9 @@ FindMode_attrsOK:
 	cmp	al,bl
 	jae	@F
 	mov	al,bl
+	; set the ADEPTH field which may be used elsewhere in the driver
+	sub	bl,ah
+	mov	es:[di.OFF_VESA_ADEPTH],bl
 
 @@:	; here AL = total depth and AH = significant depth
 	test	al,7		; is our pixel an integer number of bytes?
@@ -1148,7 +1156,27 @@ ModeFound:
 	assumes	es,Code
 
 	test	di,di		; returning success?
-	jnz	@F
+	jnz	@@segfix_done
+
+	; set pxbytes now because we may need it for setup_double_buf
+	mov	al,[VESABPP]
+	shr	al,3	; bits to bytes
+	cbw
+	mov	[pxbytes],ax
+
+	; mark whether or not we end up using a three-byte mode
+	; (in theory this could be used to enable/disable awkward code paths)
+	cmp	al,3
+	jne	@F
+	inc	ah
+@@:	mov	[ThreeByte],ah
+
+	; Calculate total framebuffer size:
+	mov	ax,[MemoryWidth]
+	mul	[VESAHeight]
+	; again we may need it for setup_double_buf
+	mov	[MemSize.hi],dx
+	mov	[MemSize.lo],ax
 
 	; Prepare to fix up the far pointer if needed
 	lea	si,VESABankSwitch
@@ -1164,45 +1192,39 @@ ModeFound:
 	call	FixupFarPtr
 	test	ax,ax
 	mov	di,ERR_PROT_ALLOC
-	jz	@F
+	jz	@@segfix_done
 
 	; Fix up the segments too
 	xor	cx,cx		; want data segments!
+	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
+	jz	@F
 	mov	ax,[VESAWinASeg]
 	call	SegToSel
 	mov	[VESAWinASeg],ax
 
+@@:	test	[VESAWinBAttrs],VESA_WINATTR_EXISTS
+	jz	@F
 	mov	ax,[VESAWinBSeg]
 	call	SegToSel
 	mov	[VESAWinBSeg],ax
 
-	xor	di,di	; all good!
-@@:	jmp	FindMode_done
+@@:	xor	di,di	; all good!
+@@segfix_done:
+	jmp	FindMode_done
 
 FindMode_setuplin:
 ifdef	INT3
 public	FindMode_setuplin
 	int	3
 endif
-	; Map the framebuffer into virtual memory if needed.
-	; Start by calculating its size:
-	mov	ax,[MemoryWidth]
-	mul	[VESAHeight]
-	mov	si,dx
-	mov	di,ax
-	; Now just set its location:
-	mov	cx,[VESALinearBuf.lo]
-	mov	bx,[VESALinearBuf.hi]
-	; Take this opportunity to check for MTRRs
-	call	find_mtrrs
-	; And call:
-	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
-	int	31h
+	; Even if we're not doing double buffering, this function handles
+	; mapping the linear framebuffer.
+	call	setup_double_buf
+	; Ensure the map succeeded
+	mov	ax,[VESALinearBuf.lo]
+	or	ax,[VESALinearBuf.hi]
 	mov	di,ERR_PROT_ALLOC
-	jc	FindMode_done
-	; Now we can put the linear address back where we got the physical one
-	mov	[VESALinearBuf.lo],cx
-	mov	[VESALinearBuf.hi],bx
+	jz	FindMode_done
 
 	; IF we're in a linear mode AND the VDD is loaded, then we need to
 	; "artificially" touch the pages in the low-memory (banked) buffer
@@ -1234,12 +1256,28 @@ endif
 	mov	[VESABankSwitch.sel],seg BankSwitchSoft
 	mov	[VESABankSwitch.off],offset BankSwitchSoft
 
-	; Also ensure the window size is correctly set to 64k
-	mov	[VESABankSize],64
+	; Also ensure the window size and granularity are correctly set to 64k
+	mov	ax,64
+	mov	[VESAWinSize],ax
+	mov	[VESAGranularity],ax
+
+	; Our soft window is read-write and definitely exists
+	mov	[VESAWinAAttrs],VESA_WINATTR_NORMAL
 
 	xor	di,di
 FindMode_done:
 	.286
+	test	di,di
+	jnz	@F
+
+	; Before fully committing to the mode, do some sanity checks on the
+	; window. These are guaranteed to pass for a linear mode (since we've
+	; just set all the window attributes ourselves) but should stop us
+	; from making fools of ourselves with banked modes. I reckon that if
+	; one otherwise-suitable mode on a user's system fails these checks,
+	; there's no point in looking for any other modes, so we just crash
+	; back out to ENABLE and get it to display some details...
+	call	vesa_win_sanity_check
 	test	di,di
 	jnz	@F
 
@@ -1260,19 +1298,6 @@ FindMode_done:
 	mov	byte ptr es:[??BigFontFlags],-1
 
 @@bffisset:
-	mov	al,[VESABPP]
-	shr	al,3	; bits to bytes
-	cbw
-	mov	[pxbytes],ax
-
-	; mark whether or not we end up using a three-byte mode
-	; (in theory this could be used to enable/disable awkward code paths)
-	xor	ah,ah
-	cmp	al,3
-	jne	@F
-	inc	ah
-@@:	mov	[ThreeByte],ah
-
 	mov	dh,[VESAMemModel]
 	xor	dh,VESA_MEM_DIRECT	; zero if NO palette, else non-zero
 	mov	ah,dh
@@ -1314,6 +1339,230 @@ FindMode_done:
 
 FindMode_reterr:
 	mov	ax,di		; get error code
+cEnd
+
+;--------------------------------------------------------------------------;
+; vesa_win_sanity_check
+;	Once the mode structure in _TEXT has been populated, this ensures
+;	that we can use Window A to read/write VRAM in a way that is
+;	compatible with all our code.
+; Entry:
+;	DS	= Data
+;	ES	= Code
+;	
+; Returns:
+;	Error code in DI
+; Registers Destroyed:
+;	AX,DX,DI,FLAGS
+; Registers Preserved:
+;	BX,CX,SI,DS,ES,BP
+; Calls:
+;	Nothing
+; History:
+;	see Git
+;--------------------------------------------------------------------------;
+vesa_win_sanity_check	proc near
+	assumes	es,Code
+
+	; Check 1: is Window A read-write? If not, then it's probably something
+	; like Window A to read and Window B to write, or vice versa, which is
+	; cool, don't get me wrong, but not something we support here...
+	mov	di,ERR_WIN_BADATTR
+	cmp	[VESAWinAAttrs],VESA_WINATTR_NORMAL
+	jne	@F
+
+	; Check 2: is the window size 64k or smaller? We can't address more
+	; than one segment of memory at a time.
+	inc	di
+	.errnz	ERR_WIN_TOOBIG-ERR_WIN_BADATTR-1
+	mov	ax,[VESAWinSize]
+	cmp	ax,64
+	ja	@F
+	; we will reuse the results of this comparison in a minute
+	sahf
+	mov	dx,ax
+
+	; Check 3: is the window size an integer multiple of the granularity?
+	inc	di
+	.errnz	ERR_WIN_BADGRAN-ERR_WIN_TOOBIG-1
+	cbw
+	div	byte ptr [VESAGranularity]
+	test	ah,ah
+	jnz	@F
+	; while we're at it, record the multiplication factor (minus one)
+	dec	al
+	mov	[bank_granfac_m1],al
+	
+	; Check 4: is the window size either 64k or an integer multiple of
+	; the memory width? All the code that handles scanlines crossing
+	; a window boundary assumes those boundaries are at the end of a
+	; segment, i.e. 64k intervals, so don't mess with that assumption!
+	inc	di
+	.errnz	ERR_WIN_BADSIZE-ERR_WIN_BADGRAN-1
+	; get back window size and results of comparison
+	mov	ax,dx
+	lahf
+	je	@@wingood	; if equal, then WinSize == 64k, so we're good
+	; here we know we have WinSize < 64k, since we already discounted 
+	; > 64k in Check 2
+	cbw
+	shl	ax,10		; convert kiB to bytes
+	cwd
+	; FIXME: we do this exact same calculation later on in vesa_gdi_fixup,
+	; but there, unlike here, it's unconditional - even so, a bit wasteful?
+	div	[VESAScanLineLen]
+	test	dx,dx		; check remainder
+	jnz	@F
+@@wingood:
+	xor	di,di		; no error after all!
+
+@@:	ret
+	assumes	es,nothing
+vesa_win_sanity_check	endp
+
+;--------------------------------------------------------------------------;
+; print_bank_info
+;	takes a function pointer to WSPRINTF and uses it to print out a
+;	diagnostic message explaining all the properties of the window(s)
+;	associated with the selected mode.
+; Entry:
+;	DS	= Data
+;	
+; Returns:
+;	outbuf is filled with a message, and it gets printed
+; Registers Destroyed:
+;	AX,BX,CX,DX,FLAGS
+; Registers Preserved:
+;	SI,DI,DS,ES,BP
+; Calls:
+;	WSPRINTF
+;	GetSelectorBase
+; History:
+;	see Git
+;--------------------------------------------------------------------------;
+bankinfo_format	db 13,10
+		db "Selected mode %04lX has the correct resolution and depth, but has the",13,10
+		db "above-mentioned problem with the window attributes.",13,10
+		db "It is unlikely that any other mode supported by your device would have the",13,10
+		db "correct resolution / depth but also have the correct window attributes!",13,10
+		db "Generally, only really old cards seem to do this kind of interesting thing",13,10
+		db "with the windows, so maybe yours has its own proprietary Windows 3.1 driver?",13,10
+		db "If not, please raise an issue on GitHub and I'll see what I can do...",13,10
+		db 13,10
+		db "Window A Attributes: %c%c%c",13,10
+		db "Window B Attributes: %c%c%c",13,10
+		db "Window Granularity:  %u kiB",13,10
+		db "Window Size:         %u kiB",13,10
+		db "Window A Base:       %lX",13,10
+		db "Window B Base:       %lX",13,10
+		db "Scanline Size:       %u bytes",13,10,0
+
+cProc	print_bank_info,<NEAR,PUBLIC,NODATA>,<es,si,di>
+	parmD	wsprintf
+	parmD	outbuf
+cBegin
+	mov	ax,seg VESAWinAAttrs
+	mov	es,ax
+	assumes	es,Code
+
+	; format bank information
+	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
+	; arguments follow, pushed right-to-left...
+
+	; Scanline Size (single word)
+	push	[VESAScanLineLen]
+
+	; Window B Base (dword)
+	xor	ax,ax
+	cwd
+	test	[VESAWinBAttrs],VESA_WINATTR_EXISTS
+	jz	@F
+	push	es
+	cCall	GetSelectorBase,<[VESAWinBSeg]>
+	pop	es
+@@:	push	dx
+	push	ax
+	; Window A Base (dword)
+	xor	ax,ax
+	cwd
+	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
+	jz	@F
+	push	es
+	cCall	GetSelectorBase,<[VESAWinASeg]>
+	pop	es
+@@:	push	dx
+	push	ax
+
+	; Window Size (single word)
+	push	[VESAWinSize]
+	; Window Granularity (single word)
+	push	[VESAGranularity]
+
+	; Window B "Exists" (char)
+	mov	ah,[VESAWinBAttrs]
+	mov	al,'-'
+	test	ah,VESA_WINATTR_EXISTS
+	jz	@F
+	mov	al,'E'
+@@:	push	ax
+	; Window B "Readable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_READ
+	jz	@F
+	mov	al,'R'
+@@:	push	ax
+	; Window B "Writable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_WRITE
+	jz	@F
+	mov	al,'W'
+@@:	push	ax
+
+	; Window A "Exists" (char)
+	mov	ah,[VESAWinAAttrs]
+	mov	al,'-'
+	test	ah,VESA_WINATTR_EXISTS
+	jz	@F
+	mov	al,'E'
+@@:	push	ax
+	; Window A "Readable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_READ
+	jz	@F
+	mov	al,'R'
+@@:	push	ax
+	; Window A "Writable" (char)
+	mov	al,'-'
+	test	ah,VESA_WINATTR_WRITE
+	jz	@F
+	mov	al,'W'
+@@:	push	ax
+
+	; Video Mode (dword)
+	xor	ax,ax
+	push	ax
+	push	[Vmode]
+
+	; format and output buffer
+	lea	ax,bankinfo_format
+	push	cs
+	push	ax
+	push	[outbuf.sel]
+	push	[outbuf.off]
+
+	call	[wsprintf]
+	mov	sp,si	; restore stack pointer
+
+	; then print it
+	push	ds
+	lds	di,[outbuf]
+	mov	dx,di
+	add	di,ax	; get length of output string
+	; replace null terminator with dollar terminator
+	mov	byte ptr [di],'$'
+	mov	ah,9	; write string to stdout
+	int	21h
+	pop	ds
 cEnd
 
 ;--------------------------------------------------------------------------;
@@ -1368,9 +1617,6 @@ vesa_gdi_fixup	proc near
 	mov	ax,[VESAScanLineLen]
 	mov	cx,ax
         mov     es:[di].bmWidthBytes,ax
-        mul     bx
-        mov     es:[di].bmWidthPlanes.lo,ax
-        mov     es:[di].bmWidthPlanes.hi,dx
 	; set the # of scanlines per segment
 	mov	ax,[VESAWinSize]
 	cwd		; set DX to zero for the DIV we do below
@@ -1403,13 +1649,13 @@ vesa_gdi_fixup	proc near
         mov     ax,wptr es:[di].bmPlanes
 	mov	[ColourFormat],ax
 
-	; and the MemWidth / Size
+	; and the MemWidth
 	mov	ax,es:[di].bmWidthBytes
-	mov	bx,es:[di].bmWidthPlanes.lo
-	mov	cx,es:[di].bmWidthPlanes.hi
 	mov	[MemWidth],ax
-	mov	[MemSize.lo],bx
-	mov	[MemSize.hi],cx
+	mov	ax,[MemSize.lo]
+	mov	dx,[MemSize.hi]
+        mov     es:[di].bmWidthPlanes.lo,ax
+        mov     es:[di].bmWidthPlanes.hi,dx
 
 	; geometry
 	push	bp
@@ -1420,16 +1666,30 @@ vesa_gdi_fixup	proc near
 	mov	bx,[ScreenWidthMM]
 	mov	cx,[ScreenHeightMM]
 	test	bx,bx
-	jnz	@F
+	jnz	screen_size_known
 
 	; we failed to detect the screen width, so calculate it from the height
 	; and the aspect ratio of the specified resolution
+	cmp	bp,640
+	ja	@F
+
+	; if we're on one of those old small CGA/EGA-era resolutions, the geometry
+	; is for a 4:3 screen, even if the pixels are a bit squished!
 	mov	ax,cx
+	shl	ax,2	; multiply by 4
+	cwd
+	mov	bx,3
+	div	bx	; divide by 3
+	mov	bx,ax
+	jmp	screen_size_known
+
+@@:	mov	ax,cx
 	mul	bp
 	div	di
 	mov	bx,ax
 
-@@:	mov	es:[si].dpHorzSize,bx
+screen_size_known:
+	mov	es:[si].dpHorzSize,bx
 	mov	es:[si].dpVertSize,cx
 
 	; calculate parameters related to the physical size
@@ -1497,6 +1757,55 @@ vesa_gdi_fixup	proc near
 	;	  dpVertSize >= 2185, i.e. 2.185 metres - I'd say it's unlikely!
 	div	di
 	mov	es:[si].dpTwpWin.ycoord,ax
+
+	; lastly, correct the pixel aspect ratio if we're using an old sub-640*480 res
+	mov	dl,byte ptr es:[si].dpAspectX
+	mov	dh,byte ptr es:[si].dpAspectY
+	mov	ax,es:[si].dpAspectXY
+
+	cmp	bp,640
+	ja	geometry_done
+	jb	check_320
+
+	cmp	di,480
+	jae	geometry_done
+	; 640*400 is 4:2.5, implying 2.5:3 pixels
+	mov	dl,30	; 36*2.5/3
+	mov	ax,47	; approx sqrt(30^2 + 36^2)
+	cmp	di,400
+	jae	fix_dpi
+	; 640*350: use the values from EGA.ASM
+	mov	dl,38
+	mov	dh,48
+	mov	ax,61
+	cmp	di,350
+	jae	fix_dpi
+	; 640*200 is 4:1.25, implying 1.25:3 pixels
+	mov	dl,20	; 48*1.25/3
+	mov	ax,52	; exactly sqrt(20^2 + 48^2)
+	cmp	di,200
+	jae	fix_dpi
+	; unreachable since DI < 200 is not allowed!
+
+check_320:
+	cmp	bp,320
+	ja	geometry_done
+	cmp	di,200
+	ja	geometry_done
+	; 320*200 is 4:2.5, implying 2.5:3 pixels
+	mov	dl,30	; 36*2.5/3
+	mov	ax,47	; approx sqrt(30^2 + 36^2)
+
+fix_dpi:
+	; first set the new hypotenuse
+	mov	es:[si].dpAspectXY,ax
+	; then correct the DPI aspect ratio based on the pixel one
+	mov	al,byte ptr es:[si].dpLogPixelsX
+	mul	dl
+	div	dh
+	mov	byte ptr es:[si].dpLogPixelsY,al
+
+geometry_done:
 	; done with the geometric calculations
 	pop	di
 	pop	bp
@@ -1504,12 +1813,7 @@ vesa_gdi_fixup	proc near
 	; keep a copy of the raster flags in Data, as InitSeg is discardable!
 	mov	ax,es:[si].dpRaster
 	mov	[raster_flags],ax
-
-	; setup double-buffering if possible / necessary
-	test	[Vmode],VESA_FLAG_LINEAR
-	jz	@F
-	call	setup_double_buf
-@@:	ret
+	ret
 vesa_gdi_fixup	endp
 
 
