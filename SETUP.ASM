@@ -19,6 +19,7 @@
 ; it just makes the code larger for no good reason.
 
 ; I am quite pleased the initial binary came out to less than 4K.
+; (Although it isn't anymore.)
 ; Joshua Hudson <joshudson@gamil.com>
 
 org	0E0h	; Data offsets are actually 0100h but MZ header is generated
@@ -790,8 +791,8 @@ exit_nosave:
 	;jmp	exit0
 
 	;*** Common helper routines used by init, setup, and other stuffs ***
-	.8086
 exit0:
+	nop		; Hitpoint for AUXSTACK.COM message
 	mov	al, 0
 exit:
 	mov	ah, 4Ch
@@ -1344,7 +1345,7 @@ fontsz	db	0
 refresh	dw	16
 
 issetupexe:
-	;*** SETUP.EXE copies VGASVGA.DRV, VDDVBE.386, VIDMODES.COM, VBESVGA.TXT
+	;*** SETUP.EXE copies AUXSTACK.COM, VGASVGA.DRV, VDDVBE.386, VIDMODES.COM, VBESVGA.TXT
 	;*** generates VBESVGA.EXE, then runs configuration screen
 
 	; This generates VBESVGA.EXE's body
@@ -1416,6 +1417,11 @@ foundwindir_nadj:
 	call	copyfile
 	jc	ioerror
 	pop	di
+foundwindir_auxstack:
+	lea	si, [auxstack]
+	call	copyfile
+	jc	ioerror
+foundwindir_vidmodes:
 	lea	si, [vidmodescom]
 	call	copyfile
 	;Executive decision: VIDMODES.COM is an optional component
@@ -1478,7 +1484,16 @@ vbesvganosetattr:
 	mov	ax, 3D00h
 	int	21h
 	jc	ioerror
+	mov	byte ptr [exit0], 0E9h
+	mov	word ptr [exit0 + 1], auxstackshowmsg - exit0 - 3
 	jmp	haveexesystemini	; Install successful; configure it
+
+auxstackshowmsg:
+	lea	dx, [auxstackmsg]
+	mov	ah, 9
+	int	21h
+	mov	al, 0
+	jmp	exit
 
 ; Copies a file; si = filename to copy, di = out path endpoint:
 ; preserves di
@@ -1563,6 +1578,13 @@ checkwindir:
 	push	di
 	lea	si, [systemdir]
 	call	stpcpy0
+	push	di
+	lea	si, [vmm32vxd]
+	call	stpcpy0
+	pop	di
+	mov	ax, 4300h
+	int	21h
+	jnc	isw95
 	lea	si, [dosxexe]
 	call	stpcpy0
 	pop	di
@@ -1577,13 +1599,18 @@ checkwindir:
 	int	21h
 	jc	isnotwindir
 	or	bp, 2
-	clc
-	ret
-issysdosx:
+issysdosx:	; iswindosx and issysdosx converged to common code
 	clc
 	ret
 isnotwindir:
 	stc
+	ret
+isw95:
+	pop	di
+	;Windows 95 neither needs nor wants AUXSTACK.COM
+	mov	word ptr [foundwindir_auxstack], 0EBh OR ((foundwindir_vidmodes - foundwindir_auxstack - 2) * 256)
+	mov	auxstackmsg, "$"
+	clc
 	ret
 
 	;Copies path entry into PNAME2, returns DI points past end of entry, or ZF set if no more
@@ -1624,6 +1651,8 @@ nomorepathentry:
 cwindows	db	"C:\WINDOWS\", 0
 systemdir	db	"SYSTEM\", 0
 dosxexe		db	"DOSX.EXE", 0
+vmm32vxd	db	"VMM32.VXD", 0
+auxstack	db	"AUXSTACK.COM", 0
 vbesvgadrv	db	"VBESVGA.DRV", 0
 vddvbe386	db	"VDDVBE.386", 0
 vidmodescom	db	"VIDMODES.COM", 0
@@ -1631,6 +1660,8 @@ vbesvgatxt	db	"VBESVGA.TXT", 0
 vbesvgaexes	db	"VBESVGA.EXE $"
 nowindir	db	"Windows directory not found; try running SETUP C:\WINDIR", 13, 10, "$"
 nosysdir	db	"System directory not found or DOSX.EXE missing", 13, 10, "$"
+auxstackmsg	db	"Windows 3.1 may require AUXSTACK.COM loaded on certain video BIOSes", 13, 10
+		db	"due to small stack size in WIN.COM; this can NOT be detected automatically.", 13, 10, "$"
 
 	ALIGN 2
 
@@ -1654,7 +1685,7 @@ vbemztaillen	equ	(issetupexe - mzheader) AND 511
 
 _end:
 .data?
-	;ALIGN 4 - should work bout doesn't
+	;ALIGN 4 - should work but doesn't
 pathoff	dw	?
 exeoff	dw	?
 hin	dw	?
