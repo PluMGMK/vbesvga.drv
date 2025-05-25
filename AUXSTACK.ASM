@@ -1,5 +1,5 @@
 ; Assemble as a binary file, should be possible on any platform
-;	e.g. jwasm -bin auxstack.asm
+;	e.g. jwasm -bin AUXSTACK.ASM
 ; then rename auxstack.bin to auxstack.com
 
 	.8086
