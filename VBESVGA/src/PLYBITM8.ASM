@@ -724,24 +724,22 @@ BM8_ROP1	proc	near
 BM8_ROP1	endp
 ;---------------------------------------------------------------------------;
 BM8_ROP2	proc	near
-		mov	ah	,al
-		not	ah
-		and	BYTE PTR [di],ah
+		not	al
+		and	BYTE PTR [di],al
+		not	al
 		ret
 BM8_ROP2	endp
 ;---------------------------------------------------------------------------;
 BM8_ROP3	proc	near
-		mov	ah	,al
-		not	ah
-		mov	BYTE PTR [di],ah
+		not	al
+		mov	BYTE PTR [di],al
+		not	al
 		ret
 BM8_ROP3	endp
 ;---------------------------------------------------------------------------;
 BM8_ROP4	proc	near
-		mov	ah	,BYTE PTR [di]
-		not	ah
-		and	ah	,al
-		mov	BYTE PTR [di],ah
+		not	BYTE PTR [di]
+		and	BYTE PTR [di],al
 		ret
 BM8_ROP4	endp
 ;---------------------------------------------------------------------------;
@@ -777,9 +775,9 @@ BM8_ROPA	proc	near
 BM8_ROPA	endp
 ;---------------------------------------------------------------------------;
 BM8_ROPB	proc	near
-		mov	ah	,al
-		not	ah
-		or	BYTE PTR [di],ah
+		not	al
+		or	BYTE PTR [di],al
+		not	al
 		ret
 BM8_ROPB	endp
 ;---------------------------------------------------------------------------;
