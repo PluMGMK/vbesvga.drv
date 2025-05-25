@@ -211,6 +211,7 @@ sBegin Code
 	externB	green_shl
 	externB	blue_shr
 	externB	blue_shl
+	externB	PaddingBits
 
 ; Returns:
 ;	AL = index in palette
@@ -406,6 +407,12 @@ NoPalette:
 
 	; OK, it's white!
 	or	ch,MONO_BIT
+	; if there are padding bits, then the only valid accelerator is
+	; "all zeros" since otherwise we can end up with different versions
+	; of white that don't compare as equal...
+	cmp	[PaddingBits],0
+	jz	@F
+	and	ch,not ONES_OR_ZEROS
 
 @@:
 	; return the colour
