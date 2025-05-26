@@ -198,6 +198,7 @@ incOutput       = 1                     ;Include GDI Output definitions
         include polyline.inc
         include display.inc
         include cursor.inc
+        include bltutil.inc
 .list
 
 ??_out polyline
@@ -448,6 +449,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
 	localD	ForeColor
 	localW	DrawModeIndex		; ROP code
         localD  TmpColor                ; pen color
+	localD	ColourMask		; only for ROPs 7 and D
         localB  DeviceFlags             ; identifies type of device
 	localB	BytesPerPixel		; how big is each pixel for an RGB map?
 
@@ -461,6 +463,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localW  NotFillBytes            ; last valid address in huge segment
         localW  NextSegOff              ; offset to next hugemap segment
         localW  BM8                     ; point to BM8_... dataROT routine
+        localW  BM8_wrap                ; point to BM8_... dataROT routine
 	localW	RotColour		; point to colour rotation routine
 
 ; following variables are used for styled lines
@@ -718,13 +721,33 @@ ld_bg_color2:
         mov     BackColor.lo,ax	    ; save the background color
         mov     BackColor.hi,dx
 
-	mov	bx,es:[di].Rop2 	    ; get the ROP code
-        dec     bx                          ; make it zero based
-        and     bx,RASTER_OP_MASK           ; only 4 bits are significant
-        mov     DrawModeIndex,bx            ; save a copy
-	shiftl	bx,1
+	mov	ax,es:[di].Rop2 	    ; get the ROP code
+        dec     ax                          ; make it zero based
+        and     ax,RASTER_OP_MASK           ; only 4 bits are significant
+	mov	bx,si
+        test    DeviceFlags,TYPE_IS_BYTEMAP ; only colour bitmaps need sanitization
+	jz	@F
+
+	xor	si,si                       ; we don't want to sanitize any pattern!
+	call	sanitize_binary_rop
+	jc	@F
+	; if CF clear, then we may need to OR something into our colours
+	or	BackColor.lo,dx
+	or	BackColor.hi,cx
+	or	ForeColor.lo,dx
+	or	ForeColor.hi,cx
+	; and there's no need for masking
+	xor	cx,cx
+	mov	dx,cx
+
+@@:	mov	si,bx
+        mov     DrawModeIndex,ax            ; save a copy
+	shiftl	ax,1
+	mov	bx	,ax
 	mov	bx	,cs:[BM8_ROP_Table][bx]
 	mov	BM8	,bx
+	; assume no masking
+	mov	BM8_wrap,offset BM8_wrap_nomask
 
 	mov	bl,BytesPerPixel
 	dec	bl
@@ -733,7 +756,14 @@ ld_bg_color2:
 	mov	bx	,cs:[RotateColourTable][bx]
 	mov	RotColour,bx
 
-	mov	cl,[si].oem_pen_style	    ; get the requested style
+	mov	ColourMask.lo,dx
+	mov	ColourMask.hi,cx
+	or	cx,dx
+	jz	@F
+	; need masking
+	mov	BM8_wrap,offset BM8_wrap_masked
+
+@@:	mov	cl,[si].oem_pen_style	    ; get the requested style
         mov     LineStyle,cl                ; save style
         cmp     cl,MaxLineStyle             ; test for validity
         jg      jump_error_exit1            ; illegal style
