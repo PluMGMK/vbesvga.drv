@@ -23,6 +23,7 @@ incOutput       = 1                     ; Include control for gdidefs.inc
 	include macros.mac
         include njumps.mac
 	include vgareg.inc
+	include	bltutil.inc
         .list
 
 ifdef PALETTES
@@ -37,7 +38,6 @@ ifdef	EXCLUSION
 	externFP unexclude_far		; Clear excluded area
 endif
 
-	externFP prep_pattern_far	; In BLTUTIL.ASM
 	externFP fill_solid_far		; In ROBJECT.ASM
 
 rscan_type	STRUC
@@ -152,6 +152,14 @@ dw       color_opaque_rop_d
 dw       color_opaque_rop_e
 dw       color_opaque_rop_f
 
+colour_rop_masked_output	LABEL	WORD
+
+; only ROPs 7 and D have masked variants
+dw	colour_xpar_rop_7_masked
+dw	colour_xpar_rop_d_masked
+dw	colour_opaque_rop_7_masked
+dw	colour_opaque_rop_d_masked
+
 ;--------------------------------------------------------------------------;
 ;
 ; DO_SCANLINES
@@ -189,6 +197,7 @@ cProc   do_scanlines,<FAR,PUBLIC,WIN,PASCAL,NODATA>,<si,di,es,ds>
 	localW	bank_of_scan		;bank containing start_of_scan
         localW  draw_output             ;rop and bg mode specific routine
 	localW	exclude_flag
+	localD	colour_mask		;only for ROPs 7 and D
 cBegin
 	WriteAux  <'Scanline'>
 	cld				; We are forever doing this
@@ -308,6 +317,12 @@ color_main_loop:
 
 	mov	ax	,es:[rscan.rsoutput]
         mov     draw_output ,ax
+
+	; load the mask too, in case we need it
+	mov	ax	,wptr es:rscan.rsmono_pattern[0]
+	mov	dx	,wptr es:rscan.rsmono_pattern[2]
+        mov     colour_mask.lo ,ax
+        mov     colour_mask.hi ,dx
 
         mov     exclude_flag ,0
 	cmp	es:[rscan.rstype] ,SCREEN_TYPE
@@ -429,7 +444,13 @@ color_main_draw_loop:
 	xor	bh	,bh
 	shl	bx	,3			;bx = pattern pitch
 	.errnz	SIZE_PATTERN-(1 SHL 3)
-	call	draw_output
+
+	; if it's opaque ROP C, then AX needs to stay as xstart in bytes
+	cmp	draw_output,offset color_opaque_rop_c
+	je	@F
+	; otherwise, point AX at the mask, in case we need it
+	lea	ax,colour_mask
+@@:	call	draw_output
 	pop	bx
 
 color_main_draw_loop_skip:
@@ -576,7 +597,17 @@ begin_scanline_color:
 	jc	begin_scanline_error
 
 @@:
-	shiftl	bx	,4
+	; sanitize the ROP if needed...
+	mov	si	,es
+	mov	di	,DataOFFSET rscan.rscolor_pattern
+	call	sanitize_binary_rop
+	jc	@F
+
+	; zero CX/DX to indcate no masking needed
+	xor	cx,cx
+	mov	dx,cx
+
+@@:	shiftl	bx	,4
 	add	bx	,ax
 	shiftl	bx	,1
         and     bx      ,3FH
@@ -585,6 +616,22 @@ begin_scanline_color:
 	mov	ax	,cs:[color_rop_and_mode_output][bx]
         mov     es:[rscan.rsoutput] ,ax
 
+	; stuff the mask into the mono pattern space (since we
+	; won't be using a mono pattern for a colour scanline!)
+	mov	wptr es:rscan.rsmono_pattern[0],dx
+	mov	wptr es:rscan.rsmono_pattern[2],cx
+
+	; check again if we need to mask...
+	or	cx,dx
+	jz	@F
+
+	; point BX at the masked version
+	shr	bx	,3	; 7 (0Eh) becomes 0 (1), 0Dh (16h) becomes 1 (3)
+	and	bl	,NOT 1	; eliminate LSB to change 1 to 0 and 3 to 2
+	mov	ax	,cs:[colour_rop_masked_output][bx]
+        mov     es:[rscan.rsoutput] ,ax
+
+@@:
         errn$   begin_scanline_done
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -701,10 +748,10 @@ no_pen_xlat_needed:
 
 	mov	bx	,OPAQUE - 1
 	lds	si	,lp_draw_mode
-	mov	ax	,[si].Rop2
-	dec	ax
+        mov     ax      ,[si].Rop2      ; get ROP 1-16
+        dec     ax                      ; make 0-15
 	clc
-	ret
+        ret
 
 
 get_fill_brush:
