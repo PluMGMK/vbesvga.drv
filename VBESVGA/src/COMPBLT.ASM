@@ -1254,6 +1254,22 @@ store_in_prev_bank	ENDP
 ;	stosb is skipped; otherwise the value gets stored in the dst bitmap.
 ;	If the blt is not a transparent blt, then the value is always stored.
 
+color_stosb_mask_template:
+	mov	bx,01234H			;this becomes the phase (0/1/2/3)
+csmp:	and	al,ss:[bx+05678H]		;05678H becomes ptr to colour_mask
+csmpm:	inc	bl
+	cmp	bl,034H				;034H becomes pxbytes
+csmpb:	jb	@F
+	xor	bl,bl
+@@:	mov	byte ptr ss:[05678H],bl		;05678H will become csmp-2
+csmpp:
+
+COLOR_STOSB_MASK_LEN	=  $ - color_stosb_mask_template
+COLOR_STOSB_MASK_PHASE	=  $ - csmp + 2
+COLOR_STOSB_MASK_PTRMASK=  $ - csmpm + 2
+COLOR_STOSB_MASK_PXBYTES=  $ - csmpb + 1
+COLOR_STOSB_MASK_PPHASE	=  $ - csmpp + 2
+
 color_stosb_xpar_template:
 	cmp	al,034H 			;034H will become the bg color
 cstxf:	je	@F
@@ -1367,7 +1383,24 @@ COLOR_STOSB_XPAR33_PTRL3=  $ - csx33pl + 2
 PUBLIC	compile_color_stosb
 compile_color_stosb	PROC	NEAR
 
-	cmp	word ptr background_mode,OPAQUE
+	mov	ax,word ptr colour_mask[0]
+	or	ax,word ptr colour_mask[2]
+	jz	@F
+
+	; need to mask the byte before storing it...
+	lea	si,color_stosb_mask_template
+	mov	cx,COLOR_STOSB_MASK_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	lea	bx,colour_mask
+	mov	ax,[pxbytes]
+	mov	es:[di - COLOR_STOSB_MASK_PTRMASK],bx
+	mov	es:[di - COLOR_STOSB_MASK_PXBYTES],al
+	lea	bx,[di - COLOR_STOSB_MASK_PHASE]
+	xor	ax,ax	; initialize phase to zero
+	mov	es:[bx],ax
+	mov	es:[di - COLOR_STOSB_MASK_PPHASE],bx
+
+@@:	cmp	word ptr background_mode,OPAQUE
 	jne	@F
 	; opaque: we just store the byte at ES:DI, and done
 	mov	al,I_STOSB
