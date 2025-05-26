@@ -757,9 +757,9 @@ sanitize_binary_rop  PROC    FAR
 	push	ax
 	mov	es,si
 	call	bx
+	pop	ax
 	pop	dx
 	pop	es
-	pop	ax
 
 @@:	and	al,00111100b	; get the middle nibble
 	shr	al,2		; make it the lower nibble
