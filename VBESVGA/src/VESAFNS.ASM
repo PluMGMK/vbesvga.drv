@@ -289,7 +289,10 @@ assumes cs,Code
 externB		??BigFontFlags
 externW		_cstods		; in CURSOR.ASM
 externW		pxbytes		; in SWCURS.ASM
+externFP	sum_RGB_alt_far	; in ROBJECT.ASM
 externFP	DoInt10h	; in INT10.ASM
+externD		white		; in BLTUTIL.ASM
+externD		notwhite	; in BLTUTIL.ASM
 
 ; This goes in the Code segment for ease of access, and in case the
 ; BankSwitch function is included in the buffer (unlikely?)
@@ -1268,9 +1271,10 @@ endif
 FindMode_done:
 	.286
 	test	di,di
-	jnz	@F
+	jz	@F
+	jmp	@@donewithsel
 
-	; Before fully committing to the mode, do some sanity checks on the
+@@:	; Before fully committing to the mode, do some sanity checks on the
 	; window. These are guaranteed to pass for a linear mode (since we've
 	; just set all the window attributes ourselves) but should stop us
 	; from making fools of ourselves with banked modes. I reckon that if
@@ -1279,7 +1283,7 @@ FindMode_done:
 	; back out to ENABLE and get it to display some details...
 	call	vesa_win_sanity_check
 	test	di,di
-	jnz	@F
+	jnz	@@donewithsel
 
 	; Set ScreenSelector based on what has taken place above
 	mov	ax,[VESAWinASeg]
@@ -1324,15 +1328,30 @@ FindMode_done:
 	pop	si
 
 @@skipcolourloop:
+	; now that the "shl" and "shr" bytes are set correctly, we can get
+	; the physical representation of "white", to be used (if needed)
+	; by masking functions
+	xor	ax,ax
+	mov	dh,al
+	not	ax
+	mov	dl,al
+	call	sum_RGB_alt_far
+	mov	[white.lo],ax
+	mov	[white.hi],dx
+	not	ax
+	not	dx
+	mov	[notwhite.lo],ax
+	mov	[notwhite.hi],dx
+
 	; setup a fallback bank-switch function, just in case we somehow got
 	; this far without one...
 	cmp	[VESABankSwitch.sel],0
-	jnz	@F
+	jnz	@@donewithsel
 
 	mov	[VESABankSwitch.sel],seg BankSwitchInt10
 	mov	[VESABankSwitch.off],offset BankSwitchInt10
 
-@@:
+@@donewithsel:
 	; time to free the selector
 	cCall	FreeSelector,<[CodeSel]>
 	assumes	es,nothing

@@ -16,5 +16,7 @@ EXTRN	prep_pattern_far:FAR
 EXTRN	prep_pattern_norotate:NEAR
 EXTRN	pattern_rotate:NEAR
 EXTRN   get_exclusion_region:NEAR
+EXTRN	sanitize_binary_rop:FAR
+EXTRN	sanitize_ternary_rop:NEAR
 ENDIF
 

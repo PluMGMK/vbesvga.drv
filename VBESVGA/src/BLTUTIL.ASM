@@ -32,7 +32,17 @@ externW	oem_brush_size		; in ROBJECT.ASM
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 externW	colour_expand		; in ROBJECT.ASM (function pointer)
 externW	colour_compress		; in ROBJECT.ASM (function pointer)
+externW	fill_solid_plane	; in ROBJECT.ASM (function pointer)
 externNP ipc_to_rgb		; in RGB2IPC.ASM
+externB PaddingBits		; in VESAFNS.ASM
+
+;
+;	bitmasks for valid colours
+;
+
+public	white,notwhite
+white		dd ?	; significant bits set, padding bits clear
+notwhite	dd ?	; padding bits set, others all clear
 
 ;
 ;	blt_clip
@@ -613,6 +623,238 @@ get_exclusion_region_done:
 	ret
 
 get_exclusion_region	    ENDP		;
+
+; helper functions for sanitization, which depend on pxbytes
+get_clr1 proc near
+	mov	al,es:[di]
+	ret
+get_clr1 endp
+get_clr2 proc near
+	mov	ax,es:[di]
+	ret
+get_clr2 endp
+get_clr3 proc near
+	mov	ax,es:[di]
+	mov	dl,es:[di+2]
+	ret
+get_clr3 endp
+get_clr4 proc near
+	mov	ax,es:[di]
+	mov	dx,es:[di+2]
+	ret
+get_clr4 endp
+get_clr	label word
+	dw	offset get_clr1
+	dw	offset get_clr2
+	dw	offset get_clr3
+	dw	offset get_clr4
+set_clr1 proc near
+	mov	es:[di],al
+	ret
+set_clr1 endp
+set_clr2 proc near
+	mov	es:[di],ax
+	ret
+set_clr2 endp
+set_clr3 proc near
+	mov	es:[di],ax
+	mov	es:[di+2],dl
+	ret
+set_clr3 endp
+set_clr4 proc near
+	mov	es:[di],ax
+	mov	es:[di+2],dx
+	ret
+set_clr4 endp
+set_clr	label word
+	dw	offset set_clr1
+	dw	offset set_clr2
+	dw	offset set_clr3
+	dw	offset set_clr4
+
+pattern_pad_ones	PROC	NEAR
+	; we have a ROP which gives "NOT P" when D and S are 0
+	; => sufficient to set P = 1 in the padding bits of the
+	;    pattern at ES:DI
+	push	di
+	mov	bx,[pxbytes]
+	dec	bx
+	shl	bx,1
+	mov	cx,SIZE_PATTERN*SIZE_PATTERN
+
+@@:	call	get_clr[bx]
+	or	ax,word ptr notwhite[0]
+	or	dx,word ptr notwhite[2]
+	call	set_clr[bx]
+	add	di,[pxbytes]	; clears CF
+	loop	@B
+
+	pop	di
+	ret
+pattern_pad_ones	ENDP
+
+pattern_set_white	PROC	NEAR
+	; just set the entire pattern to white
+	push	di
+	mov	ax,word ptr white[0]
+	mov	dx,word ptr white[2]
+	call	[fill_solid_plane]
+	pop	di
+	ret
+pattern_set_white	ENDP
+
+;
+;	sanitize_binary_rop
+;
+;	PARMS:
+;	AX	binary ROP index (four bits) requested for the output
+;	SI:DI-->64 pixels of pattern to sanitize (or NULL if not needed)
+;
+;	RETURNS:
+;	AX	binary ROP index to be used for the output
+;	CARRY	CLEAR if output can proceed without a masking step
+;		SET if a masking step is required
+;	CX:DX	if CARRY CLEAR: value to OR pattern with before output
+;		if CARRY SET: value to AND ROP result with during output
+;	SI:DI-->pattern sanitized if needed
+;
+
+PUBLIC  sanitize_binary_rop
+sanitize_binary_rop  PROC    FAR
+
+	cmp	[PaddingBits],0
+	jnz	@F
+	; no padding bytes, no problem...
+	ret
+
+@@:	; to analyse the binary ROP, we translate it into a ternary one
+	; for which S is a don't-care. We do this by doubling the bottom
+	; two bits into the bottom nibble, and the upper two bits into
+	; the upper nibble, producing an 8-bit index.
+	mov	ah,al
+	and	al,0011b	; lower two bits
+	and	ah,1100b	; upper two bits
+	shl	ah,2		; move upper two bits into upper nibble
+	or	al,ah		; now AL has two bits at the bottom of each nibble
+	mov	ah,al
+	shl	ah,2		; now AH has two bits at the top of each nibble
+	or	al,ah		; now AL has the bits duplicated as needed
+	xor	ah,ah		; now AX is a valid ternary ROP index!
+
+	push	bx
+	; this function does most of the analysis...
+	call	sanitize_ternary_rop
+	pushf			; save CF
+
+	test	bx,bx		; do we have a pattern sanitizing function?
+	jz	@F		; nope, move on...
+	test	si,si		; AND a pattern to sanitize?
+	jz	@F		; nope, move on...
+
+	; sanitize the pattern here and now!
+	push	es
+	push	dx
+	push	ax
+	mov	es,si
+	call	bx
+	pop	dx
+	pop	es
+	pop	ax
+
+@@:	and	al,00111100b	; get the middle nibble
+	shr	al,2		; make it the lower nibble
+
+	popf			; restore CF
+	pop	bx
+	ret
+
+sanitize_binary_rop	ENDP				;
+
+;
+;	sanitize_ternary_rop
+;
+;	PARMS:
+;	AX	ternary ROP index (eight bits) requested for the blit
+;
+;	RETURNS:
+;	AX	ternary ROP index to be used for the blit
+;	CARRY	CLEAR if blit can proceed without a masking step
+;		SET if a masking step is required
+;	CX:DX	if CARRY CLEAR: value to OR pattern with before blit
+;		if CARRY SET: value to AND ROP result with during blit
+;	BX	NEAR pointer to function to sanitize 64 pixels at ES:DI
+;		(or zero if no pattern sanitization needed)
+;
+
+ROP_P0S0D0_1	equ	00000001b
+ROP_P1S0D0_1	equ	00010000b
+
+PUBLIC	sanitize_ternary_rop
+sanitize_ternary_rop	    PROC    NEAR
+
+	; if there are no padding bits, no sanitization is required
+	cmp	[PaddingBits],0
+	jnz	@F
+
+@@no_sanitization:
+	xor	bx,bx	; no pattern sanitization function
+	mov	dx,bx	; no need to OR pattern with anything
+	mov	cx,bx	; no need to OR pattern with anything
+	ret
+
+@@:	; if the ROP gives zero in response to all-zero inputs,
+	; there is no problem
+	test	ax,ROP_P0S0D0_1
+	jz	@@no_sanitization
+
+	; if it gives zero in response to P1 and all-zero S/D,
+	; then it can be used as-is with the pattern sanitized
+	; by setting the padding bits to 1
+	test	ax,ROP_P1S0D0_1
+	jnz	@F
+
+	; set padding bits of pattern to 1
+	lea	bx,pattern_pad_ones
+	; i.e. OR it with notwhite
+	mov	dx,word ptr notwhite[0]
+	mov	cx,word ptr notwhite[2]
+	ret
+
+@@:	; one last check we can do is if the upper and lower
+	; nibbles of the ROP index are the same, which means
+	; P is a don't-care...
+	mov	bx,ax	; back up the ROP index if needed
+	mov	ah,al
+	and	ah,0F0h	; AH includes only the upper nibble
+	shl	al,4	; AL has lower nibble in the upper position
+	cmp	ah,al
+	jne	@F
+
+	; since P is a don't-care, we can change the ROP and
+	; introduce our own pattern: specifically, zero out
+	; the lower nibble, so it gives zero for P0, and
+	; set the pattern to all white, so that the padding
+	; bits are P0 and others are P1.
+	xor	ah,ah	; left with the upper nibble in AL
+	; set significant bits of pattern to 1
+	lea	bx,pattern_set_white
+	; i.e. OR it with white
+	mov	dx,word ptr white[0]
+	mov	cx,word ptr white[2]
+	ret
+
+@@:	; we can't sanitize in pre-processing, so a masking step
+	; is needed during the blit :(
+	mov	ax,bx	; get back the ROP index
+	xor	bx,bx	; no pre-processing function
+	; need to AND every ROP result with white
+	mov	dx,word ptr white[0]
+	mov	cx,word ptr white[2]
+	; set CF to indicate masking step needed
+	stc
+	ret
+
+sanitize_ternary_rop	    ENDP		;
 
 sEnd	Code
 
