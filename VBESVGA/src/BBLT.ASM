@@ -175,8 +175,29 @@ cEnd    nogen
 PUBLIC	bitblt_prep_rop_etal
 bitblt_prep_rop_etal	PROC	NEAR
 
+        les     di,lpDestDev
+	mov	ax,Rop[2]
+	; it kinda sucks that we now have to check for a mono bitmap
+	; twice (here AND at the end of the function), but it's the
+	; only way to make sure we sanitize the ROPs correctly without
+	; completely rewriting this function...
+	; (Sanitization is NEVER needed for mono bitmaps)
+	cmp	es:[di].bmBitsPixel,01H
+	je	@F
+
+	call	sanitize_ternary_rop
+	mov	[sanitize_pattern],bx
+	jc	@F
+	; if CF CLEAR then we don't need to do any masking
+	xor	cx,cx
+	mov	dx,cx
+
+@@:	; these will only be used with colour dests
+	mov	[colour_mask.lo],dx
+	mov	[colour_mask.hi],cx
+
+	mov	bx,ax
 	sub	ax,ax			;assume one of first 128 rops
-	mov	bx,Rop[2]
 	or	bl,bl
 	jns	@F
 	or	ah, HIGH NEGATE_NEEDED
@@ -290,7 +311,22 @@ bitblt_prep_pattern	PROC	NEAR
 
 	mov	dl,device_flags
 	and	dl,DEVFLAG_DST_COLOR  ;set DL non-zero for color
-	push	bp
+	jz	@F
+
+	; if colour, then we may have "sanitized" the ROP from a
+	; pattern-less one to a patterned one, in which case this
+	; call may fail. Pre-empt that...
+	mov	ax,ds
+	test	ax,ax
+	jnz	@F	; call won't fail, go ahead...
+
+	mov	bx,[sanitize_pattern]
+	test	bx,bx
+	jnz	bitblt_prep_pattern_rotate
+	; if we have no sanitize_pattern function, then go ahead
+	; and let the call fail, there's nothing we can do...
+
+@@:	push	bp
 	lea	bp,fgcolour
 	call	prep_pattern_norotate
 	pop	bp
@@ -298,7 +334,17 @@ bitblt_prep_pattern	PROC	NEAR
         ret
 
 bitblt_prep_pattern_rotate:
-	mov	bx,0707H
+	test	word ptr device_flags,DEVFLAG_DST_COLOR
+	jz	@F
+
+	; if colour, sanitize the pattern before we rotate it...
+	mov	bx,[sanitize_pattern]
+	test	bx,bx
+	jz	@F
+	lea	di,pattern_work	
+	call	bx
+
+@@:	mov	bx,0707H
 	mov	ax,es
 	mov	ds,ax
 	lea	si,pattern_work
