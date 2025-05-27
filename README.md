@@ -9,9 +9,15 @@ This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** av
 * Because my AMD Radeon RX 5500 XT doesn't support 256-colour modes, rendering the old [VESA Patch](http://www.win3x.org/win3board/viewtopic.php?t=5408&hilit=svga) useless for me
 * To help out any fellow enthusiasts who like running old software on new hardware!
 
-## Program Manager limitations
+## Limitations in Windows programs / components
+
+### Program Manager icons
 
 When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32*32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 * 32 * (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (not accessible with `Allow3ByteMode=0`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
+
+### Zoom-in in Paintbrush
+
+The zoomed-in editing mode in Paintbrush breaks in high-colour mode if the viewport is wider than about 800 pixels (100 zoomed-in pixels). You can work around this issue by reducing the size of the window while working in this mode. The reason is that this driver doesn't implement `StretchBlt`, and so GDI falls back to its internal implementation, which limits the intermediate DIB size to (again) a 64k segment (more details [here](https://github.com/PluMGMK/vbesvga.drv/issues/77#issuecomment-2913480799)). Because it uses a DIB, the outcome is the same regardless of whether you use a 16-bit, 24-bit or 32-bit video mode.
 
 ## Screenshots
 
