@@ -175,15 +175,6 @@
         call    LineSeg_check_stack
                 endm
 
-; Most of the routines in the original driver seemed to assume that segments do
-; NOT contain partial scanlines - i.e. each scanline is guaranteed to lie within
-; a single bank; no need to bank-switch while running across a scanline.
-; This may be true for memory bitmaps (enforced by GDI?) but it is definitely
-; not true in general for VESA-compliant graphics cards. This switch enables
-; code to calculate drawing positions for cards that have partial scanlines at
-; the beginning/end of banks.
-?PARTIAL_SCANLINES = 1
-
 
 incLogical      = 1                     ;Include GDI Logical object definitions
 incDrawMode     = 1                     ;Include GDI DrawMode definitions
@@ -1483,19 +1474,7 @@ calculate_for_bytemap:
 
 calculate_for_screen:
 
-ife	?PARTIAL_SCANLINES
-	inc	dx
-	sub	ax,wScans		; subtract no of scans/seg from Y
-	jnc	calculate_for_screen
-
-	dec	dx
-	neg	ax			; ax has no of scan lines from bot
-	mov	ScansLeftFromBot,ax	; save it
-	neg	ax
-	add	ax,wScans		; ax now has scan pos from top of seg
-else
 ;
-;	Let's try some new code to handle the general case...
 ;	Remember we now have DI == BX == StartX, AX == StartY
 ;
         mul     NextScan	; DX:AX := Beginning of scanline
@@ -1526,7 +1505,6 @@ no_fill:
 	; Set DX:DI to the offset
 	mov	dx,cx
 	mov	di,bx
-endif	; Back to common code...
 
 	mov	bank_select,dl		; initialize current bank
         mov     TempBank,dl
@@ -1535,12 +1513,7 @@ endif	; Back to common code...
 
 	mov	ds,TempCurSeg		; for EGA segment value saved
 
-if	?PARTIAL_SCANLINES
-	mov	ax,di			; all the multiplying up's already done
-else
-        mul     NextScan
-        add     ax,di                   ; make DS:DX:AX = absolute video address
-endif
+	mov	ax,di			; make DS:DX:AX = absolute video address
 
         add     ax,TempCurOff           ; + screen begin offset
         mov     TempCurByte,ax
