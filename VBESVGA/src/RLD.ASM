@@ -1465,6 +1465,7 @@ clip_rle  proc near
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
         mov     ax,di                   ; get screen pointer
         sub     ax,scan_start           ; convert into curX in bytes
+	cwd	; AX should always be <8000h in this situation
 
 	push	cx
 	mov	cx,[colour_format]
