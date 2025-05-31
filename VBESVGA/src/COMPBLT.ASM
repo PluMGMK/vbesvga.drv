@@ -376,10 +376,16 @@ compile_inner_loop_wrapchecks	PROC	NEAR
 	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
 	jz	wcdst	; we don't support wrapping memory segments (not needed)
 
+	; next check to make sure src_xExt_bytes and inner_loop_count
+	; are the same - otherwise there's a unit mismatch which will
+	; turn these calculations into a nonsense (think screen-to-mono)
+	mov	ax,src_xExt_bytes
+	cmp	ax,inner_loop_count
+	jne	wcdst
+
 	lea	si,wrap_check_template
 	mov	cx,WCT_SIZE
 	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,src_xExt_bytes
 	lea	bx,src_seg_wrap
 	mov	cx,inner_loop_count
 	cwd
@@ -552,6 +558,13 @@ compile_inner_loop_wraps	PROC	NEAR
 	jz	dstwrap
 	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
 	jz	dstwrap	; we don't support wrapping memory segments (not needed)
+
+	; next check to make sure src_xExt_bytes and inner_loop_count
+	; are the same - otherwise we skipped this in wrapchecks so
+	; we need to skip it here too!
+	mov	ax,src_xExt_bytes
+	cmp	ax,inner_loop_count
+	jne	dstwrap
 
 	lea	si,wrap_screen_template
 	mov	cx,WST_SIZE
