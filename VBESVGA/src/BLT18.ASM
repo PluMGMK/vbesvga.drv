@@ -44,7 +44,7 @@ blt18	PROC	NEAR
 
 	;create a subroutine that will be called for each byte of each colour,
 	; to optimize our memory footprint and prevent overflow.
-	call	mtoc_begin_subroutine
+	call	compile_begin_subroutine
 	push	di				;save subroutine start address
 
 	test	rop_flags,PATTERN_PRESENT	;compile the pattern code
@@ -55,7 +55,7 @@ blt18	PROC	NEAR
 	call	compile_mtoc_wrap
 
 	pop	bx				;get back subroutine start address
-	call	mtoc_end_subroutine
+	call	compile_end_subroutine
 
 	;there is no need to check SOURCE_PRESENT because bitblt_dispatch only
 	; calls blt18 if that is already the case.
@@ -116,46 +116,6 @@ blt_mtoc_prep	PROC	NEAR
 @@:	ret
 
 blt_mtoc_prep	ENDP
-
-;
-;	mtoc_begin_subroutine
-;
-;	Indicate that we are beginning the body of a subroutine.
-;	Basically all we have to do is create a near JMP to go around
-;	the subroutine until it's ready to be called. The destination of
-;	the JMP will be fixed up in mtoc_end_subroutine.
-;
-
-PUBLIC	mtoc_begin_subroutine
-mtoc_begin_subroutine	PROC	NEAR
-
-	mov	al,I_JMP_NEAR
-	stosb
-	lea	di,[di+2]		;leave two bytes for the dest
-	ret
-
-mtoc_begin_subroutine	ENDP
-
-;
-;	mtoc_end_subroutine
-;
-;	Generate the RETN instruction to end the subroutine body, and
-;	go back and fix up the JMP destination from the beginning to
-;	point at the new instruction pointer.
-;	Entry requirement: BX points at the END of the JMP instruction!
-;
-
-PUBLIC	mtoc_end_subroutine
-mtoc_end_subroutine	PROC	NEAR
-
-	mov	al,I_RET_NEAR
-	stosb
-	mov	si,di
-	sub	si,bx			;calculate delta for near JMP
-	mov	es:[bx-2],si		;slot it into the JMP instruction
-	ret
-
-mtoc_end_subroutine	ENDP
 
 ;
 ;	compile_mtoc_src1
