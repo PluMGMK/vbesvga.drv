@@ -1497,6 +1497,46 @@ compile_color_stosb	PROC	NEAR
 
 compile_color_stosb	ENDP
 
+;
+;	compile_begin_subroutine
+;
+;	Indicate that we are beginning the body of a subroutine.
+;	Basically all we have to do is create a near JMP to go around
+;	the subroutine until it's ready to be called. The destination of
+;	the JMP will be fixed up in compile_end_subroutine.
+;
+
+PUBLIC	compile_begin_subroutine
+compile_begin_subroutine	PROC	NEAR
+
+	mov	al,I_JMP_NEAR
+	stosb
+	lea	di,[di+2]		;leave two bytes for the dest
+	ret
+
+compile_begin_subroutine	ENDP
+
+;
+;	compile_end_subroutine
+;
+;	Generate the RETN instruction to end the subroutine body, and
+;	go back and fix up the JMP destination from the beginning to
+;	point at the new instruction pointer.
+;	Entry requirement: BX points at the END of the JMP instruction!
+;
+
+PUBLIC	compile_end_subroutine
+compile_end_subroutine	PROC	NEAR
+
+	mov	al,I_RET_NEAR
+	stosb
+	mov	si,di
+	sub	si,bx			;calculate delta for near JMP
+	mov	es:[bx-2],si		;slot it into the JMP instruction
+	ret
+
+compile_end_subroutine	ENDP
+
 sEnd
 
 END
