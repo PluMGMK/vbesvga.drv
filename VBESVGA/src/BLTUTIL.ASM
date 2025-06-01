@@ -725,6 +725,8 @@ sanitize_binary_rop  PROC    FAR
 	cmp	[PaddingBits],0
 	jnz	@F
 	; no padding bytes, no problem...
+	xor	dx,dx	; no need to OR pattern with anything
+	mov	cx,dx	; no need to OR pattern with anything
 	ret
 
 @@:	; to analyse the binary ROP, we translate it into a ternary one
