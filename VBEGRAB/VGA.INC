@@ -214,10 +214,18 @@ BlinkTurnedOffBit	equ	0
 ;
 ; Define the graphics stack frame
 ;
-IFNDEF	GENGRAB
-SzGrxFrm        equ     CFrm+154+4+(SIZE BitmapInfoHeader)+((GrxBitWid640*4)/8)
+IFDEF	MODE13
+; if we support mode 13h, we need to make room for 256 colour entries on the stack
+PalSize		equ	256
 ELSE
-SzGrxFrm        equ     CFrm+154+4+(SIZE BitmapInfoHeader)+((GrxBitWid8514*4*1)/8)
+; otherwise, 16 entries are enough...
+PalSize		equ	16
+ENDIF
+
+IFNDEF	GENGRAB
+SzGrxFrm        equ     CFrm+90+(PalSize*4)+4+(SIZE BitmapInfoHeader)+((GrxBitWid640*4)/8)
+ELSE
+SzGrxFrm        equ     CFrm+90+(PalSize*4)+4+(SIZE BitmapInfoHeader)+((GrxBitWid8514*4*1)/8)
 ENDIF
 
 BcolHigh	equ	word ptr [bp-CFrm-02]	; High word of background RGB color
@@ -274,8 +282,8 @@ fpScanBuf       equ    dword ptr [bp-CFrm-84]   ; far pointer to scanbuff
 pScanCur        equ     word ptr [bp-CFrm-86]   ; offset of current scanline
 pScanMax        equ     word ptr [bp-CFrm-88]   ; offset of first invalid address
 nScanLines      equ     word ptr [bp-CFrm-90]   ; # of scanlines buffered
-PelColorTable   equ     [bp-CFrm-154]           ; Color table in DIB Hdr
-DIBHdr          equ     [bp-CFrm-154-SIZE BitmapInfoHeader] ; DIB Header
+PelColorTable   equ     [bp-CFrm-90-PalSize*4]  ; Color table in DIB Hdr
+DIBHdr          equ     [bp-CFrm-90-PalSize*4-SIZE BitmapInfoHeader] ; DIB Header
 LineBits        equ     byte ptr [bp-SzGrxFrm]  ; One line of bits
 
 ;

@@ -759,7 +759,9 @@ CheckMode proc near
 
 IFDEF	VGA
 	cmp	ah,13H
-    IFDEF DEBUG
+    IFDEF MODE13
+	ja	short BadMode
+    ELSEIFDEF DEBUG
 	ja	short BadMode
 	je	short GrbProblem
     ELSE
