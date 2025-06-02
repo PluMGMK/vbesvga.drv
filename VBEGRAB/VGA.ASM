@@ -244,8 +244,10 @@ PS_NoCursor:
 
 PSGraphics:
 IFDEF VGA
+IFNDEF MODE13
         cmp     ah,13h
         je      short PS_Error
+ENDIF
 ENDIF
 IFDEF SAVEMEM
 	; we don't attempt to render modes for which VDDVBE can't use savemem
@@ -520,8 +522,10 @@ cBegin
 	test	[si.EPGrabDTA.DispMod.VDD_Mod_Flag],fVDD_M_Err
 	jnz	US_Error
 IFDEF VGA
+IFNDEF MODE13
 	cmp     [si.EPGrabDTA.CntrlSt.VDA_EGA_Mode],13h
         je      US_Error
+ENDIF
 ENDIF
 IFDEF SAVEMEM
 	; we don't attempt to render modes for which VDDVBE can't use savemem

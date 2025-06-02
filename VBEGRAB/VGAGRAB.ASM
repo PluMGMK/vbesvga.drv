@@ -249,7 +249,11 @@ ELSE
 ENDIF
 IFDEF	VGA
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],13H
+IFDEF	MODE13
+	je	short NoDiv
+ELSE
 	je	NoSel 		; No grabs in mode 13
+ENDIF
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],11H
 IFDEF	SAVEMEM
 	je	NoSel
@@ -1649,6 +1653,27 @@ ENDIF
         jmp     SHORT BDH_00
 
 BDH_ProperPalette:
+
+IFDEF	MODE13
+        cmp     GMode,13h               ; Q: Mode 13 ?
+        jnz     SHORT @F                ;   N: Check Mode F next
+        mov     ecx,256                 ;   Y: Pull in entire VGA palette
+	push	esi
+	push	edi
+	mov	ds,[si.RNG1DSSEL]
+        mov     esi,[si.GGrbArea.VDDDACOffset]
+        push    ss
+        pop     es
+	xor	edi,edi
+        lea     di,PelColorTable
+        rep     movsd
+        push    ss
+        pop     ds
+	pop	edi
+	pop	esi
+        jmp     SHORT BDH_00
+@@:
+ENDIF
 
         cmp     GMode,0Fh               ; Q: Mode F ?
         jnz     SHORT BuildPCT          ;   N: Build PelColorTable
