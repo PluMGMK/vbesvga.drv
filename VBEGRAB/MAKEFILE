@@ -1,0 +1,75 @@
+# sample make file for building generic grabber for Windows/386
+
+# comment this definition out with a "#", if building a non-debugging version
+Debug=-DDEBUG
+
+all: grabber.lib grbdib.res vbevmdib.3gr
+
+grabber.lib: grabber.def
+	implib grabber.lib grabber.def
+
+grbdib.res: grbdib.rc .\grabber.rcv ..\include\version.h ..\include\ver.h \
+	    ..\include\common.ver
+	rc /r -X -I..\include $*.rc
+
+gen.obj: vga.asm  vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc ..\include\int2fapi.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vga.asm, gen.obj;
+
+gengrab.obj: vgagrab.asm vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc ..\include\int2fapi.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vgagrab.asm, gengrab.obj;
+
+gengrfx.obj: vgagrfx.asm vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vgagrfx.asm, gengrfx.obj;
+
+genmisc.obj: vgamisc.asm vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc ..\include\int2fapi.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vgamisc.asm, genmisc.obj;
+
+gensel.obj: vgasel.asm vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc ..\include\int2fapi.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vgasel.asm, gensel.obj;
+
+gentext.obj: vgatext.asm vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vgatext.asm, gentext.obj;
+
+genutil.obj: vgautil.asm vga.inc grabmac.inc ..\include\vmdavga.inc \
+	 grabpnt.inc ..\include\statusfl.inc \
+	 ..\include\selectio.inc \
+	 ..\include\vmda.inc ..\include\vddgrb.inc \
+	 ..\include\windows.inc wcmacros.inc
+        masm5 -w1 -Mx -t $(Debug) -DVGA -DVGA31 -DGENGRAB -DMODE13 -DSAVEMEM -I. -I..\include -p vgautil.asm, genutil.obj;
+
+vbevmdib.3gr: gen.obj gengrfx.obj gentext.obj genutil.obj gensel.obj \
+	gengrab.obj genmisc.obj grabber.def grbdib.res
+	link gen.obj gengrfx.obj gentext.obj genutil.obj gensel.obj \
+	gengrab.obj genmisc.obj/MAP,vbevmdib.3gr,vga.map,libw /NOD,grabber.def
+	del vbevmdib.map
+	ren vga.map vbevmdib.map
+	rc /31 grbdib.res vbevmdib.3gr
+	copy vbevmdib.map grabber.map
+	mapsym grabber
+	copy grabber.sym vbevmdib.sym
+	del grabber.map
+	del grabber.sym
