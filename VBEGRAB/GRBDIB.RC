@@ -1,0 +1,16 @@
+;-------------------------------------------------------
+;
+;   This is a NUL RC file except for version info.
+;   Most Grabbers have no resources
+;
+;   (C) Copyright MICROSOFT Corp. 1986-1992
+;
+#include <version.h>
+
+#include ".\grabber.rcv"
+
+#define VER_FILEDESCRIPTION_STR     "DIB 386 enhanced mode display component (8514/A, VGA Monochrome)"
+
+#define VER_ORIGINALFILENAME_STR    "VGADIB.3GR"
+
+#include <common.ver>

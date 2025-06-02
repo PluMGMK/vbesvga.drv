@@ -1,0 +1,14 @@
+/********************************************************************/
+/*	  GRABBER.RCV						    */
+/*	  COMMON Version control data for grabbers		    */
+/*								    */
+/*	  VER_FILEDESCRIPTION_STR  is defed in grabber RC file	    */
+/*	  VER_ORIGINALFILENAME_STR				    */
+/*								    */
+/********************************************************************/
+
+
+#define VER_FILETYPE			VFT_DLL
+#define VER_FILESUBTYPE 		VFT2_UNKNOWN
+#define VER_INTERNALNAME_STR		"GRABBER"
+#define VER_LEGALCOPYRIGHT_YEARS	"1991-1992"
