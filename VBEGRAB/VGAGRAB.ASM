@@ -236,21 +236,41 @@ GotHig:
 	jb	short TextSel
 GraphicsSel:
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],10H
+IFDEF	SAVEMEM
+	je	NoSel
+ELSE
 	je	short NoDiv
+ENDIF
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],0FH
+IFDEF	SAVEMEM
+	je	NoSel
+ELSE
 	je	short NoDiv
+ENDIF
 IFDEF	VGA
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],13H
 	je	NoSel 		; No grabs in mode 13
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],11H
+IFDEF	SAVEMEM
+	je	NoSel
+ELSE
 	je	short NoDiv
+ENDIF
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],12H
+IFDEF	SAVEMEM
+	je	NoSel
+ELSE
 	je	short NoDiv
+ENDIF
 ENDIF
 	shr	dx,1			; Convert to display
 NoDiv:
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],0DH
+IFDEF	SAVEMEM
+	je	NoSel
+ELSE
 	je	short Div2
+ENDIF
 	cmp	[bx.EPGrabDTA.CntrlSt.VDA_EGA_Mode],4
 	je	short Div2
         jmp     short NoDiv2
