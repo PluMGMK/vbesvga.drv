@@ -215,6 +215,20 @@ cBegin
 	xor	ax,ax
 	mov	[bx.FntHgt],ax
 	mov	[bx.FntWid],ax
+IFDEF SAVEMEM
+	; don't bother resizing the window for a mode we don't support
+	cmp	dl,0Dh
+	jb	short @F
+	cmp	dl,12h
+	ja	short @F
+	; just get the existing size passed in, and return it
+	les	di,lpWidFullScr
+	mov	cx,word ptr es:[di]
+	les	di,lpHeightFullScr
+	mov	bx,word ptr es:[di]
+	jmp	short LowScrS
+@@:
+ENDIF
 	mov	cx,GrxBitWid640
 	mov	bx,GrxBitHeight400
 IFDEF VGA

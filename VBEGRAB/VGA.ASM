@@ -247,6 +247,14 @@ IFDEF VGA
         cmp     ah,13h
         je      short PS_Error
 ENDIF
+IFDEF SAVEMEM
+	; we don't attempt to render modes for which VDDVBE can't use savemem
+	cmp	ah,0Dh
+	jb	short @F
+	cmp	ah,12h
+	jbe	short PS_Error
+@@:
+ENDIF
 	call	ModeGrfx		
 	jmp	short PS_SetAX          ;no cursor in graphics mode!
 
@@ -514,6 +522,15 @@ cBegin
 IFDEF VGA
 	cmp     [si.EPGrabDTA.CntrlSt.VDA_EGA_Mode],13h
         je      US_Error
+ENDIF
+IFDEF SAVEMEM
+	; we don't attempt to render modes for which VDDVBE can't use savemem
+	mov	ah,[si.EPGrabDTA.CntrlSt.VDA_EGA_Mode]
+	cmp	ah,0Dh
+	jb	short @F
+	cmp	ah,12h
+	jbe	US_Error
+@@:
 ENDIF
 	test	[si.EPGrabDTA.DispMod.VDD_Mod_Flag],fVDD_M_Ctlr
 	jz	short DoUpdates 	; Controller state is unchanged
