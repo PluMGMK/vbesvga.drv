@@ -964,6 +964,15 @@ GetPageBitmap   proc near
         je      short GPModeD
         cmp     dl,0Eh
         je      short GPModeE
+IFDEF MODE13
+	cmp	dl,13h
+	jne	short @F
+	; no need to AND AX with anything, because there are a full 16 pages!
+	mov	si,codeOffset LinesTable13
+	ret
+
+@@:
+ENDIF
 IFDEF VGA
 	cmp	dl,11h
 	je	short GPMode1112
@@ -1027,6 +1036,25 @@ LinesTable12 LineTabStruc     <0,52>	    ;	<0,52>
 	     LineTabStruc   <359,410>	    ; <364,416>
 	     LineTabStruc   <410,461>	    ; <416,468>
 	     LineTabStruc   <461,480>	    ; <468,480>
+ENDIF
+IFDEF	MODE13
+; 12.8 scanlines per page --> 25.6 scanlines when size doubled
+LinesTable13 LineTabStruc     <0,26>
+	     LineTabStruc    <26,52>
+	     LineTabStruc    <52,77>
+	     LineTabStruc    <77,103>
+	     LineTabStruc   <103,128>
+	     LineTabStruc   <128,154>
+	     LineTabStruc   <154,180>
+	     LineTabStruc   <180,205>
+	     LineTabStruc   <205,231>
+	     LineTabStruc   <231,256>
+	     LineTabStruc   <256,282>
+	     LineTabStruc   <282,308>
+	     LineTabStruc   <308,333>
+	     LineTabStruc   <333,359>
+	     LineTabStruc   <359,384>
+	     LineTabStruc   <384,400>
 ENDIF
 
 GetPageBitmap endp
