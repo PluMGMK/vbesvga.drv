@@ -107,6 +107,9 @@ ENDIF
         public  AllocCommonRes
         public  SetParamsCGAMode
         public  SetParamsMode11
+IFDEF	MODE13
+        public  SetParamsMode13
+ENDIF
         public  SkipBkBits
         public  SetParamsPlanarMode
         public  DeAllocAllRes
@@ -848,10 +851,14 @@ BuildDisplayRect proc near
 	cmp	bx,GrxBitWid640		; Is paint rect "on screen"?
 	jae	RectOffScreen		; No
 	mov	DDRCLeft,bx
+IFDEF	MODE13
+	cmp	ah,13H
+	je	@F			; 1pix==1byte, but screen half as wide
+ENDIF
 	shr	bx,3			; Divide by 8 for Byte index of this loc
 	cmp	ah,0DH			; Q: Mode 0D?
 	jne	short SetBI             ;   N:
-	shr	bx,1			;   Y: screen is half as wide
+@@:	shr	bx,1			;   Y: screen is half as wide
 SetBI:
 	mov	DDRCLeftBI,bx
 	mov	bx,[si.PGVDRect.rcRight]
@@ -863,9 +870,21 @@ SetBI:
 OkBWid:
 	mov	DDRCRight,bx
 	sub	bx,DDRCLeft
+IFDEF	MODE13
+	jbe	InvalidCoOrd
+ELSE
 	jbe	short InvalidCoOrd
+ENDIF
 	mov	DDRCWid,bx
+IFDEF	MODE13
+	shr	bx,1			; at least account for the doubling of pixels
+	cmp	ah,13H
+	je	@F			; 1pix==1byte, no further division needed
+	shr	bx,2			; divide again by four to convert half-bits to bytes
+@@:
+ELSE
 	shr	bx,3			; Divide Width by 8 to get width in Bytes
+ENDIF
 	mov	DBPWid,bx		; NOTE: For mode 0D display this is width in NIBBLES
 	mov	BDsWid,bx
 	cmp	ah,0DH			; Q: Mode 0D?
@@ -885,9 +904,14 @@ NoDv3:
 	mov	cx,0FFFFH		; Top, Height round is none
 	xor	dx,dx			; Top, Height round is none
 IFDEF VGA
+IFDEF MODE13
+	cmp	ah,13H
+	je	short @F		; Mode 13 is only 400 and needs rounding!
+ENDIF
 	mov	di,GrxBitHeight480	; Max height of mode 11,12H
 	cmp	ah,11H
 	jae	short GotVals
+@@:
 ENDIF
 	mov	di,GrxBitHeight350	; Max height of mode 10H
 	cmp	ah,10H
@@ -1007,6 +1031,36 @@ SetParamsMode11 proc near
         ret
 
 SetParamsMode11 endp
+
+IFDEF	MODE13
+;*****************************************************************************
+;
+; SetParamsMode13 - Set params for Mode 13
+; 
+; ENTRY: 
+;
+; EXIT: ES:EDI -> first line of paint rect
+;       CX = # of lines to paint
+;
+;*****************************************************************************
+
+SetParamsMode13 proc near
+
+	mov	ax,DDRCTop		; Get index to first line
+	shr	ax,1			; Convert to phys disp
+	mov	cx,GrxBitWid640/2	; This many bytes per line
+	mul	cx			; This many bytes in
+	les	edi,VidAddr             ; es:edi -> Video page 0
+	movzx	eax,ax
+	add	edi,eax 		; Point to start of this line
+	mov	cx,DDRCHig		; This many lines to do
+	shr	cx,1			; Convert to phys disp
+	movzx	edx,DDRCLeftBI		; Index to left edge in display mem
+	add	edi,edx
+        ret
+
+SetParamsMode13 endp
+ENDIF
 
 ;*****************************************************************************
 ;
@@ -1714,11 +1768,15 @@ IFDEF VGA
 	cmp	Gmode,11H		; Mode 11
 	jz	short DoBackPat
 ENDIF
+IFDEF MODE13
+	cmp	Gmode,13H		; Mode 13
+	jz	short DoBackPat
+ENDIF
 	cmp	Gmode,0DH		; Plane mode?
 	jae	PlaneGrx		; Yes
 DoBackPat:
     ;
-    ; This is one of the CGA graphics modes (4,5,6) or mode 11
+    ; This is one of the CGA graphics modes (4,5,6) or mode 11 or 13
     ; PatBlt the background brush into the full screen DC, or the paint
     ;	rectangle to paint in the background color
     ;
@@ -1772,6 +1830,10 @@ ENDIF
 IFDEF VGA
 	cmp	Gmode,11H
 	jz	Mode11Bits
+ENDIF
+IFDEF MODE13
+	cmp	Gmode,13H
+	jz	Mode13Bits
 ENDIF
 CGAMode:
         call    SetParamsCGAMode
@@ -2023,7 +2085,11 @@ LookMoreBits:
 	jnz	NextLineCGAMode 	; More lines
 
 	bts	GrbFlags,GrbFlgs_GrfxDoOddBit
+IFDEF	MODE13
+	jc	DisplayMap		; Odd lines done?
+ELSE
 	jc	short DisplayMap	; Odd lines done?
+ENDIF
 	jmp	CGAMode		        ; Do odd scans
 
 IFDEF VGA
@@ -2071,6 +2137,57 @@ LookMoreBits11:
 	pop	edi			; Recover start
 	add	edi,GrxBitWid640/8 	; Next line
 	loop	LookBits11		; More lines
+	jmp	SHORT DisplayMap	; Done
+
+ENDIF
+
+IFDEF MODE13
+
+Mode13Bits:
+        call    SetParamsMode13
+LookBits13:
+    ;
+    ; Look for non-background Bits
+    ;
+	push	edi
+	push	cx			; and lines left
+        call    SkipBkBits
+	;jz	SHORT LookMoreBits13	; All background bits
+    ;
+    ; Compute line number of line with non-background bits, and backup
+    ;	index to the start of this line
+    ;
+	pop	ax			; Get line left count
+	push	ax			; back on stack
+	shl	ax,1
+	sub	ax,DDRCHig
+	neg	ax			; Line number
+
+	push	ax
+	call	SetupLineBits
+	mov	ds,VidSel
+	mov	esi,edx
+	cld
+	mov	cx,DBPWid		; #bytes == #pixels
+@@:	lods	byte ptr ds:[esi]
+	mov	ah,al			; Double the pixel
+	stos	word ptr es:[edi]
+	loop	@B
+	pop	ax
+
+	push	ss
+	pop	ds
+        mov     si,SavEXTP
+	; the fact that this isn't IFDEF-protected means that it's
+	; impossible to compile with MODE13 but not GENGRAB - 
+	; that's fine...
+	call	SetScreenGENBMBits
+
+LookMoreBits13:
+	pop	cx			; Recover lines left
+	pop	edi			; Recover start
+	add	edi,GrxBitWid640/2 	; Next line
+	loop	LookBits13		; More lines
 	jmp	SHORT DisplayMap	; Done
 
 ENDIF
@@ -2146,9 +2263,14 @@ widok:
 	mov	cx,[si.Pstruct.PSrcPaint.rcBottom]
 	sub	cx,ax			; CX = rect height
 IFDEF VGA
+IFDEF MODE13
+	cmp	[si.EPGrabDTA.CntrlSt.VDA_EGA_Mode],13H
+	je	short @F		; Mode 13 is only 400!
+ENDIF
 	mov	bx,GrxBitHeight480
 	cmp	[si.EPGrabDTA.CntrlSt.VDA_EGA_Mode],11H
 	jae	short GotGHGT
+@@:
 ENDIF
 	mov	bx,GrxBitHeight400
 	cmp	[si.EPGrabDTA.CntrlSt.VDA_EGA_Mode],10H

@@ -1650,29 +1650,45 @@ ENDIF
         rep     movsd   
         push    ss
         pop     ds
+IFDEF	MODE13
+        jmp     BDH_00
+ELSE
         jmp     SHORT BDH_00
+ENDIF
 
 BDH_ProperPalette:
 
 IFDEF	MODE13
         cmp     GMode,13h               ; Q: Mode 13 ?
-        jnz     SHORT @F                ;   N: Check Mode F next
+        jnz     SHORT BDH_Not13         ;   N: Check Mode F next
         mov     ecx,256                 ;   Y: Pull in entire VGA palette
 	push	esi
 	push	edi
-	mov	ds,[si.RNG1DSSEL]
+	mov	ax,[si.RNG1DSSEL]
         mov     esi,[si.GGrbArea.VDDDACOffset]
+	mov	ds,ax
         push    ss
         pop     es
 	xor	edi,edi
         lea     di,PelColorTable
-        rep     movsd
+
+@@:     lods	word ptr ds:[esi]	; AH := 6-bit blue value, AL := index
+	mov	dl,ah
+	shl	dl,2			; make 8-bit
+	lods	word ptr ds:[esi]	; AH := 6-bit red value, AL := 6-bit green value
+	shl	ax,2			; make both 8-bit
+	xchg	al,ah			; red first
+	stos	word ptr es:[edi]
+	movzx	ax,dl			; blue and zero padding
+	stos	word ptr es:[edi]
+	loop	@B
+
         push    ss
         pop     ds
 	pop	edi
 	pop	esi
         jmp     SHORT BDH_00
-@@:
+BDH_Not13:
 ENDIF
 
         cmp     GMode,0Fh               ; Q: Mode F ?
@@ -1731,6 +1747,11 @@ BDH_00:
         je      short BDH_Done          ; assumption correct
         cmp     Gmode,011h
         je      short BDH_Done          ; assumption correct
+IFDEF	MODE13
+        mov     [di.biBitCount],8            ; assume mode 13
+        cmp     Gmode,13h
+        je      short BDH_Done          ; assumption correct
+ENDIF
         mov     [di.biBitCount],4            ; Mode 4,5,d,e,10,F
 BDH_Done:  
 	pop	si      

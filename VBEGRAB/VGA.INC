@@ -222,7 +222,10 @@ ELSE
 PalSize		equ	16
 ENDIF
 
-IFNDEF	GENGRAB
+IFDEF	MODE13
+; Need a full 640 bytes per scanline, since we need to stretch the 320-byte scanlines 2x!
+SzGrxFrm        equ     CFrm+90+(PalSize*4)+4+(SIZE BitmapInfoHeader)+(GrxBitWid640)
+ELSEIFNDEF	GENGRAB
 SzGrxFrm        equ     CFrm+90+(PalSize*4)+4+(SIZE BitmapInfoHeader)+((GrxBitWid640*4)/8)
 ELSE
 SzGrxFrm        equ     CFrm+90+(PalSize*4)+4+(SIZE BitmapInfoHeader)+((GrxBitWid8514*4*1)/8)
