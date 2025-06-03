@@ -1955,12 +1955,14 @@ VIOT_VI_Stat1:
 	cmp	[edi.VDD_VertCnt],0		    ; Q: In Simulated VRTC?
 	je	SHORT VIOT_VI_Stt1_NotVert	    ;	N: continue
 	dec	[edi.VDD_VertCnt]		    ;	Y: count down retrace
+	jnz	SHORT VIOT_VI_Stt1_Merge
+	and	[edi.VDD_Stt.V_Stat1],NOT fstatVRTC ; next query will be out of VRTC
 	jmp	SHORT VIOT_VI_Stt1_Merge
 VIOT_VI_Stt1_NotVert:
 	dec	[edi.VDD_HorizCnt]		    ; count down horiz
-	jz	SHORT VIOT_VI_Stt1_EndHoriz		    ; End of period
+	jz	SHORT VIOT_VI_Stt1_EndHoriz	    ; End of period
 ; Note Most General Algorithm would have duration counter for horizontal here
-	xor	al,fstatVRTC+fstatEna		    ; Toggle dot stream bit
+	xor	al,fstatEna			    ; Toggle dot stream bit
 	jmp	SHORT VIOT_VI_Stt1_SaveMerge
 VIOT_VI_Stt1_EndHoriz:
 	mov	[edi.VDD_VertCnt],VDD_VERT_PERIOD
