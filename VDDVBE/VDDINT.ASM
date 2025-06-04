@@ -169,12 +169,15 @@ VIS_end_bp equ $ - VDD_Int_10_Stub
 	iretd				    ; in 16 bit segment this is an iret
 
 VIS_secondchance:
+	; do the pop first to allow a Simulate_IRET on the breakpoint
+	pop	di			    ; really EDI
 VIS_second_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
+	jmp	SHORT @F
 
 VIS_reflect:
 	pop	di			    ; really EDI
-	;jmp to old handler
+@@:	;jmp to old handler
 	db	0EAh
 VIS_jmp equ $ - VDD_Int_10_Stub
 	dd	?
