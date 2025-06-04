@@ -138,7 +138,7 @@ Note that this automatic search is currently the only way the driver selects mod
 
 If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected), and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
 
-If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output running under DOSBox-X 2024.07.01:
+If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output running under DOSBox-X 2024.07.01[^1]:
 ```
 Your card: 
 DOSBox Development Team DOSBox - The DOS Emulator 2
@@ -209,3 +209,5 @@ Direct-colour modes may have padding bits in each pixel, so the bit depths for t
 Windows may get stuck on the logo when you try to boot it with certain graphics card option ROMs. This happens regardless of whether or not you try to use this driver. It may be caused by a stack overflow in the logo code in `WIN.COM` when it tries to do an `int 10h` call. Another manifestation of this, which I have personally experienced, is that Windows boots successfully, but then gets caught in a loop if you try to start a DOS prompt in Standard Mode.
 
 To work around this issue, you can try using the `AUXSTACK.COM` TSR, included in newer releases. Simply run `AUXSTACK.COM` before starting Windows, and it will allocate 1 kiB of Conventional Memory to use as an auxiliary stack and prevent the overflow from occurring. I've only tested it in the specific case I mentioned above (failure to start a DOS prompt in Standard Mode) but hopefully it will also work for other cases...
+
+[^1]: In the specific case of DOSBox-X, this list can actually be modified using the `VESAMOED` command, which is documented [here](https://dosbox-x.com/wiki/DOSBox%E2%80%90X%E2%80%99s-Supported-Commands). More generally, however, this is obviously not the case.
