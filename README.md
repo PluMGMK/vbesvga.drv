@@ -19,6 +19,10 @@ When using high-colour modes, Program Manager may complain that there is not eno
 
 The zoomed-in editing mode in Paintbrush breaks in high-colour mode if the viewport is wider than about 800 pixels (100 zoomed-in pixels). You can work around this issue by reducing the size of the window while working in this mode. The reason is that this driver doesn't implement `StretchBlt`, and so GDI falls back to its internal implementation, which limits the intermediate DIB size to (again) a 64k segment (more details [here](https://github.com/PluMGMK/vbesvga.drv/issues/77#issuecomment-2913480799)). Because it uses a DIB, the outcome is the same regardless of whether you use a 16-bit, 24-bit or 32-bit video mode.
 
+### Viewing large photographs
+
+The largest bitmap that can be allocated in Windows 3.1 is `0FF0000h`, i.e. about 16.7 million bytes, which is a limitation of `KRNL386.EXE`. This means that the largest photographs that can be viewed are 16.6 MP in 8-bit mode, 8.3 MP in 16-bit mode, ~5 MP in 24-bit mode and ~4 MP in 32-bit mode, or possibly slightly less depending on how the scanlines line up with segment boundaries. I guess this isn't a very common usecase anyway, but I felt I should point it out since there's nothing that can be done about it in this driver. (Despite the fact that ACDSee claims that the "display driver" couldn't create the bitmap in such situations!)
+
 ## Screenshots
 
 ### Using standard Program Manager shell
