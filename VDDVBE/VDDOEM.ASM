@@ -564,8 +564,6 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	SetVDDPtr edi
 	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
 	jz	short @F
-	TestMem	[edi.VDD_Stt.V_Extend.VBE_ModeAttrs],fVModeAttr_NonVGA
-	jz	short @F
 
 	cmp	[edi.VDD_NotifyEvent], 0	;Q: bgrnd notify pending?
 	jne	short @F			;   Y: just wait for it
