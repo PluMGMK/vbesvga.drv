@@ -123,6 +123,7 @@ VxD_ICODE_SEG
 %OUT Add SYSTEM.INI switch to disable this stuff (just use INT 10 trap)
 VDD_Int_10_Stub PROC NEAR    ;don't use BeginProc/EndProc to avoid any
 				;preamble stuff!
+	push	di			    ; really EDI
 	or	ah, ah			    ;Q: Mode setting?
 	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	eax,4F02h		    ; Q: Mode setting (VBE)?
@@ -149,6 +150,10 @@ VDD_Int_10_Stub PROC NEAR    ;don't use BeginProc/EndProc to avoid any
 	cmp	al, 30h 		    ;Q: Get font info?
 	je	SHORT VIS_reflect	    ;	Y: reflect
 VIS_mode:
+	; allow the end breakpoint handler to see what was originally in EAX,
+	; by stuffing it into EDI (which should be unaffected by any of these
+	; calls)
+	mov	di,ax			    ; really EDI,EAX
 VIS_start_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
 
@@ -160,6 +165,7 @@ VIS_call equ $ - VDD_Int_10_Stub
 
 VIS_end_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
+	pop	di			    ; really EDI
 	iretd				    ; in 16 bit segment this is an iret
 
 VIS_secondchance:
@@ -167,6 +173,7 @@ VIS_second_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
 
 VIS_reflect:
+	pop	di			    ; really EDI
 	;jmp to old handler
 	db	0EAh
 VIS_jmp equ $ - VDD_Int_10_Stub
@@ -574,6 +581,7 @@ VI10_Mode:
 	call	VDD_Int_10_Mode_Change_Start
 	mov	eax, 5000
 	mov	esi, OFFSET32 VDD_Int_10_Mode_Change_End
+	mov	edx, [ebp.Client_EAX]
 	VMMCall Call_When_VM_Returns
 	mov	[edi.VDD_Mod_Rect],-1	    ; !!!look at everything
 VI10_Reflect:
@@ -1173,7 +1181,7 @@ BeginProc VDD_Int_10_Mode_Switch
 	bt	[edi.VDD_Flags],bVDD_ModeSet	; Q: Already doing mode set?
 	jnc	short VDD_Int_10_Mode_Change_Start
 	; if we're already modesetting, then skip over the second breakpoint!
-	mov	eax,(VIS_jmp-1) - (VIS_start_bp+1)
+	mov	eax,(VIS_reflect - VDD_Int_10_Stub) - (VIS_start_bp+1)
 	add	[ebp.Client_IP],ax
 
 ; This entry point is used by the INT 10h trapping code
@@ -1266,6 +1274,7 @@ BeginProc VDD_Int_10_Mode_Sw_Done
 	Assert_Client_Ptr ebp
 
 	inc	[ebp.Client_IP] 		; inc past the brkpt
+	mov	edx,[ebp.Client_EDI]		; get original EAX
 
 ; This entry point is from call back if mode change is detected from
 ; INT 10 trap instead of breakpoint.

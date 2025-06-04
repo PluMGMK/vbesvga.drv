@@ -529,6 +529,7 @@ EndProc VDD_OEM_Chk_Cursor
 ;	This routine is called when a VM has just finished a mode switch.
 ;
 ;ENTRY: EBX = VM_Handle of VM getting CRTC state (= 0 if VDD)
+;	EDX = Original EAX value at start of modeset
 ;	EDI -> VDD CB data
 ;
 ;EXIT:	none
@@ -542,8 +543,7 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	jz	msd_not_vbe
 
 	Assert_Client_Ptr ebp
-	mov	ax,[ebp.Client_AX]
-	cmp	al,4Fh			;Q: attempted VBE modeset?
+	cmp	dx,4F02h		;Q: attempted VBE modeset?
 	je	short msd_vbe_mode	;   Y: go check status
 	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;N: indicate non-VBE mode
 
@@ -580,7 +580,7 @@ msd_nowin:
 	ret
 
 msd_vbe_mode:
-	test	ah,ah			;Q: was modeset successful?
+	cmp	[ebp.Client_AX],4Fh	;Q: was modeset successful?
 	jnz	msd_not_vbe		;   N: do nothing
 	mov	ax,[ebp.Client_BX]	;   Y: get the mode
 
@@ -609,6 +609,9 @@ msd_vbe_mode:
 	VMMcall	Begin_Nest_V86_Exec
 	Push_Client_State
 	mov	[ebp.Client_AX],4F01h	; Get mode info
+	; take out the flags, because the BIOS may not recognize the mode number
+	; when they are included...
+	and	ax,NOT (fVESA_UCRTC+fVESA_VBEAFInit+fVESA_Linear+fVESA_PreserveMem)
 	mov	[ebp.Client_CX],ax	; mode number
 	mov	ax,[VBE_Int10_Off]
 	mov	[ebp.Client_DI],ax
