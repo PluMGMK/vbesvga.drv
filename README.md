@@ -152,25 +152,51 @@ Available modes:
 0105: 1024*768*8 Packed-pixel
 0106: 1280*1024*4 EGA-type (NG for VBESVGA.DRV)
 0107: 1280*1024*8 Packed-pixel
-8101: 640*480*8 Packed-pixel
-0114: 800*600*16 Direct-colour, 16S/16T
-C116: 1024*768*15 Direct-colour, 15S/16T
-023E: 1280*720*8 Packed-pixel
-8106: 1280*1024*4 EGA-type (NG for VBESVGA.DRV)
-0206: 1280*960*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
-0206: 1280*960*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
-4153: 320*200*8 Packed-pixel
-0100: 640*400*8 Packed-pixel
-0190: 320*240*32 Direct-colour, 24S/32T
-0242: 1920*1080*4 EGA-type (NG for VBESVGA.DRV)
-0242: 1920*1080*4 EGA-type (NG for VBESVGA.DRV)
-0242: 1920*1080*4 EGA-type (NG for VBESVGA.DRV)
-0232: 1400*1050*16 Direct-colour, 16S/16T
-0232: 1400*1050*16 Direct-colour, 16S/16T
-0236: 1440*900*15 Direct-colour, 15S/16T
-0231: 1400*1050*15 Direct-colour, 15S/16T
-0213: 640*400*32 Direct-colour, 24S/32T
+010D: 320*200*15 Direct-colour, 15S/16T
+010E: 320*200*16 Direct-colour, 16S/16T
 0110: 640*480*15 Direct-colour, 15S/16T
+0111: 640*480*16 Direct-colour, 16S/16T
+0113: 800*600*15 Direct-colour, 15S/16T
+0114: 800*600*16 Direct-colour, 16S/16T
+0116: 1024*768*15 Direct-colour, 15S/16T
+0117: 1024*768*16 Direct-colour, 16S/16T
+0119: 1280*1024*15 Direct-colour, 15S/16T
+011A: 1280*1024*16 Direct-colour, 16S/16T
+010F: 320*200*32 Direct-colour, 24S/32T
+0112: 640*480*32 Direct-colour, 24S/32T
+0115: 800*600*32 Direct-colour, 24S/32T
+0118: 1024*768*32 Direct-colour, 24S/32T
+01F0: 320*200*32 Direct-colour, 24S/32T
+01F1: 640*480*32 Direct-colour, 24S/32T
+01F2: 800*600*32 Direct-colour, 24S/32T
+01F3: 1024*768*32 Direct-colour, 24S/32T
+0151: 320*240*8 Packed-pixel
+0153: 320*200*8 Packed-pixel
+015C: 512*384*8 Packed-pixel
+0159: 400*300*8 Packed-pixel
+015D: 512*384*16 Direct-colour, 16S/16T
+015A: 400*300*16 Direct-colour, 16S/16T
+0160: 320*240*15 Direct-colour, 15S/16T
+0161: 320*400*15 Direct-colour, 15S/16T
+0162: 320*480*15 Direct-colour, 15S/16T
+0165: 640*400*15 Direct-colour, 15S/16T
+0136: 320*240*16 Direct-colour, 16S/16T
+0170: 320*240*16 Direct-colour, 16S/16T
+0172: 320*480*16 Direct-colour, 16S/16T
+0175: 640*400*16 Direct-colour, 16S/16T
+0190: 320*240*32 Direct-colour, 24S/32T
+0201: 640*480*8 Packed-pixel
+0202: 800*600*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
+0203: 800*600*8 Packed-pixel
+0204: 1024*768*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
+0205: 1024*768*8 Packed-pixel
+0206: 1280*960*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
+0207: 1152*864*8 Packed-pixel
+0208: 1280*1024*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
+0209: 1152*864*15 Direct-colour, 15S/16T
+020A: 1152*864*16 Direct-colour, 16S/16T
+020B: 1152*864*32 Direct-colour, 24S/32T
+0213: 640*400*32 Direct-colour, 24S/32T
 ```
 Another example can be seen in the screenshot above, running on real hardware.
 
