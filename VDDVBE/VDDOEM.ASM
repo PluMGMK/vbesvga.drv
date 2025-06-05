@@ -549,8 +549,7 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 
 	; if a windowed VM has switched into a VGA mode, then the BIOS may
 	; have reprogrammed some registers we know nothing about. So let's
-	; check if the focus VM is in a "non-VGA-compatible" mode, and, if
-	; so, schedule a foreground notification.
+	; schedule a foreground notification.
 	; For some reason, the "windowed" flag isn't set if a VM is *starting
 	; up* in windowed mode, so just check whether or not the VM has focus
 	; instead!
@@ -743,7 +742,7 @@ VxD_DATA_ENDS
 	mov	[ebp.Client_BX], AX
 
 	bt	ax,bVESA_UCRTC
-	jnc	smn_regs_setup
+	jnc	short smn_regs_setup
 
 	; set CRTC Info Block pointer
 	mov	ax,[VBE_Int10_Off]
@@ -769,8 +768,6 @@ smn_regs_setup:
 	; to set the mode "on behalf of" the new CRTC owner, which is
 	; a *different VM*, we need to back up as much of the state
 	; as possible to prevent weird / unexpected side effects!
-	int	3
-
 	movzx	eax,[edx.VDD_fontpages]
 	push	eax
 	push	esi
@@ -908,6 +905,8 @@ BeginProc VDD_OEM_Bounce_VM
 	SetVDDPtr edi
 	TestMem [edi.VDD_Flags], fVDD_WaitAtt
 	jz	VDD_Proc_BGrnd_INT2F
+
+	int	3
 
 	call	VDD_Proc_BGrnd_INT2F
 	call	VDD_Proc_FGrnd_INT2F
