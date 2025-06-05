@@ -64,6 +64,9 @@ EXTRN	VDD_OEM_Disable_Local_Traps:NEAR
 IFDEF DEBUG
 EXTRN	VDD_State_Schedule_Debug_Event:NEAR
 ENDIF
+IFDEF VRTCTIMER
+EXTRN	VDD_State_Calc_Framerate:NEAR
+ENDIF
 
 VxD_CODE_ENDS
 
@@ -1024,6 +1027,12 @@ VIOT_VO_Misc:
 	pop	eax
 	mov	[edi.vdd_Stt.V_Misc],al 	    ; Save Misc output value
 
+IFDEF VRTCTIMER
+	push	eax
+	call	VDD_State_Calc_Framerate	    ; In case dot clock changed
+	pop	eax
+ENDIF
+
 IFDEF CLVGA
 	TestMem [edi.VDD_TFlags],fVT_CLVGA		; is it a cirrus chip ?
 	jz	SHORT @F			    ; no - jump
@@ -1883,6 +1892,19 @@ VIOT_Out_CRTC_NoOut:
 	cmp	cl,C_IMax			    ; Q: Valid index?
 	ja	SHORT VIOT_Out_Exit		    ;	N: ignore the value
 	mov	[edi.VDD_Stt.CRTC][ecx],al
+IFDEF	VRTCTIMER
+	; if mode control (including SLDIV), or horizontal or vertical total
+	; (latter includes an overflow bit) change, update framerate
+	cmp	cl,C_Mode
+	je	SHORT @F
+	cmp	cl,C_Ovflw
+	je	SHORT @F
+	cmp	cl,C_HTotal
+	je	SHORT @F
+	cmp	cl,C_VTotal
+	jne	SHORT VIOT_Out_Exit
+@@:	call	VDD_State_Calc_Framerate
+ENDIF
 VIOT_Out_Exit:
 	ret
 
@@ -1959,10 +1981,14 @@ VIOT_VI_Stat1:
 	and	[edi.VDD_Stt.V_Stat1],NOT fstatVRTC ; next query will be out of VRTC
 	jmp	SHORT VIOT_VI_Stt1_Merge
 VIOT_VI_Stt1_NotVert:
+IFDEF	VRTCTIMER
+	cmp	[edi.VDD_UpdatesPerFrame],0	    ; Q: VRTC managed by VDD_VMTimeOut?
+	jnz	SHORT @F			    ;   Y: don't bother counting down horiz
+ENDIF
 	dec	[edi.VDD_HorizCnt]		    ; count down horiz
 	jz	SHORT VIOT_VI_Stt1_EndHoriz	    ; End of period
 ; Note Most General Algorithm would have duration counter for horizontal here
-	xor	al,fstatEna			    ; Toggle dot stream bit
+@@:	xor	al,fstatEna			    ; Toggle dot stream bit
 	jmp	SHORT VIOT_VI_Stt1_SaveMerge
 VIOT_VI_Stt1_EndHoriz:
 	mov	[edi.VDD_VertCnt],VDD_VERT_PERIOD
