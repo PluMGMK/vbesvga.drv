@@ -721,6 +721,9 @@ VSCVM_Exit:
 	xor	eax,eax
 	mov	[edi.VDD_Time_Out_Handle],eax
 	mov	[edi.VDD_Get_Mem_Count],eax
+IFDEF	VRTCTIMER
+	mov	[edi.VDD_UpdatesPerFrame],al
+ENDIF
 
 	call	VDD_TIO_Set_Trap
 	clc
@@ -2051,6 +2054,94 @@ gvp_exit:
 EndProc VDD_State_Get_Dimensions
 EndProc VDD_State_Get_Display_Dimensions
 
+IFDEF	VRTCTIMER
+;******************************************************************************
+;VDD_State_Calc_Framerate
+;
+;DESCRIPTION:
+;	This routine calculates the framerate based on the CRTC and Misc
+;	registers, and updates VDD_UpdatesPerFrame accordingly.
+;
+;ENTRY: EBX = running VM handle
+;	EDI -> VDD CB data
+;
+;EXIT:	AL = framerate (Hz)
+;	AH = updates per frame
+;
+;USES:	Flags, EAX
+;
+;==============================================================================
+BeginProc VDD_State_Calc_Framerate, PUBLIC
+
+	push	ecx
+	push	edx
+	mov	eax,60		; default to 60fps, no updates per frame
+	or	ebx,ebx
+	jz	SHORT VS_CFR_Exit
+	movzx	ecx, [edi.VDD_Stt.V_Misc]
+	and	ecx, fMiscDot
+	mov	eax, [ecx+DotClockTable]
+
+	movzx	ecx, [edi.VDD_Stt.C_HTotal]
+	add	ecx, 5		; for some reason, C_HTotal is HTotal-5
+	mov	dl, [edi.VDD_Stt.S_ClMode]
+	test	dl, fSeq1DPCh	; Q: 8 or 9 dots char width?
+	mov	edx, ecx
+	jz	short @F	;   9: edx = ecx
+	xor	edx, edx	;   8: edx = 0
+@@:	lea	ecx,[edx+ecx*8]
+
+	cdq
+	div	ecx		; EAX := horiz refresh rate
+
+	movzx	ecx, [edi.VDD_Stt.C_VTotal]
+	mov	ch, [edi.VDD_Stt.CRTC.C_Ovflw]
+	mov	dl, ch
+	and	ch, 1		; retrieve bit8 of VTotal, from bit0 of Ovflw
+	shr	dl, 5-1
+	and	dl, 2		; retrieve bit9 of VTotal, from bit5 of Ovflw
+	or	ch, dl
+	test	[edi.VDD_Stt.C_Mode],4
+	jz	short @F
+	shl	ecx,1		; divide scan line clock by 2 --> double scanlines
+@@:	cdq
+	div	ecx		; EAX := vertical refresh rate
+
+	; Now EAX is the framerate in Hz. We want to figure out how many timer
+	; periods will fit in a single frame. We have the timer period in
+	; milliseconds, and if we multiply the two values we get "milliframes
+	; per timer period". Then we DIVIDE 1000 BY that to get "timer periods
+	; per single frame", which is what we want.
+	mov	ecx,eax
+	mov	eax,[Vid_Win_Update_Time]
+	mul	ecx
+	push	ecx
+	mov	ecx,eax
+	mov	eax,1000
+	cdq
+	div	ecx
+	pop	ecx
+	mov	ah,al
+	mov	al,cl
+	mov	[edi.VDD_UpdatesPerFrame],ah
+	mov	[edi.VDD_Frame_Countdown],ah
+
+VS_CFR_Exit:
+	pop	edx
+	pop	ecx
+	ret
+
+VxD_DATA_SEG
+DotClockTable label	dword	; clock select bits
+		dd	25175000;     00 (IBM)
+		dd	28322000;     01 (IBM)
+		dd	39000000;     10 (Genoa SuperEGA)
+		dd	26824000;     11 (Genoa SuperEGA)
+VxD_DATA_ENDS
+
+EndProc VDD_State_Calc_Framerate
+ENDIF	;VRTCTIMER
+
 
 ;******************************************************************************
 ;VDD_State_Scrn_On
@@ -2621,6 +2712,11 @@ IFDEF DEBUG_verbose
 	call	VDD_State_VM_Debug
 ENDIF
 	call	VDD_VGA_Save_Regs		;   N: Save the registers
+IFDEF VRTCTIMER
+	push	eax
+	call	VDD_State_Calc_Framerate
+	pop	eax
+ENDIF
 VS_SvCO_Exit:
 	pop	edi
 	pop	ebx

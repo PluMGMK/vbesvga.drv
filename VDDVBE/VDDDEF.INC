@@ -93,6 +93,7 @@ TTVGA		EQU	-1		; Turn on Trident code
 PVGA		EQU	-1		; Turn on Paradise VGA code
 VGAMONO 	EQU	-1		; Turn on VGA support for mode 7 and F
 RESERVEROMC6C7	EQU	-1		; Turn on detection and reserve of ROM
+VRTCTIMER	EQU	-1		; Turn on framerate timer for VRTC
 ENDIF	; NOT CTVGA
 ;;ENDIF   ; NOT VGA8514
 
@@ -117,7 +118,7 @@ ENDIF
 IFDEF	CLVGA				; Cirrus Logic
 %OUT	---- Cirrus Logic support   ----
 ENDIF
-IFDEF	NEWCLVGA				; Cirrus Logic
+IFDEF	NEWCLVGA			; Cirrus Logic
 %OUT	---- Cirrus Logic 6410 support --
 ENDIF
 IFDEF	PVGA				; Paradise VGA
@@ -143,6 +144,9 @@ IFDEF	VGAMONO 			; Monochrome VGA
 ENDIF
 IFDEF	RESERVEROMC6C7			; Support for ROM w/o signature
 %OUT	---- C6, C7 w/o sig support ----
+ENDIF
+IFDEF	VRTCTIMER			; Support for vertical retrace timing
+%OUT	---- VSync timing support   ----
 ENDIF
 %OUT
 ENDIF	;IF1
@@ -708,7 +712,13 @@ VDD_saved_visible   DD	?
 
 VDD_Postponed_TimeOuts	DB  ?		; # of time-outs that have been postponed
 VDD_Owned_Pages     DB	?		; count of physical pages alloc'ed
+
+IFDEF	VRTCTIMER
+VDD_UpdatesPerFrame DB	?		; how many timeouts run in each frame
+VDD_Frame_Countdown DB	?		; count down timeouts before raising VRTC
+ELSE
 VDD_Padding	    DB	2 dup(?)	; for padding only, reclaim as needed
+ENDIF
 
 VDD_CB_Struc	 ENDS
 

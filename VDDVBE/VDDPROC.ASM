@@ -217,6 +217,20 @@ ENDIF
 						;	mode chg
 	TestMem [edi.VDD_Flags],fVDD_Win	; Q: Windowed VM?
         jz      SHORT VVTO_Exit                 ;   N: Return
+IFDEF	VRTCTIMER
+	mov	al,[edi.VDD_UpdatesPerFrame]
+	test	al,al				; Q: Timeout frequency >= framerate?
+	jz	SHORT @F			;   N: Don't bother with VRTC timing
+	dec	[edi.VDD_Frame_Countdown]	; Q: Countdown reached zero?
+	jg	SHORT @F			;   N: Don't raise VRTC yet
+	mov	[edi.VDD_Frame_Countdown],al	; reset countdown
+	; start the VRTC cycle (see VIOT_VI_Stat1 in VDDTIO.ASM for details)
+	mov	[edi.VDD_VertCnt],VDD_VERT_PERIOD
+	or	[edi.VDD_Stt.V_Stat1],fstatVRTC+fstatEna
+	; TODO: it'd be cool to also raise a VRTC IRQ here if the app wants, but
+	; very few apps (if any) actually request that, so not really worth it...
+@@:
+ENDIF
         xor     eax,eax
         xchg    [edi.VDD_Postponed_TimeOuts],al ;
         btr     [edi.VDD_Flags],bVDD_PageFault  ; Q: Page fault since last time out?
@@ -312,6 +326,10 @@ BeginProc VDD_Set_VM_Time_Out,PUBLIC,High_Freq
 	TestMem [edi.VDD_Flags],fVDD_ModeChange ; Q: In a mode change?
 	jnz	short VSVTO_01			;   Y: use it
 	mov	eax, [Vid_Win_Update_Time]	;   N: Use display update time
+IFDEF	VRTCTIMER
+	cmp	[edi.VDD_UpdatesPerFrame], 0	; Q: VRTC timing relies on constant period?
+	jnz	short VSVTO_01			;   Y: do not increase period
+ENDIF
 	cmp	[edi.VDD_Update_Hit_Cnt], 3	; Q: constant updating?
 	jb	short VSVTO_01			;   N: continue
 	shl	eax, 2				;   Y: increase timeout time
