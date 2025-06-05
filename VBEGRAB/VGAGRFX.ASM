@@ -1101,6 +1101,7 @@ SBB_NoMem:
 IFDEF DEBUG
 	push	esi
 	push	edx
+	mov	bx,si
 	mov	esi,codeOffset SkipErr
 	mov	edx,SHELL_Debug_Out
 	call	[bx.ShellCall]
