@@ -155,7 +155,6 @@ EXTRN	VDD_State_Get_CRTC_Index_Port:NEAR
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 EXTRN	VDD_State_Get_Mode:NEAR
 EXTRN	VDD_Proc_BGrnd_INT2F:NEAR
-EXTRN	VDD_Proc_FGrnd_INT2F:NEAR
 EXTRN	VDD_VM_Mem_Lock_SaveMem_Page:NEAR
 ENDIF	;VGA8514
 VxD_Code_ENDS
@@ -564,9 +563,14 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
 	jz	short @F
 
+	; Schedule a "BGrnd notify" event - since we don't set fWaitAtt,
+	; this will immediately also do an "FGrnd notify", effectively
+	; bouncing the VM back and forward. This will reset the graphics
+	; card into the correct VBE mode and redraw the screen, clearing
+	; any artefacts caused by the windowed modeset!
 	cmp	[edi.VDD_NotifyEvent], 0	;Q: bgrnd notify pending?
 	jne	short @F			;   Y: just wait for it
-	mov	esi, OFFSET32 VDD_OEM_Bounce_VM	;   N: schedule event
+	mov	esi, OFFSET32 VDD_Proc_BGrnd_INT2F; N: schedule event
 	VMMCall Schedule_VM_Event		;	 to notify VM
 	mov	[edi.VDD_NotifyEvent], esi
 
@@ -884,35 +888,6 @@ smn_regs_setup:
 	ret
 
 EndProc VDD_OEM_Set_Mode_Nested
-
-;******************************************************************************
-;
-;   VDD_OEM_Bounce_VM
-;
-;   DESCRIPTION:    send VM a background notification immediately followed by
-;		    foreground notification
-;
-;   ENTRY:	    EBX = VM Handle
-;
-;   EXIT:	    EDI -> VDD_CB_Struc
-;
-;   USES:	    EAX, ECX, ESI, EDI, Flags
-;
-;==============================================================================
-BeginProc VDD_OEM_Bounce_VM
-
-	;if this is not set, then BGrnd function does both
-	SetVDDPtr edi
-	TestMem [edi.VDD_Flags], fVDD_WaitAtt
-	jz	VDD_Proc_BGrnd_INT2F
-
-	int	3
-
-	call	VDD_Proc_BGrnd_INT2F
-	call	VDD_Proc_FGrnd_INT2F
-	ret
-
-EndProc VDD_OEM_Bounce_VM
 ENDIF
 
 
