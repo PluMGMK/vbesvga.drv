@@ -295,7 +295,7 @@ ENDIF	;CTVGA
 
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
-	jz	VOSCI_NotVBE
+	jz	SHORT VOSCI_NotVBE
 	; create a dual-use buffer in conventional memory that we can use to:
 	; * get mode info from int 10h
 	; * pass CRTC Info block to int 10h if needed
