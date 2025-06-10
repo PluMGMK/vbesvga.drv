@@ -37,6 +37,10 @@ sBegin		DIMapSeg
 
         externA         __NEXTSEG       ; offset to next segment
 
+	; near functions defined in BMC_ITE.ASM:
+	externNP	setup_colour_table_4
+	externNP	setup_colour_table_8
+
 public	encode_scanline_I1
 public	encode_scanline_I8
 
@@ -55,25 +59,21 @@ scanline_encode_bitmap  proc    near
 
         mov     ax      ,wptr [si].biCompression
 	mov	bx	,0
+	mov	cx	,OFFSET setup_colour_table_4
 	cmp	ax	,BI_RLE4
 	je	scanline_encode_type_found
 
 	mov	rle_scanmask, 0FFFFH
 	inc	bx
+	mov	cx	,OFFSET setup_colour_table_8
 	cmp	ax	,BI_RLE8
 	je	scanline_encode_type_found
-	xor	ax	,ax			;error code
+	xor	ax	,ax		;error code
 	xor	dx	,dx
         jmp     scanline_encode_bitmap_done
 
 scanline_encode_type_found:
-        lds     si      ,lpColorInfo           ; DS:SI --> color table.
-	mov	ax	,ss
-	mov	es	,ax
-        lea     di      ,color_xlate            ; ES:DI --> color_xlate
-        cld
-        mov     cx,128
-        rep     movsw
+	call	cx			;setup colour table
 
 	les	si	,lp_dest_dev
 	mov	ax	,es:[si].bmHeight
@@ -104,9 +104,9 @@ scanline_encode_color:
 	mov	int_aligned_width, cx
 
 	add	bx	,bx			  ;specific encode routine
-	mov	ax, encode_rle_table[bx]
+	mov	ax	,cs:encode_rle_table[bx]
 	mov	encode_rle	,ax
-	mov	ax	,encode_absolute_table[bx]
+	mov	ax	,cs:encode_absolute_table[bx]
 	mov	encode_absolute ,ax
 
 	mov	ax	,init_scan
@@ -780,6 +780,21 @@ copyabs_i8e8_fini:
 
 copyabs_i8e8   endp
 
+
+public	encode_rle_table
+encode_rle_table        label   word
+dw	OFFSET	copyrle_i8e4
+dw	OFFSET	copyrle_i8e8
+dw	OFFSET	copyrle_i1e4
+dw	OFFSET	copyrle_i1e8
+
+
+public	encode_absolute_table
+encode_absolute_table   label   word
+dw	OFFSET	copyabs_i8e4
+dw	OFFSET	copyabs_i8e8
+dw	OFFSET	copyabs_i1e4
+dw	OFFSET	copyabs_i1e8
 
 
 sEnd	DIMapSeg

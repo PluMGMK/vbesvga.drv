@@ -21,17 +21,3 @@ MAXIMUM_RLE_LENGTH_I1		EQU	001FH
 MAXIMUM_RLE_LENGTH_I8		EQU	00FFH
 NOF_EXTERNAL_RLE_TYPES		EQU	2
 
-
-
-createSeg	_DIMAPS, DIMapSeg, word, public, code
-sBegin		DIMapSeg
-
-	assumes	cs, DIMapSeg
-
-extrn  encode_rle_table:word
-extrn  encode_absolute_table:word
-extrn  decode_rle_table:word
-extrn  decode_absolute_table:word
-
-sEnd	DIMapSeg
-

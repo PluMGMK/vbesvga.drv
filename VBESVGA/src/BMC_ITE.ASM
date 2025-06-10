@@ -820,7 +820,7 @@ setup_colour_table_1 endp
 	assumes	ds, nothing
 	assumes	es, nothing
 
-        ?_pub   setup_colour_table_4
+        public  setup_colour_table_4
 
 setup_colour_table_4 proc	 near
 
@@ -931,7 +931,7 @@ setup_colour_table_4 endp
 	assumes	ds, nothing
 	assumes	es, nothing
 
-        ?_pub   setup_colour_table_8
+        public  setup_colour_table_8
 
 setup_colour_table_8 proc	 near
 

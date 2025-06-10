@@ -98,6 +98,7 @@ WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 	mov	bl,[si].bmBitsPixel
 	shr	bl,3			; bits --> bytes
 	mov	total_depth_bytes,bl
+	jz	@F			; lods/stos_pixel not needed for mono
 
 	xor	bh,bh
 	dec	bl			; to zero-index the tables
@@ -115,7 +116,7 @@ WriteAux <'DeviceBitmapBits'>		; ***** DEBUG *****
 ; actually does	the transfer. Also determine whether own map is	mono or
 ; color.
 
-	mov	al,SD_COLOR		; assume color map
+@@:	mov	al,SD_COLOR		; assume color map
 	cmp	wptr [si].bmPlanes, 101h; is it	one plane AND 1 bit per pel?
 	jne	al_has_flag		; no, so it is color
 
