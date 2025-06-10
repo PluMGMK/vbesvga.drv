@@ -169,7 +169,6 @@ $(OBJ)\disable.obj:     $(SRC)\disable.asm
 
 $(OBJ)\discreen.obj:    $(SRC)\discreen.asm     \
 			$(SRC)\inc\display.inc  \
-			$(SRC)\inc\rlecom.inc   \
 			$(SRC)\inc\rledat.inc
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
@@ -248,20 +247,6 @@ $(OBJ)\rgb2ipc.obj:     $(SRC)\rgb2ipc.asm
 			$(ASM) < vrammak
 
 $(OBJ)\rld.obj:         $(SRC)\rld.asm
-			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
-			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
-			$(ASM) < vrammak
-
-$(OBJ)\rlecom.obj:      $(SRC)\rlecom.asm       \
-			$(SRC)\inc\rledat.inc   \
-			$(SRC)\bmc_main.var
-			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
-			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
-			$(ASM) < vrammak
-
-$(OBJ)\rledat.obj:      $(SRC)\rledat.asm       \
-			$(SRC)\inc\getrle.inc   \
-			$(SRC)\inc\rlecom.inc
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
@@ -533,8 +518,6 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\polyline.obj     \
 		$(OBJ)\rgb2ipc.obj      \
 		$(OBJ)\rld.obj          \
-		$(OBJ)\rlecom.obj       \
-		$(OBJ)\rledat.obj       \
 		$(OBJ)\robject.obj      \
 		$(OBJ)\scanline.obj     \
 		$(OBJ)\scanlr.obj       \

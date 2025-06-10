@@ -34,8 +34,6 @@ output.obj +
 polyline.obj + 
 rgb2ipc.obj + 
 rld.obj + 
-rlecom.obj + 
-rledat.obj + 
 robject.obj + 
 scanline.obj + 
 scanlr.obj + 
