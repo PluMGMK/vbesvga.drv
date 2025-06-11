@@ -108,8 +108,6 @@ VxD_DATA_SEG
 EXTRN	Vid_Flags:DWORD
 EXTRN	VT_Flags:DWORD
 EXTRN	Vid_CB_Off:DWORD
-EXTRN	Vid_Win_Update_Time:DWORD
-EXTRN	Vid_Mode_Update_Time:DWORD
 
 ;*******
 ;State of the physical registers:
@@ -722,7 +720,10 @@ VSCVM_Exit:
 	mov	[edi.VDD_Time_Out_Handle],eax
 	mov	[edi.VDD_Get_Mem_Count],eax
 IFDEF	VRTCTIMER
-	mov	[edi.VDD_UpdatesPerFrame],al
+	; update both bytes in one fell swoop
+	.errnz	VDD_Framerate_Recip-VDD_Framerate-1
+	mov	word ptr [edi.VDD_Framerate],ax
+	mov	[edi.VDD_VRTC_timeout],eax
 ENDIF
 
 	call	VDD_TIO_Set_Trap
@@ -2060,13 +2061,14 @@ IFDEF	VRTCTIMER
 ;
 ;DESCRIPTION:
 ;	This routine calculates the framerate based on the CRTC and Misc
-;	registers, and updates VDD_UpdatesPerFrame accordingly.
+;	registers, and updates VDD_Framerate and VDD_Framerate_Recip
+;	accordingly.
 ;
 ;ENTRY: EBX = running VM handle
 ;	EDI -> VDD CB data
 ;
 ;EXIT:	AL = framerate (Hz)
-;	AH = updates per frame
+;	AH = millieseconds per frame
 ;
 ;USES:	Flags, EAX
 ;
@@ -2107,24 +2109,29 @@ BeginProc VDD_State_Calc_Framerate, PUBLIC
 @@:	cdq
 	div	ecx		; EAX := vertical refresh rate
 
-	; Now EAX is the framerate in Hz. We want to figure out how many timer
-	; periods will fit in a single frame. We have the timer period in
-	; milliseconds, and if we multiply the two values we get "milliframes
-	; per timer period". Then we DIVIDE 1000 BY that to get "timer periods
-	; per single frame", which is what we want.
-	mov	ecx,eax
-	mov	eax,[Vid_Win_Update_Time]
-	mul	ecx
-	push	ecx
-	mov	ecx,eax
-	mov	eax,1000
-	cdq
-	div	ecx
-	pop	ecx
-	mov	ah,al
-	mov	al,cl
-	mov	[edi.VDD_UpdatesPerFrame],ah
-	mov	[edi.VDD_Frame_Countdown],ah
+	; Now AL is hopefully the framerate in Hz. We divide 1000 by AL to get
+	; milliseconds per frame, and stuff that into AH, then update the state
+	; structure accordingly.
+	test	ah,ah		; Q: Framerate > 255?
+	jz	short @F	;    N: keep going
+	xor	ax,ax		;    Y: too fast, abandon calculation
+	jmp	short VS_CFR_Update_State
+
+@@:	mov	cl,al
+	mov	ax,1000
+	cmp	ah,cl		; Q: divide will overflow?
+	jb	short @F	;    N: keep going
+	xor	ax,ax		;    Y: too slow, abandon calculation
+	jmp	short VS_CFR_Update_State
+
+@@:	div	cl
+	mov	ah,al		; milliseconds per frame in AH
+	mov	al,cl		; fps in AL
+
+VS_CFR_Update_State:
+	; update both bytes in one fell swoop
+	.errnz	VDD_Framerate_Recip-VDD_Framerate-1
+	mov	word ptr [edi.VDD_Framerate],ax
 
 VS_CFR_Exit:
 	pop	edx

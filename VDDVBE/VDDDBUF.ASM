@@ -80,6 +80,7 @@ pxbytes		DW 0
 MemWidth	DW 0
 
 ; how often to swap buffers
+PUBLIC	sb_period_ms
 sb_period_ms	DB 0
 
 VxD_LOCKED_DATA_ENDS

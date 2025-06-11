@@ -982,6 +982,12 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	jne	@F
 
 	mov	edx,fVT_VBESVGA
+	; TODO: we should really detect the VRAM size here - it can be done by
+	; going through the mode list, calculating the framebuffer size of each
+	; one and multiplying by the reported total #pages, and then taking the
+	; largest value. It'd be quite a hassle since we'd need to allocate
+	; 256-byte buffers for both the VBE adapter info and the mode info,
+	; not to mention all the 64-bit arithmetic...
 	jmp	VRI_Exit	; don't detect anything else!
 @@:
 ENDIF

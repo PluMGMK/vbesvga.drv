@@ -714,8 +714,9 @@ VDD_Postponed_TimeOuts	DB  ?		; # of time-outs that have been postponed
 VDD_Owned_Pages     DB	?		; count of physical pages alloc'ed
 
 IFDEF	VRTCTIMER
-VDD_UpdatesPerFrame DB	?		; how many timeouts run in each frame
-VDD_Frame_Countdown DB	?		; count down timeouts before raising VRTC
+VDD_Framerate	    DB	?		; frames per second for current VGA mode
+VDD_Framerate_Recip DB	?		; milliseconds per frame
+VDD_VRTC_timeout    DD	?		; timeout event for Vertical Retrace
 ELSE
 VDD_Padding	    DB	2 dup(?)	; for padding only, reclaim as needed
 ENDIF
@@ -944,6 +945,9 @@ pCRTCIndxMono	EQU	3B4h
 pCRTCDataColr	EQU	3D5h		; CRTC data register
 pCRTCDataMono	EQU	3B5h
 
+fVRTCEndIRQEna	EQU	00100000b	; default-on bit DISABLES the IRQ (yep...)
+fVRTCEndIRQClr	EQU	00010000b	; used to reset the flip-flop
+
 ;***************
 pStatColr	EQU	3DAh		; Status register
 pStatMono	EQU	3BAh
@@ -986,7 +990,8 @@ pStt0EGA	EQU	pMisc		; Miscellaneous status
 fStt0Swit	EQU	00010000b	;   Switch sense(addr'd by dot clk sel)
 fStt0FCI0	EQU	00100000b	;   Feature card input 0
 fStt0FCI1	EQU	01000000b	;   Feature card input 1
-fStt0VRTC	EQU	10000000b	;   VRTC
+fStt0VRTC	EQU	10000000b	;   VRTC IRQ flip-flop
+bStt0VRTC	EQU	7
 
 ;***************
 pAttr		EQU	3C0h		; Attribute(palette) address/data
