@@ -1087,8 +1087,6 @@ IFDEF TLVGA
 	or	al, ch
 in_3c2_not_tlvga:
 ENDIF
-	xor	al,fstatVRTC+fstatEna		    ; Toggle dot stream bit
-	mov	[edi.VDD_Stt.V_Stat0],al	    ; Save pseudo status
 IFDEF DEBUG_virtualization
 	mov	ah, al
 	in	al, dx
