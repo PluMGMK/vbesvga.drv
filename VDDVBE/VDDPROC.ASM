@@ -349,11 +349,12 @@ VxD_LOCKED_DATA_ENDS
 ;	for awhile
 ;
 ;ENTRY: EBX = currently-running VM handle (MAY NOT BE requesting VM)
+;	ECX = how late the timer event was delivered
 ;	EDX = requesting VM's VDD ptr
 ;
 ;EXIT:
 ;
-;USES:	Flags
+;USES:	EBX, EDI, Flags
 ;
 ;ASSUMES:
 ;
@@ -367,17 +368,22 @@ BeginProc VDD_VRTCTimeOut,PUBLIC,High_Freq
 
 	mov	edi,edx 			; EDI = VM's VDD CB ptr
 	mov	[edi.VDD_VRTC_timeout],0
+	TestMem	[edi.VDD_Stt.A_Indx],fVAI_ScOn	; Q: VM's display on?
+	jz	SHORT VVRTCTO_Exit		;   N:
 	TestMem [edi.VDD_Flags],fVDD_Win	; Q: Windowed VM?
         jz      SHORT VVRTCTO_Exit              ;   N: Return
-	; check if VM has been polling the VRTC flag - it should be clear if
-	; they've polled it VDD_VERT_PERIOD times since the last timeout.
-	; FIXME: once we implement the IRQ then we will also need to check
-	; if the VM has been acknowledging IRQs before abandoning the timer!
-	test	[edi.VDD_Stt.V_Stat1],fstatVRTC
-	jnz	SHORT VVRTCTO_Exit		; don't bother with more timeouts
-	; start the VRTC cycle (see VIOT_VI_Stat1 in VDDTIO.ASM for details)
-	mov	[edi.VDD_VertCnt],VDD_VERT_PERIOD
+	; NOTE: I thought we could save some CPU time here by abandoning
+	; the timer if we find that fstatVRTC is still set (i.e. the VM
+	; hasn't been polling it since the last timer) - but this turned
+	; out to be counterproductive for game fluidity, causing the
+	; framerate to cut in half in many cases...
+
+	; set the fstatVRTC flag...
 	or	[edi.VDD_Stt.V_Stat1],fstatVRTC+fstatEna
+	; ... but have it reset immediately on next poll because it seems
+	; some games, under some circumstances, don't bother busy-waiting
+	; for it to go low again...
+	mov	[edi.VDD_VertCnt],1
 	; check for IRQ
 	test	[edi.VDD_Stt.C_VRTCEnd],fVRTCEndIRQEna
 	jnz	SHORT @F			; 1 means disabled (yep...)
@@ -399,14 +405,17 @@ EndProc VDD_VRTCTimeOut
 ;
 ;ENTRY: EBX = VM handle
 ;	EDI = VM's VDD ptr
+;	ECX = how many milliseconds to subtract from period
 ;
 ;EXIT:	none
 ;
-;USES:	Flags, EAX, ECX, EDX, ESI, EDI
+;USES:	Flags, EAX, EDX, ESI
 ;
 ;==============================================================================
 BeginProc VDD_Set_VRTC_Time_Out,PUBLIC,High_Freq
 
+	TestMem	[edi.VDD_Stt.A_Indx],fVAI_ScOn	; Q: VM's display on?
+	jz	SHORT VSVRTCTO_Exit		;   N:
 	TestMem [edi.VDD_Flags],fVDD_Win	; Q: Windowed VM?
 	jz	SHORT VSVRTCTO_Exit		;   N:
 	cmp	[edi.VDD_VRTC_timeout],0	; Q: Timeout active?
@@ -423,7 +432,10 @@ BeginProc VDD_Set_VRTC_Time_Out,PUBLIC,High_Freq
 	jb	SHORT VSVRTCTO_Exit		;   Y: too short, may overwhelm CPU
 						;   N: CPU should handle it OK
 VSVRTCTO_01:
-	mov	edx,edi
+	sub	eax,ecx				; Q: subtracting less than period
+	ja	SHORT @F			;   Y: go ahead with reduction
+	add	eax,ecx				;   N: just use full period
+@@:	mov	edx,edi
 	mov	esi,OFFSET32 VDD_VRTCTimeOut
 	VMMCall Set_Global_Time_Out 		; Set VRTC timeout
 	mov	[edi.VDD_VRTC_timeout],esi	; Save timeout handle
