@@ -217,20 +217,6 @@ ENDIF
 						;	mode chg
 	TestMem [edi.VDD_Flags],fVDD_Win	; Q: Windowed VM?
         jz      SHORT VVTO_Exit                 ;   N: Return
-IFDEF	VRTCTIMER
-	mov	al,[edi.VDD_UpdatesPerFrame]
-	test	al,al				; Q: Timeout frequency >= framerate?
-	jz	SHORT @F			;   N: Don't bother with VRTC timing
-	dec	[edi.VDD_Frame_Countdown]	; Q: Countdown reached zero?
-	jg	SHORT @F			;   N: Don't raise VRTC yet
-	mov	[edi.VDD_Frame_Countdown],al	; reset countdown
-	; start the VRTC cycle (see VIOT_VI_Stat1 in VDDTIO.ASM for details)
-	mov	[edi.VDD_VertCnt],VDD_VERT_PERIOD
-	or	[edi.VDD_Stt.V_Stat1],fstatVRTC+fstatEna
-	; TODO: it'd be cool to also raise a VRTC IRQ here if the app wants, but
-	; very few apps (if any) actually request that, so not really worth it...
-@@:
-ENDIF
         xor     eax,eax
         xchg    [edi.VDD_Postponed_TimeOuts],al ;
         btr     [edi.VDD_Flags],bVDD_PageFault  ; Q: Page fault since last time out?
@@ -326,10 +312,6 @@ BeginProc VDD_Set_VM_Time_Out,PUBLIC,High_Freq
 	TestMem [edi.VDD_Flags],fVDD_ModeChange ; Q: In a mode change?
 	jnz	short VSVTO_01			;   Y: use it
 	mov	eax, [Vid_Win_Update_Time]	;   N: Use display update time
-IFDEF	VRTCTIMER
-	cmp	[edi.VDD_UpdatesPerFrame], 0	; Q: VRTC timing relies on constant period?
-	jnz	short VSVTO_01			;   Y: do not increase period
-ENDIF
 	cmp	[edi.VDD_Update_Hit_Cnt], 3	; Q: constant updating?
 	jb	short VSVTO_01			;   N: continue
 	shl	eax, 2				;   Y: increase timeout time
@@ -345,6 +327,131 @@ ENDIF
 VSVTO_Exit:
 	ret
 EndProc VDD_Set_VM_Time_Out
+
+
+IFDEF	VRTCTIMER
+;******************************************************************************
+; EXTRN locked data
+;
+VxD_LOCKED_DATA_SEG
+	EXTRN	sb_period_ms:BYTE
+VxD_LOCKED_DATA_ENDS
+
+
+;******************************************************************************
+;VDD_VRTCTimeOut    Set VRTC flag every frame
+;
+;DESCRIPTION:
+;	Display changes are checked for after a VM has been executing for
+;	a fixed period of time, or the VM has become idle(e.g. waiting for
+;	keyboard input) in which case the VM will not be executing much at
+;	all. This is the routine that gets called when the VM has executed
+;	for awhile
+;
+;ENTRY: EBX = currently-running VM handle (MAY NOT BE requesting VM)
+;	EDX = requesting VM's VDD ptr
+;
+;EXIT:
+;
+;USES:	Flags
+;
+;ASSUMES:
+;
+;==============================================================================
+BeginProc VDD_VRTCTimeOut,PUBLIC,High_Freq
+
+	mov	ebx,edx
+	sub	ebx,[Vid_CB_Off]
+	VMMCall Validate_VM_Handle		; Q: VM still active?
+	jc	SHORT VVRTCTO_Exit 		;   N: No update possible
+
+	mov	edi,edx 			; EDI = VM's VDD CB ptr
+	mov	[edi.VDD_VRTC_timeout],0
+	TestMem [edi.VDD_Flags],fVDD_Win	; Q: Windowed VM?
+        jz      SHORT VVRTCTO_Exit              ;   N: Return
+	; check if VM has been polling the VRTC flag - it should be clear if
+	; they've polled it VDD_VERT_PERIOD times since the last timeout.
+	; FIXME: once we implement the IRQ then we will also need to check
+	; if the VM has been acknowledging IRQs before abandoning the timer!
+	test	[edi.VDD_Stt.V_Stat1],fstatVRTC
+	jnz	SHORT VVRTCTO_Exit		; don't bother with more timeouts
+	; start the VRTC cycle (see VIOT_VI_Stat1 in VDDTIO.ASM for details)
+	mov	[edi.VDD_VertCnt],VDD_VERT_PERIOD
+	or	[edi.VDD_Stt.V_Stat1],fstatVRTC+fstatEna
+	; check for IRQ
+	test	[edi.VDD_Stt.C_VRTCEnd],fVRTCEndIRQEna
+	jnz	SHORT @F			; 1 means disabled (yep...)
+	bts	[edi.VDD_Stt.V_Stat0],bStt0VRTC	; Q: flip-flop already high?
+	jc	SHORT @F			;    Y: no new IRQ
+IFDEF	DEBUG
+	Debug_Out "#EBX requires VRTC IRQ, not implemented yet..."
+ENDIF
+@@:     jmp     SHORT VDD_Set_VRTC_Time_Out
+VVRTCTO_Exit:
+	ret
+EndProc VDD_VRTCTimeOut
+
+
+;******************************************************************************
+;VDD_Set_VRTC_Time_Out
+;
+;DESCRIPTION:
+;
+;ENTRY: EBX = VM handle
+;	EDI = VM's VDD ptr
+;
+;EXIT:	none
+;
+;USES:	Flags, EAX, ECX, EDX, ESI, EDI
+;
+;==============================================================================
+BeginProc VDD_Set_VRTC_Time_Out,PUBLIC,High_Freq
+
+	TestMem [edi.VDD_Flags],fVDD_Win	; Q: Windowed VM?
+	jz	SHORT VSVRTCTO_Exit		;   N:
+	cmp	[edi.VDD_VRTC_timeout],0	; Q: Timeout active?
+	jnz	SHORT VSVRTCTO_Exit		;   Y:
+	movzx	eax,[edi.VDD_Framerate_Recip]	; get nominal time-out period
+	cmp	eax,[Vid_Win_Update_Time]	; Q: Shorter than Win update?
+	jae	SHORT VSVRTCTO_01		;   N: CPU should be well able
+	; if we have double-buffering enabled, we can check against the
+	; swap-buffers interval as a secondary heuristic
+	movzx	edx,[sb_period_ms]
+	test	edx,edx				; Q: Double-buf enabled?
+	jz	SHORT VSVRTCTO_Exit		;   N: no further checking
+	cmp	eax,edx				; Q: Shorter than swap-buffers?
+	jb	SHORT VSVRTCTO_Exit		;   Y: too short, may overwhelm CPU
+						;   N: CPU should handle it OK
+VSVRTCTO_01:
+	mov	edx,edi
+	mov	esi,OFFSET32 VDD_VRTCTimeOut
+	VMMCall Set_Global_Time_Out 		; Set VRTC timeout
+	mov	[edi.VDD_VRTC_timeout],esi	; Save timeout handle
+VSVRTCTO_Exit:
+	ret
+EndProc VDD_Set_VRTC_Time_Out
+
+;******************************************************************************
+;VDD_Clr_VRTC_Time_Out
+;
+;DESCRIPTION: Clear any pending VRTC timeout for VM
+;
+;ENTRY: EBX = VM handle
+;	EDI -> VM's VDD data
+;
+;EXIT:	none
+;
+;USES:	Flags, EAX, ECX, EDX, ESI, EDI
+;
+;==============================================================================
+BeginProc VDD_Clr_VRTC_Time_Out,PUBLIC,High_Freq
+
+	xor	esi, esi
+	xchg	esi, [edi.VDD_VRTC_timeout]
+	VMMCall Cancel_Time_Out 		; Cancel pending update timeout
+	ret
+EndProc VDD_Clr_VRTC_Time_Out
+ENDIF	;VRTCTIMER
 
 ;******************************************************************************
 ;VDD_Clr_VM_Time_Out

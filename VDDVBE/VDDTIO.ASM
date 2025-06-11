@@ -66,6 +66,7 @@ EXTRN	VDD_State_Schedule_Debug_Event:NEAR
 ENDIF
 IFDEF VRTCTIMER
 EXTRN	VDD_State_Calc_Framerate:NEAR
+EXTRN	VDD_Set_VRTC_Time_Out:NEAR
 ENDIF
 
 VxD_CODE_ENDS
@@ -1863,7 +1864,11 @@ EndProc VIOT_3D4
 ;   Owned by CRTC owner
 BeginProc VIOT_3D5,High_Freq
 
+IFDEF	VRTCTIMER
+	jnz	VIOT_In_CRT
+ELSE
 	jnz	SHORT VIOT_In_CRT
+ENDIF
 	movzx	ecx,[edi.VDD_Stt.C_Indx]	    ; ECX = index
 ;   AL = value
 ;   ECX = index
@@ -1889,17 +1894,36 @@ VIOT_Out_CRTC_DoOut:
 VIOT_Out_CRTC_NoOut:
 	cmp	cl,C_IMax			    ; Q: Valid index?
 	ja	SHORT VIOT_Out_Exit		    ;	N: ignore the value
+IFDEF	VRTCTIMER
+	; check VRTC IRQ setting / status - old and new state are both important
+	; (for some reason), so check before committing...
+	cmp	cl,C_VRTCEnd-C_HTotal
+	jne	SHORT VIOT_Out_CRTC_notIRQ
+	mov	cl,[edi.VDD_Stt.CRTC][ecx]
+	xor	cl,al
+	test	cl,fVRTCEndIRQClr		    ; Q: toggled "IRQ clear" bit?
+	jz	SHORT @F			    ;	N: next check
+	test	al,fVRTCEndIRQClr		    ;	Y: Q: new value 1?
+	jz	SHORT @F			    ;	    N: nothing to do yet
+	ClrFlag	[edi.VDD_Stt.V_Stat0],fStt0VRTC	    ;	    Y: clear the flip-flop
+@@:	mov	cl,C_VRTCEnd-C_HTotal		    ; restore CL value
+	test	al,fVRTCEndIRQEna		    ; Q: IRQ Enable bit set to zero?
+	jnz	SHORT VIOT_Out_CRTC_notIRQ	    ;	N: IRQ NOT enabled (yep...)
+	call	VDD_Set_VRTC_Time_Out  		    ;	Y: ensure timer event
+						    ;      exists to deliver IRQ
+VIOT_Out_CRTC_notIRQ:
+ENDIF
 	mov	[edi.VDD_Stt.CRTC][ecx],al
 IFDEF	VRTCTIMER
 	; if mode control (including SLDIV), or horizontal or vertical total
 	; (latter includes an overflow bit) change, update framerate
-	cmp	cl,C_Mode
+	cmp	cl,C_Mode-C_HTotal
 	je	SHORT @F
-	cmp	cl,C_Ovflw
+	cmp	cl,C_Ovflw-C_HTotal
 	je	SHORT @F
-	cmp	cl,C_HTotal
+	cmp	cl,C_HTotal-C_HTotal
 	je	SHORT @F
-	cmp	cl,C_VTotal
+	cmp	cl,C_VTotal-C_HTotal
 	jne	SHORT VIOT_Out_Exit
 @@:	call	VDD_State_Calc_Framerate
 ENDIF
@@ -1977,10 +2001,13 @@ VIOT_VI_Stat1:
 	dec	[edi.VDD_VertCnt]		    ;	Y: count down retrace
 	jnz	SHORT VIOT_VI_Stt1_Merge
 	and	[edi.VDD_Stt.V_Stat1],NOT fstatVRTC ; next query will be out of VRTC
+IFDEF	VRTCTIMER
+	call	VDD_Set_VRTC_Time_Out		    ; if timeouts lapsed, re-enable them
+ENDIF
 	jmp	SHORT VIOT_VI_Stt1_Merge
 VIOT_VI_Stt1_NotVert:
 IFDEF	VRTCTIMER
-	cmp	[edi.VDD_UpdatesPerFrame],0	    ; Q: VRTC managed by VDD_VMTimeOut?
+	cmp	[edi.VDD_VRTC_timeout],0	    ; Q: VRTC managed by a time-out?
 	jnz	SHORT @F			    ;   Y: don't bother counting down horiz
 ENDIF
 	dec	[edi.VDD_HorizCnt]		    ; count down horiz
