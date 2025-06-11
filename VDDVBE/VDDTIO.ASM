@@ -1909,8 +1909,9 @@ IFDEF	VRTCTIMER
 @@:	mov	cl,C_VRTCEnd-C_HTotal		    ; restore CL value
 	test	al,fVRTCEndIRQEna		    ; Q: IRQ Enable bit set to zero?
 	jnz	SHORT VIOT_Out_CRTC_notIRQ	    ;	N: IRQ NOT enabled (yep...)
-	call	VDD_Set_VRTC_Time_Out  		    ;	Y: ensure timer event
-						    ;      exists to deliver IRQ
+	xor	ecx,ecx				    ;	Y: ensure timer event
+	call	VDD_Set_VRTC_Time_Out		    ;      exists to deliver IRQ
+	mov	cl,C_VRTCEnd-C_HTotal		    ; restore CL value
 VIOT_Out_CRTC_notIRQ:
 ENDIF
 	mov	[edi.VDD_Stt.CRTC][ecx],al
@@ -2002,6 +2003,7 @@ VIOT_VI_Stat1:
 	jnz	SHORT VIOT_VI_Stt1_Merge
 	and	[edi.VDD_Stt.V_Stat1],NOT fstatVRTC ; next query will be out of VRTC
 IFDEF	VRTCTIMER
+	xor	ecx,ecx
 	call	VDD_Set_VRTC_Time_Out		    ; if timeouts lapsed, re-enable them
 ENDIF
 	jmp	SHORT VIOT_VI_Stt1_Merge

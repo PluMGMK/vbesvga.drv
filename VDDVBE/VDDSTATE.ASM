@@ -44,6 +44,9 @@ VxD_ICODE_SEG
 EXTRN	VDD_Device_Init:NEAR
 EXTRN	VDD_Font_Setup_Msg_Mode_Init:NEAR
 EXTRN	VDD_Font_Save_Msg_Font:NEAR
+IFDEF	VRTCTIMER
+EXTRN	VDD_Clr_VRTC_Time_Out:NEAR
+ENDIF
 VxD_ICODE_ENDS
 
 VxD_CODE_SEG
@@ -2077,9 +2080,13 @@ BeginProc VDD_State_Calc_Framerate, PUBLIC
 
 	push	ecx
 	push	edx
-	mov	eax,60		; default to 60fps, no updates per frame
+	mov	eax,(16*100h)+60; default to 60fps, 16 ms per frame
 	or	ebx,ebx
 	jz	SHORT VS_CFR_Exit
+
+	; cancel any pending time-out since we're recalculating the framerate
+	call	VDD_Clr_VRTC_Time_Out
+
 	movzx	ecx, [edi.VDD_Stt.V_Misc]
 	and	ecx, fMiscDot
 	mov	eax, [ecx+DotClockTable]
