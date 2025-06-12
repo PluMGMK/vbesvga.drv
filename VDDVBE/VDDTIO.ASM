@@ -67,6 +67,7 @@ ENDIF
 IFDEF VRTCTIMER
 EXTRN	VDD_State_Calc_Framerate:NEAR
 EXTRN	VDD_Set_VRTC_Time_Out:NEAR
+EXTRN	VDD_Int_Clear_VRTC_IRQ:NEAR
 ENDIF
 
 VxD_CODE_ENDS
@@ -1875,7 +1876,11 @@ ENDIF
 ;   Zero flag set, Carry flag clear
 	cmp	eax,eax
 	call	VDD_OEM_Out_CRTC		    ; Q: OEM specific?
+IFDEF	VRTCTIMER
+	jc	VIOT_Out_CRTC_OutOnly		    ;	Y: Value handled, exit
+ELSE
 	jc	SHORT VIOT_Out_CRTC_OutOnly	    ;	Y: Value handled, exit
+ENDIF
 	jnz	SHORT VIOT_Out_Exit		    ;	Y: Don't do output
 	cmp	ebx,[Vid_CRTC_VM]		    ;	N: Q: CRTC owner?
 	jnz	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
@@ -1902,11 +1907,14 @@ IFDEF	VRTCTIMER
 	mov	cl,[edi.VDD_Stt.CRTC][ecx]
 	xor	cl,al
 	test	cl,fVRTCEndIRQClr		    ; Q: toggled "IRQ clear" bit?
-	jz	SHORT @F			    ;	N: next check
+	jz	SHORT VIOT_Out_CRTC_IRQ_Cleared	    ;	N: next check
 	test	al,fVRTCEndIRQClr		    ;	Y: Q: new value 1?
-	jz	SHORT @F			    ;	    N: nothing to do yet
+	jz	SHORT @F			    ;	    N: clear the IRQ
 	ClrFlag	[edi.VDD_Stt.V_Stat0],fStt0VRTC	    ;	    Y: clear the flip-flop
-@@:	mov	cl,C_VRTCEnd-C_HTotal		    ; restore CL value
+	jmp	SHORT VIOT_Out_CRTC_IRQ_Cleared
+@@:	call	VDD_Int_Clear_VRTC_IRQ
+VIOT_Out_CRTC_IRQ_Cleared:
+	mov	cl,C_VRTCEnd-C_HTotal		    ; restore CL value
 	test	al,fVRTCEndIRQEna		    ; Q: IRQ Enable bit set to zero?
 	jnz	SHORT VIOT_Out_CRTC_notIRQ	    ;	N: IRQ NOT enabled (yep...)
 	xor	ecx,ecx				    ;	Y: ensure timer event

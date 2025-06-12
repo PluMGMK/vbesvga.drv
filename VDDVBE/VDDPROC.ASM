@@ -41,6 +41,9 @@ VxD_CODE_SEG
 	EXTRN	VDD_VM_Mem_Disable_Null:NEAR
 	EXTRN	VDD_VM_Mem_VM_can_use_savemem:NEAR
 	EXTRN	VDD_Error_NoFGrnd:NEAR
+IFDEF	VRTCTIMER
+	EXTRN	VDD_Int_Set_VRTC_IRQ:NEAR
+ENDIF
 VxD_CODE_ENDS
 
 ;******************************************************************************
@@ -325,6 +328,14 @@ ENDIF
 	VMMCall Set_VM_Time_Out 		; Set display update timeout
 	mov	[edi.VDD_Time_Out_Handle],esi	; Save timeout handle
 VSVTO_Exit:
+IFDEF	VRTCTIMER
+	; if VM is looking for an IRQ, then ensure the VRTC timeout is in-place
+	; as well (this is a hack to restart the IRQs after a full-screen VM
+	; goes back to being windowed)...
+	xor	ecx,ecx
+	TestMem	[edi.VDD_Stt.C_VRTCEnd],fVRTCEndIRQEna
+	jz	VDD_Set_VRTC_Time_Out		; JZ since zero means enabled
+ENDIF
 	ret
 EndProc VDD_Set_VM_Time_Out
 
@@ -389,9 +400,7 @@ BeginProc VDD_VRTCTimeOut,PUBLIC,High_Freq
 	jnz	SHORT @F			; 1 means disabled (yep...)
 	bts	[edi.VDD_Stt.V_Stat0],bStt0VRTC	; Q: flip-flop already high?
 	jc	SHORT @F			;    Y: no new IRQ
-IFDEF	DEBUG
-	Debug_Out "#EBX requires VRTC IRQ, not implemented yet..."
-ENDIF
+	call	VDD_Int_Set_VRTC_IRQ
 @@:     jmp     SHORT VDD_Set_VRTC_Time_Out
 VVRTCTO_Exit:
 	ret
