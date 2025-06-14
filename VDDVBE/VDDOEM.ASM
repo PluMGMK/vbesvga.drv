@@ -3431,6 +3431,20 @@ V7SvLT_30:
 VO_SL_NotCLV7:
 ENDIF	;CLV7VGA
 
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	SHORT VO_SL_NotVBE
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0
+	jz	SHORT VO_SL_NotVBE	; not in a VBE mode
+	; in VBE modes, there is no guarantee on modern hardware that
+	; the latches are engaged in any way, so there is no point in
+	; trying to save / restore them.
+	stc
+	ret
+
+VO_SL_NotVBE:
+ENDIF	;VGA8514
+
 	clc
 	ret
 EndProc VDD_OEM_Save_Latches
@@ -3523,6 +3537,20 @@ V7ReLT_30:
 	ret
 VO_RL_NotCLV7:
 ENDIF	;CLV7VGA
+
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	SHORT VO_RL_NotVBE
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0
+	jz	SHORT VO_RL_NotVBE	; not in a VBE mode
+	; in VBE modes, there is no guarantee on modern hardware that
+	; the latches are engaged in any way, so there is no point in
+	; trying to save / restore them.
+	stc
+	ret
+
+VO_RL_NotVBE:
+ENDIF	;VGA8514
 
 	clc
 	ret
