@@ -9,78 +9,30 @@ This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** av
 * Because my AMD Radeon RX 5500 XT doesn't support 256-colour modes, rendering the old [VESA Patch](http://www.win3x.org/win3board/viewtopic.php?t=5408&hilit=svga) useless for me
 * To help out any fellow enthusiasts who like running old software on new hardware!
 
-## Limitations in Windows programs / components
-
-### Program Manager icons
-
-When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32*32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 * 32 * (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (not accessible with `Allow3ByteMode=0`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
-
-### Zoom-in in Paintbrush
-
-The zoomed-in editing mode in Paintbrush breaks in high-colour mode if the viewport is wider than about 800 pixels (100 zoomed-in pixels). You can work around this issue by reducing the size of the window while working in this mode. The reason is that this driver doesn't implement `StretchBlt`, and so GDI falls back to its internal implementation, which limits the intermediate DIB size to (again) a 64k segment (more details [here](https://github.com/PluMGMK/vbesvga.drv/issues/77#issuecomment-2913480799)). Because it uses a DIB, the outcome is the same regardless of whether you use a 16-bit, 24-bit or 32-bit video mode.
-
-### Viewing large photographs
-
-The largest bitmap that can be allocated in Windows 3.1 is `0FF0000h`, i.e. about 16.7 million bytes, which is a limitation of `KRNL386.EXE`. This means that the largest photographs that can be viewed are 16.6 MP in 8-bit mode, 8.3 MP in 16-bit mode, ~5 MP in 24-bit mode and ~4 MP in 32-bit mode, or possibly slightly less depending on how the scanlines line up with segment boundaries. I guess this isn't a very common usecase anyway, but I felt I should point it out since there's nothing that can be done about it in this driver. (Despite the fact that ACDSee claims that the "display driver" couldn't create the bitmap in such situations!)
-
 ## Screenshots
 
 ### Using standard Program Manager shell
 
 ![True-Colour Full HD screenshot of Windows 3.1 desktop showing colour settings (on "Plasma Power Saver"), Program Manager, a 50-row MS-DOS prompt, Solitaire and Minesweeper](./Screenshots/VBESVGA.BMP.png)
 
-This True-Colour Full HD screenshot, with large fonts, gives you some idea of what's working so far. The colour settings dialogue shows that pretty much the entire Windows GUI renders correctly, and the Program Manager shows icons working well too. The windowed 50-row DOS prompt demonstrates that I am running this on MS-DOS 6.20, and that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14`. Minesweeper and Solitaire both look OK, and the game underway indicates that the latter is eminently playable.
-
-See the Issues page for more details of what is _not_ working at the moment...
+This True-Colour Full HD screenshot, with large fonts, shows the staples of the Windows 3.1 GUI and the iconic games Minesweeper and Solitaire. The windowed 50-row DOS prompt demonstrates that I am running this on MS-DOS 6.20, and that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14`.
 
 ### Using **third-party** [Calmira XP](https://winworldpc.com/product/calmira/4x) shell
 
-![True-Colour Full HD screenshot of Calmira XP shell showing colour settings (on "Bordeaux"), Character Map, Advanced Task Manager, Calmira Explorer, an MS-DOS prompt, GVim and Minesweeper](./Screenshots/VBESVGA2.BMP.png)
+![True-Colour Full HD screenshot of Calmira XP shell, with a photographic wallpaper, showing colour settings (on "Bordeaux"), Character Map, Advanced Task Manager, two MS-DOS prompts (one showing the main menu of Rayman, the other showing VIDMODES.COM output), and Calmira Explorer](./Screenshots/VBESVGA2.BMP.png)
 
-This screenshot showcases the True Colour rendering capability, in the Windows-XP-derived icons used by the Calmira XP shell. The [Advanced Task Manager](https://winworldpc.com/product/advanced-task-manage/1x) instance again confirms that we're on DOS 6.20 and Windows 3.10. It also says we're on a 486, which of course isn't true, but that's just the newest CPU that Windows 3.1 knows about! The 25-row DOS prompt shows the output of `VIDMODES.COM` (see below), confirming again that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14` (reported a bit more legibly this time!).
+This screenshot showcases the True Colour rendering capability, in the wallpaper (a photo I took [here](https://www.buildingsofireland.ie/buildings-search/building/20907021/annahala-east-cork)) and in the Windows-XP-derived icons used by the Calmira XP shell. The [Advanced Task Manager](https://winworldpc.com/product/advanced-task-manage/1x) instance again confirms that we're on DOS 6.20 and Windows 3.10. It also says we're on a 486, which of course isn't true, but that's just the newest CPU that Windows 3.1 knows about! The 25-row DOS prompt shows the output of `VIDMODES.COM` (see below), confirming again that I'm using a real AMD graphics card with [vendor string](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `(C) 1988-2018, Advanced Micro Devices, Inc.` and [product name](https://fd.lod.bz/rbil/interrup/video/104f00.html) equal to `NAVI14` (reported a bit more legibly this time!). And what's that in the other DOS prompt? That's right, it's _Rayman_ (1995)! Thanks to the new 256-colour-capable grabber (see [below](#graphical-mode-sessions)), _Rayman_ can now be played in a window - it's a bit choppy, but it works!
 
-## Building
+## Usage Notes
 
-Thanks to @lss4 for [pointing out some omissions](https://github.com/PluMGMK/vbesvga.drv/issues/19) in the setup process!
-
-Note that the only step below which requires Windows is the initial installation of Visual C++ - the build process itself is purely DOS-based and can be automated using a batch file (or a Dosbox configuration file on a modern system!).
-
-### `vbesvga.drv` (needed in both Standard and 386 Enhanced Mode)
-
-* Install both the [Win16 DDK](http://www.win3x.org/win3board/viewtopic.php?t=2776) and [a contemporary version of Visual C++](http://www.win3x.org/win3board/viewtopic.php?t=1375)
-* Obtain a copy of `EXE2BIN.EXE` (e.g. from FreeDOS, or from the Open Watcom compiler) and place it somewhere in your `PATH`
-* Place the `VBESVGA` folder from this repository in the DDK hierarchy, at `286/DISPLAY/8PLANE/VBESVGA`
-* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
-* In addition, ensure `286\TOOLS` from the DDK is in your `PATH` and `286\INC` is in your `INCLUDE` variable
-* Go to the `VBESVGA\mak` folder and run `make vbesvga.mak`; this should create the file `VBESVGA.DRV` which can be loaded by Windows
-
-### `vddvbe.386` (needed only in 386 Enhanced Mode)
-
-* Place the `VDDVBE` folder from this repository in the DDK hierarchy, at `386/VDDVBE`
-* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
-* In addition, ensure `386\TOOLS` from the DDK is in your `PATH`
-* Go to the `VDDVBE` folder and run `nmake`; this should create the file `VDDVBE.386` which can be loaded by Windows
-
-### Tip for using the DDK on a modern system
-
-To make the debugger `WDEB386` work, you need to change some bytes:
-
-* At position `63D8`, you need to change `0F 24 F0` to `66 33 C0`
-* At position `63DF`, you need to change `0F 24 F8` to `66 33 C0`
-
-This removes references to the [`TR6` and `TR7` registers](https://en.wikipedia.org/wiki/Test_register), which crash the system since they only existed on the 386, 486 and a few other less-well-known chips!
-
-## Usage
+### Setup / Configuration Procedure
 
 The following changes are needed to your `C:\WINDOWS\SYSTEM.INI` file:
 
 * In the `[boot]` section, change the `display.drv=` line to point to `vbesvga.drv`. You should specify the full path, or else copy the file to `C:\WINDOWS\SYSTEM`. (Note that if the path is too long, it can cause the CodeView debugger to crash on startup!)
-* In the `[386Enh]` section, change the `display=` line to point to `vddvbe.386`. Again, you should specify the full path, or else copy the file to `C:\WINDOWS\SYSTEM`.
-* If needed, create a `[VBESVGA.DRV]` section to configure the driver, as detailed [below](#configuration-parameters).
-
-## Configuration parameters
-
-This table lists the parameters you can specify in the `[VBESVGA.DRV]` section of `SYSTEM.INI`.
+* Also in the `[boot]` section, change the `386grabber=` line to point to `vbevmdib.3gr`. Again, you should specify the full path, or else copy the file to `C:\WINDOWS\SYSTEM`.
+* Likewise, in the `[386Enh]` section, change the `display=` line to point to `vddvbe.386`.
+* If needed (usually not), create a `[VBESVGA.DRV]` section to configure the driver, with some or all of the entries detailed in the following table:
 
 |Parameter |Valid values |Meaning |Default value |
 --- | --- | --- | ---
@@ -93,7 +45,7 @@ This table lists the parameters you can specify in the `[VBESVGA.DRV]` section o
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
 |`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits; disable this to prefer 32-bit modes which give the same colour depth but use more RAM | 1 |
 
-### Example configuration
+#### Example configuration
 
 Note that in many cases, the driver should now work out of the box, without any extra configuration, since it detects your monitor's preferred resolution and mostly uses sane defaults.
 
@@ -106,37 +58,37 @@ SwapBuffersInterval=15
 fontsize=large
 ```
 
-## Linear Modes and Double Buffering
+### Limitations in Windows programs / components
 
-The VBE modes used by this driver involve a framebuffer larger than can be addressed by a single segment (65536 bytes). VBE provides two strategies for dealing with this: bank-switching and using linear framebuffers. Bank-switching involves mapping only one segment at a time into physical memory, usually at address `A0000h`, whereas a linear framebuffer gets fully mapped somewhere in extended memory (i.e. beyond the 1-MiB boundary). This driver prefers to use linear modes when available, but unfortunately, due to a bug in `DOSX.EXE`, this is not possible when running Windows in Standard Mode while using `EMM386`. To ensure the driver can use linear framebuffers, you will need to run Windows in 386 Enhanced Mode, or else disable `EMM386`.
+#### Program Manager icons
 
-When using a linear framebuffer, on a 386 or newer, the driver also attempts to use [Double Buffering](https://wiki.osdev.org/Double_Buffering), which improves performance by ensuring that GDI operations never have to touch video RAM directly. However, it involves allocating two copies of the framebuffer in system RAM, which is quite expensive (especially given that Windows 3.1 usually can't take advantage of more than a quarter of a GiB). If it can't allocate this much RAM, it falls back to direct VRAM access.
+When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32×32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 × 32 × (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (not accessible with `Allow3ByteMode=0`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
 
-Basically, if you're using 386 Enhanced Mode (or Standard Mode without `EMM386`), with a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust how often the screen is redrawn using the `SwapBuffersInterval=` setting in `SYSTEM.INI`!
+#### Zoom-in in Paintbrush
 
-The default is 16 ms, which means that the screen is redrawn just over sixty times a second. Unfortunately I haven't found a way to synchronize it to your monitor's blanking interval, meaning that "sixty times a second" and "60fps" won't necessarily line up as well as one might hope (see discussion [here](https://github.com/PluMGMK/vbesvga.drv/issues/55)). Shorter intervals lead to smoother drawing - as long as your CPU can keep up!
+The zoomed-in editing mode in Paintbrush breaks in high-colour mode if the viewport is wider than about 800 pixels (100 zoomed-in pixels). You can work around this issue by reducing the size of the window while working in this mode. The reason is that this driver doesn't implement `StretchBlt`, and so GDI falls back to its internal implementation, which limits the intermediate DIB size to (again) a 64k segment (more details [here](https://github.com/PluMGMK/vbesvga.drv/issues/77#issuecomment-2913480799)). Because it uses a DIB, the outcome is the same regardless of whether you use a 16-bit, 24-bit or 32-bit video mode.
 
-If you suspect there are problems with Double Buffering, you can force-disable it by setting `SwapBuffersInterval=0`. This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
+Note that this limitation doesn't apply in Windows 9x when using Paint, because in Windows 95's version of `GDI.EXE`, the intermediate DIB size limit was increased to three segments (i.e. 192 kiB) for high-colour stretching.
 
-## Mode selection
+#### Viewing large photographs
+
+The largest bitmap that can be allocated in Windows 3.1 is `0FF0000h`, i.e. about 16.7 million bytes, which is a limitation of `KRNL386.EXE`. This means that the largest photographs that can be viewed are 16.6 MP in 8-bit mode, 8.3 MP in 16-bit mode, ~5 MP in 24-bit mode and ~4 MP in 32-bit mode, or possibly slightly less depending on how the scanlines line up with segment boundaries. I guess this isn't a very common usecase anyway, but I felt I should point it out since there's nothing that can be done about it in this driver. (Despite the fact that ACDSee claims that the "display driver" couldn't create the bitmap in such situations!)
+
+### Mode selection
 
 When Windows boots, the driver queries the BIOS for available modes, and automatically selects the first one which fulfills the following criteria:
 
 * Supported by the current hardware according to the BIOS
 * Graphics mode (not text)
 * Colour mode (not black & white)
-* Resolution matches what was specified in `SYSTEM.INI`
+* Resolution matches what was specified in `SYSTEM.INI` (or the monitor's preferred resolution, or the default value of 1024×768)
 * Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2, 3 (unless `Allow3ByteMode=0`) or 4 bytes
 * Either packed-pixel or direct-colour framebuffer
 * Significant bit depth (i.e. red+green+blue but without padding) matches what was specified in `SYSTEM.INI`
 
-The driver searches for linear modes first, and if it can't find any (or the system can't support them), it goes back and looks for bank-switching modes. If it can't find any mode matching the above criteria, it will switch the display back to text mode, print an error message and return to DOS.
+The driver searches for linear modes (as defined [below](#linear-modes-and-double-buffering)) first, and if it can't find any (or the system can't support them), it goes back and looks for bank-switching modes (or *vice versa* if `PreferBankedModes=1`). If it can't find any mode matching the above criteria, it will switch the display back to text mode, print an error message and return to DOS. Note that this automatic search is the only way the driver selects modes: you cannot give it a specific VESA mode number to use.
 
-Note that this automatic search is currently the only way the driver selects modes: you cannot give it a specific VESA mode number to use.
-
-### Having trouble finding compatible modes?
-
-If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected), and the driver will either boot successfully or give you a list of `Depth` values to try (if the default isn't supported).
+If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected), and the driver will either boot successfully or give you a list of `Depth` values to try (if the default, 24 bits, isn't supported).
 
 If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output running under DOSBox-X 2024.07.01[^1]:
 ```
@@ -204,10 +156,118 @@ You can see that it lists all detected colour graphics modes, showing their reso
 
 Direct-colour modes may have padding bits in each pixel, so the bit depths for these modes are listed with and without padding. The "S" number is what I call the *significant depth*, which excludes padding bits, and the "T" number is the *total depth*, which is the physical size of a pixel in memory. The driver searches for modes whose significant depths match what is specified in `SYSTEM.INI` (or 24 by default), but also makes sure the total depth is divisible by eight. If it is not divisible by eight, then pixels are not byte-aligned, and so those modes are also "NG" as seen above.
 
-## Windows 3.1 refusing to boot with your GPU?
+### Linear Modes and Double Buffering
+
+The VBE modes used by this driver involve a framebuffer larger than can be addressed by a single segment (65536 bytes). VBE provides two strategies for dealing with this: bank-switching and using linear framebuffers. Bank-switching involves mapping only one segment at a time into physical memory, usually at address `A0000h`, whereas a linear framebuffer gets fully mapped somewhere in extended memory (i.e. beyond the 1-MiB boundary). This driver prefers to use linear modes when available, but unfortunately, due to a bug in `DOSX.EXE`, this is not possible when running Windows in Standard Mode while using `EMM386`. To ensure the driver can use linear framebuffers, you will need to run Windows in 386 Enhanced Mode, or else disable `EMM386`.
+
+When using a linear framebuffer, on a 386 or newer, the driver also attempts to use [Double Buffering](https://wiki.osdev.org/Double_Buffering), which improves performance by ensuring that GDI operations never have to touch video RAM directly. However, it involves allocating two copies of the framebuffer in system RAM, which is quite expensive (especially given that Windows 3.1 usually can't take advantage of more than a quarter of a GiB). If it can't allocate this much RAM, it falls back to direct VRAM access.
+
+Basically, if you're using 386 Enhanced Mode (or Standard Mode without `EMM386`), with a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust how often the screen is redrawn using the `SwapBuffersInterval=` setting in `SYSTEM.INI`. The default is 16 ms, which means that the screen is redrawn just over sixty times a second. Unfortunately I haven't found a way to synchronize it to your monitor's blanking interval, meaning that "sixty times a second" and "60fps" won't necessarily line up as well as one might hope (see discussion [here](https://github.com/PluMGMK/vbesvga.drv/issues/55)). Shorter intervals lead to smoother drawing - as long as your CPU can keep up!
+
+If you suspect there are problems with Double Buffering, you can force-disable it by setting `SwapBuffersInterval=0`. This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
+
+### Running DOS programs / games in windowed mode
+
+As you probably know, in 386 Enhanced Mode, Windows 3.1 allows running DOS sessions in a window. With this driver, `VDDVBE.386` and `VBEVMDIB.3GR` are responsible for video memory management and rendering, respectively, of these windowed sessions. These two modules have certain features and limitations you should be aware of when using this functionality.
+
+#### Text mode sessions
+
+Firstly, when starting up a windowed DOS session, the screen will most likely flash momentarily. This is because when a DOS session starts up, it does a mode-set to mode 3 (standard CGA/EGA/VGA text mode). This mode-set does some port I/O to reprogram a bunch of CGA/EGA/VGA registers, which gets trapped by `VDDVBE.386`, and used to update the state of the associated DOS VM. However, on modern graphics cards, this usually does some further I/O to reprogram vendor-specific registers, which `VDDVBE.386` knows nothing about. Since this I/O does not get trapped, it tends to leave the display in some corrupt hybrid mode ([example](https://github.com/PluMGMK/vbesvga.drv/issues/79)). To prevent this, whenever a windowed DOS VM does any kind of mode-set, `VDDVBE.386` immediately instructs `VBESVGA.DRV` to reset the mode and re-draw the display. This tends to flash the screen, but it's vastly preferable to the alternative!
+
+Beyond that, text-mode DOS windows work as you would expect, and there aren't any major gotchas or foibles.
+
+#### Graphical mode sessions
+
+The CGA graphical modes (320×200, 4-colour, and 640×200, 2-colour) are also fully usable in windowed DOS sessions. They are upscaled to 640×400, as one would expect.
+
+Unfortunately, when it comes to EGA and VGA modes, things get a lot hairier. As outlined [here](https://wiki.osdev.org/VGA_Hardware), the EGA and VGA had multiple memory planes (three and four respectively), which could be addressed, read from, and written to, in all kinds of weird and wonderful ways. Virtualizing these memory planes _efficiently_ is far beyond the capabilities of the 386's MMU, or anything descended from it[^2], so Windows 3.1's Virtual Display Driver (VDD) took a different approach. It would look for off-screen pages of Video RAM and assign them to DOS VMs on an as-needed basis, so that the running DOS programs could interface directly with the EGA/VGA hardware and do all the interesting read/write magic. The contents of the planes would then be read by the VDD and passed to the grabber to render in the DOS session's window.
+
+Unfortunately, there are a couple of problems with this approach on modern hardware. First of all, there's the concept of an off-screen page of VRAM. While modern graphics cards do of course have orders of magnitude more VRAM than is needed to display a single frame on the screen, assigning an off-screen page to a DOS VM is easier said than done. The simplest way might be to grab the first page beyond the end of the framebuffer, which will typically have an offset considerably larger than the 256 kiB VRAM size of the original VGA. We could use bank switching to map it somewhere in the physical range `A0000h-B0000h`, but then would that be guaranteed to work if Windows is running in a linear mode? Allocating a page from the linear framebuffer itself would have a very low chance of success, since most (if not all) hardware would map that buffer in a way that bypasses all the EGA/VGA-style addressing mechanisms.
+
+A more promising approach would be to allocate the first 256 kiB of VRAM for this, and have the graphics card render the display starting from that offset. VBE does in fact provide [a function](https://fd.lod.bz/rbil/interrup/video/104f07.html#316) for this, but it turns out that newer hardware [doesn't bother to implement that function](https://www.vogons.org/viewtopic.php?t=57420). In fact, it doesn't even give any indication that the function's not implemented, so I can't even detect it at runtime. So basically, that approach is off-limits too, since I want this driver to work well on even the newest hardware.
+
+Secondly, even if I could reliably find an off-screen VRAM page and map it somewhere in the physical `A0000h-B0000h` range, while Windows is in a VBE mode, there would _still_ be no guarantee that the graphics card would let me treat it like EGA/VGA RAM. There's probably a line in some spec somewhere that says it _should_, but my experience of working on this tells me that modern graphics cards pay very little attention to what they "should" be doing for legacy support once they're in a high-resolution VBE mode!
+
+So, unfortunately, there is no way to run DOS programs in a planar EGA/VGA mode inside a window while using this driver. Using `VBEVMDIB.3GR` will ensure that any DOS sessions that try to use one of these modes get forced into fullscreen (although there might be some display corruption when this happens).
+
+There is a silver lining, however: one of the modes introduced by the VGA doesn't require any of this planar trickery. Mode `13h`, aka 320×200 256-colour, presents a linear 64,000-byte framebuffer at address `A0000h`, which can easily be replaced by virtual memory, just like the framebuffers used in the CGA modes. The grabber that came with Windows 3.1 didn't support this mode (possibly because Windows itself only ran in 16 colours out of the box), but `VBEVMDIB.3GR` does! This means you can run 256-colour games in a window while using this driver, as long as they don't [put the VGA back in planar mode](http://www.phatcode.net/res/224/files/html/ch47/47-01.html#Heading1) (which quite a few games did - oh well...). You can see _Rayman_ (1995) running successfully in mode `13h` in the screenshot above, and its default "PCI1" video mode doesn't use planar mode at all, so it is playable!
+
+Long story short, you can window graphical programs that run in CGA modes, or 256-colour VGA mode, but unfortunately **not** planar EGA/VGA modes.
+
+#### Frame-rate regulation for windowed DOS sessions
+
+A lot of DOS games poll the ["input status 1" register](https://fd.lod.bz/rbil/ports/other/p03d803df.html#table-P0818) to determine when the display is in vertical retrace, and use this to regulate the rendering frame-rate. When running in a window, this register is virtualized by the Virtual Display Driver, in this case `VDDVBE.386`. Microsoft wrote an algorithm where the register would appear as "not in vertical retrace" 255 times, then "in vertical retrace" 12 times, no matter what the time interval was between the polls. In fact, they got it a bit mixed up - it would appear "in vertical retrace" every second poll of the first 255... Anyway, that may have worked to delay display refreshes on a 386, but it won't cut the mustard on modern CPUs that are orders of magnitude faster!
+
+Because of this, `VDDVBE.386` can use timer events to simulate the vertical retrace timing (slightly) more accurately, using a period calculated based on the timing programmed by the DOS program / game into the CRTC registers. This function only activates if the user's config suggests that the CPU can handle it. That is to say, these timer events are only used if the period is no shorter than either `SwapBuffersInterval` (documented above) or the `WindowUpdateTime` setting in the `[386Enh]` section of `SYSTEM.INI`[^3].
+
+For example, if you have a game in a window that wants to run at 60fps (16 ms per frame), your `SwapBuffersInterval` is 16 ms (the default) and your `WindowUpdateTime` is 50 ms (also the default), then timer events will be used to simulate the vertical retrace period accurately. However, if the game wants to run at 70fps (14 ms per frame), timer events will not be used, and `VDDVBE.386` will fall back to the old 255/12 algorithm. To make it use timer events, you would have to reduce the `SwapBuffersInterval` and/or `WindowUpdateTime` to at most 14.
+
+Generally, if you plan to run DOS games windowed, it's a good idea to set both `SwapBuffersInterval` and `WindowUpdateTime` as short as possible (without saturating the CPU).
+
+#### The vertical retrace IRQ
+
+The EGA introduced an optional interrupt signal associated with the vertical retrace, on IRQ2. Unfortunately, hardware implementation of this over the years has been [patchy at best](https://scalibq.wordpress.com/2022/12/06/the-myth-of-the-vertical-retrace-interrupt/). I decided to virtualize this for windowed DOS sessions (since I had gone to the trouble of setting up timer events anyway). So if you have a DOS game that wants to use IRQ2 to signal the next frame, you can try running it in a window, with an appropriately short `SwapBuffersInterval` and `WindowUpdateTime`!
+
+Unfortunately, the practical uses for this are probably nil, since the most reliable implementation of this IRQ was on the original EGA, and any games built for that are likely to use one of the EGA display modes, which (as explained above) can't be windowed. Oh well!
+
+### Windows 3.1 refusing to boot with your GPU?
 
 Windows may get stuck on the logo when you try to boot it with certain graphics card option ROMs. This happens regardless of whether or not you try to use this driver. It may be caused by a stack overflow in the logo code in `WIN.COM` when it tries to do an `int 10h` call. Another manifestation of this, which I have personally experienced, is that Windows boots successfully, but then gets caught in a loop if you try to start a DOS prompt in Standard Mode.
 
 To work around this issue, you can try using the `AUXSTACK.COM` TSR, included in newer releases. Simply run `AUXSTACK.COM` before starting Windows, and it will allocate 1 kiB of Conventional Memory to use as an auxiliary stack and prevent the overflow from occurring. I've only tested it in the specific case I mentioned above (failure to start a DOS prompt in Standard Mode) but hopefully it will also work for other cases...
 
-[^1]: In the specific case of DOSBox-X, this list can actually be modified using the `VESAMOED` command, which is documented [here](https://dosbox-x.com/wiki/DOSBox%E2%80%90X%E2%80%99s-Supported-Commands). More generally, however, this is obviously not the case.
+## Build Process
+
+Thanks to @lss4 for [pointing out some omissions](https://github.com/PluMGMK/vbesvga.drv/issues/19) in the setup process!
+
+Note that the only step below which requires Windows is the initial installation of Visual C++ - the build process itself is purely DOS-based and can be automated using a batch file (or a Dosbox configuration file on a modern system!).
+
+### `vbesvga.drv` (needed in both Standard and 386 Enhanced Mode)
+
+* Install both the [Win16 DDK](http://www.win3x.org/win3board/viewtopic.php?t=2776) and [a contemporary version of Visual C++](http://www.win3x.org/win3board/viewtopic.php?t=1375)
+* Obtain a copy of `EXE2BIN.EXE` (e.g. from FreeDOS, or from the Open Watcom compiler) and place it somewhere in your `PATH`
+* Place the `VBESVGA` folder from this repository in the DDK hierarchy, at `286/DISPLAY/8PLANE/VBESVGA`
+* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
+* In addition, ensure `286\TOOLS` from the DDK is in your `PATH` and `286\INC` is in your `INCLUDE` variable
+* Go to the `VBESVGA\mak` folder and run `make vbesvga.mak`; this should create the file `VBESVGA.DRV` which can be loaded by Windows
+
+### `vddvbe.386` (needed only in 386 Enhanced Mode)
+
+* Place the `VDDVBE` folder from this repository in the DDK hierarchy, at `386/VDDVBE`
+* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
+* In addition, ensure `386\TOOLS` from the DDK is in your `PATH`
+* Go to the `VDDVBE` folder and run `nmake`; this should create the file `VDDVBE.386` which can be loaded by Windows
+
+### `vbevmdib.3gr` (needed only in 386 Enhanced Mode for running graphical DOS programs in windowed mode)
+
+* Place the `VBEGRAB` folder from this repository in the DDK hierarchy, at `386/VBEGRAB`
+* Ensure `MSVCVARS.BAT` from Visual C++ has been run to setup the environment
+* In addition, ensure `386\TOOLS` from the DDK is in your `PATH`
+* Go to the `VBEGRAB` folder and run `nmake`; this should create the file `VBEVMDIB.3GR` which can be loaded by Windows
+
+### Tip for using the DDK on a modern system
+
+To make the debugger `WDEB386` work, you need to change some bytes:
+
+* At position `63D8`, you need to change `0F 24 F0` to `66 33 C0`
+* At position `63DF`, you need to change `0F 24 F8` to `66 33 C0`
+
+This removes references to the [`TR6` and `TR7` registers](https://en.wikipedia.org/wiki/Test_register), which crash the system since they only existed on the 386, 486 and a few other less-well-known chips!
+
+## `TODO` list
+
+* Add a way to produce release (non-debug) builds to my workflow
+* Add a proper installation mechanism instead of having the user manually edit `SYSTEM.INI` (there are two PRs for this that I must review again!)
+* Figure out the root cause of issue #38 and see if it affects anything else
+* Add a [minimum implementation of DCI](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM) to `VBESVGA.DRV`
+* Make sure the driver works just as well on Win9x as it does on Win3.1 (cf. issue #46)
+* Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
+* Consider efficiency improvements in `swap_buffers` and/or `VDD_SwapBuffers`, to reduce idle CPU usage (cf. issue #32)
+* Consider adding a virtual RAMDAC to the double-buffering code in `VDDVBE.386` to allow standard 256-colour modes to be emulated on hardware that only supports high-colour VBE modes
+* Investigate adding Windows 3.0 support (perhaps still requiring a 286, i.e. refusing to boot on anything older)
+* Investigate using VBE/AF where available for 2D acceleration (cf. issue #27)
+* Investigate adding Windows 1/2 support (cf. issue #49)
+
+[^1]: In the specific case of DOSBox-X, this list can actually be modified using the `VESAMOED` command, which is documented [here](https://dosbox-x.com/wiki/DOSBox%E2%80%90X%E2%80%99s-Supported-Commands) - thanks to @blue-devil-93 for [pointing this out](https://github.com/PluMGMK/vbesvga.drv/issues/84)! More generally, however, this is obviously not the case.
+[^2]: Just try running a VGA-mode program under QEMU with hardware virtualization enabled - drawing the display can take several seconds!
+[^3]: This setting, also in milliseconds, defines how quickly the display can update in a DOS session window. It is not specific to this driver, but I only found out about it recently, so I thought I should mention it here!
