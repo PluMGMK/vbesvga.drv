@@ -2101,6 +2101,7 @@ BeginProc VDD_State_Calc_Framerate, PUBLIC
 @@:	lea	ecx,[edx+ecx*8]
 
 	cdq
+	jecxz	VS_CFR_BadState	; some BIOSes may set HTotal to 0 in modeset...
 	div	ecx		; EAX := horiz refresh rate
 
 	movzx	ecx, [edi.VDD_Stt.C_VTotal]
@@ -2114,6 +2115,7 @@ BeginProc VDD_State_Calc_Framerate, PUBLIC
 	jz	short @F
 	shl	ecx,1		; divide scan line clock by 2 --> double scanlines
 @@:	cdq
+	jecxz	VS_CFR_BadState	; some BIOSes set VTotal to 0 in modeset...
 	div	ecx		; EAX := vertical refresh rate
 
 	; Now AL is hopefully the framerate in Hz. We divide 1000 by AL to get
@@ -2144,6 +2146,11 @@ VS_CFR_Exit:
 	pop	edx
 	pop	ecx
 	ret
+
+VS_CFR_BadState:
+	; here ECX == 0, and we want AX == 0
+	mov	eax,ecx
+	jmp	short VS_CFR_Exit
 
 VxD_DATA_SEG
 DotClockTable label	dword	; clock select bits
