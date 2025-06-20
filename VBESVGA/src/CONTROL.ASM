@@ -129,20 +129,20 @@ cBegin
 WriteAux <'Ctrl'>
 	xor	ax,ax			;Assume error
 	assumes ds,nothing
-	mov	bx,function
+	mov	si,function
 
         les     bx,lp_in_data           ;Get pointer to the data
 
-	cmp	bx,GETCOLORTABLE
+	cmp	si,GETCOLORTABLE
 	je	get_color_table
 
-        cmp     bx,QUERYESCSUPPORT
+        cmp     si,QUERYESCSUPPORT
 	jne	exit_control		;Is not set, get, query
 
-        mov     bx,wptr es:[bx]         ;Get queried escape function number
-	cmp	bx,QUERYESCSUPPORT
+        mov     si,wptr es:[bx]         ;Get queried escape function number
+	cmp	si,QUERYESCSUPPORT
 	je	exit_control_inc_ax
-        cmp     bx,GETCOLORTABLE
+        cmp     si,GETCOLORTABLE
 	je	exit_control_inc_ax
 
         jmp     short exit_control      ;We don't support it
