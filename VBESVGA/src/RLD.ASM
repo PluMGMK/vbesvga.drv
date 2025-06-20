@@ -1359,36 +1359,32 @@ decode_rle_4_xlat:
 	; translation is unconditional as we will always have at least
 	; 256 colours, i.e. more than 16, so it can't be a 1:1 map.
 decode_rle_4:
-	push	bp
+	push	si
 	push	bx
 	push	dx	; save this in case we're called from clip version
-
-	; load this pointer before we trash BP!
-	push	offset decode_rle_4_ret
-	push	[fn_rep_stos_pair]
 
         mov     ah,al
         and     al,0Fh
         shr     ah,4
-	mov	bp,ax	; backup the left colour
+	mov	si,ax	; backup the left colour
         call	load_xlated_colour
 
 	push	dx
 	push	ax
-	mov	ax,bp	; get back the left colour
+	mov	ax,si	; get back the left colour
 	mov	al,ah	; put it in AL
         call	load_xlated_colour
 	pop	bx
-	pop	bp
-	; now the right colour is in BP:BX and the left in DX:AX!
+	pop	si
+	; now the right colour is in SI:BX and the left in DX:AX!
 
 decode_rle_4_1:
-        ret	; this "returns" to fn_rep_stos_pair, which then returns to:
+	call	[fn_rep_stos_pair_checked]
 
 decode_rle_4_ret:
 	pop	dx
 	pop	bx
-	pop	bp
+	pop	si
         ret
 
 decode_rle4  endp
@@ -1765,11 +1761,11 @@ rep_stos_colour4_386	endp
 ;--------------------------Public-Routine------------------------------;
 ; rep_stos_colpair
 ;
-;   Write CX pixels of alternating colours in DX:AX and BP:BX
+;   Write CX pixels of alternating colours in DX:AX and SI:BX
 ;
 ; Entry:
 ;       DX:AX	= physical colour for first pixel
-;	BP:BX	= physical colour for second pixel
+;	SI:BX	= physical colour for second pixel
 ;	CX	= number of desired pixels
 ;	ES:DI --> colpair pattern destination (64*bpp bytes)
 ; Returns:
@@ -1777,9 +1773,9 @@ rep_stos_colour4_386	endp
 ; Error Returns:
 ;       None
 ; Registers Preserved:
-;       ES,DS,BP,BX,DX,SI
+;       ES,DS,BP
 ; Registers Destroyed:
-;       AX,CX,DI,FLAGS
+;       AX,CX,BX,DX,SI,DI,FLAGS
 ; Calls:
 ;       None
 ; History:
@@ -1848,7 +1844,7 @@ rep_stos_colpair4_286	proc near
 
 	cmp	ax,bx	; colours the same?
 	jne	@F
-	cmp	dx,bp
+	cmp	dx,si
 	je	rep_stos_colour4_286
 	; two STOSWs per colour!
 @@:	shl	cx,1
@@ -1856,7 +1852,7 @@ rep_stos_colpair4_286	proc near
 @@:	stosw
 	xchg	dx,ax
 	xchg	bx,dx
-	xchg	bp,bx
+	xchg	si,bx
 	loop	@B
 @@:	ret
 rep_stos_colpair4_286	endp
@@ -1866,7 +1862,7 @@ rep_stos_colpair4_386	proc near
 
 	cmp	ax,bx	; colours the same?
 	jne	@F
-	cmp	dx,bp
+	cmp	dx,si
 	je	rep_stos_colour4_386
 
 @@:	.386
@@ -1874,7 +1870,7 @@ rep_stos_colpair4_386	proc near
 	xchg	ax,dx	; stash the upper half of EAX in DX
 	ror	eax,10h
 	ror	ebx,10h
-	xchg	bx,bp	; stash the upper half of EBX in BP
+	xchg	bx,si	; stash the upper half of EBX in SI
 	ror	ebx,10h
 
 @@:	stosd
@@ -1882,7 +1878,7 @@ rep_stos_colpair4_386	proc near
 	loop	@B
 
 	ror	ebx,10h
-	xchg	bx,bp	; restore the upper half of EBX from BP
+	xchg	bx,si	; restore the upper half of EBX from SI
 	ror	ebx,10h
 	ror	eax,10h
 	xchg	ax,dx	; restore the upper half of EAX from DX
@@ -1892,12 +1888,12 @@ rep_stos_colpair4_386	proc near
 rep_stos_colpair4_386	endp
 
 rep_stos_colpair3	proc near
-	; We want to store DL:AX followed by BPL:BX (BPL is not a thing on IA-32)...
+	; We want to store DL:AX followed by SIL:BX (SIL is not a thing on IA-32)...
 	; Let's turn it into BX:DX:AX so it can be a nice stream of STOSWs
 	mov	dh,bl
 	xor	bl,bl
-	and	bp,0FFh
-	or	bx,bp
+	and	si,0FFh
+	or	bx,si
 	xchg	bl,bh
 
 	test	di,1	; at an odd address?
@@ -1927,9 +1923,9 @@ rep_stos_colpair3	proc near
 @@:	; multiply even part of CX by 3/2
 	shr	cx,1
 	pushf		; remember if we carried
-	mov	bp,cx
+	mov	si,cx
 	shl	cx,1
-	add	cx,bp
+	add	cx,si
 	jz	@@check_last
 
 @@:	stosw
@@ -2037,11 +2033,7 @@ rep_stos_colour_checked	endp
 rep_stos_colpair_checked	proc near
 	push	di
 	xchg	cx,ax
-	shl	ax,1
 	call	[fn_adv_dest]	; NOT checked: we only want to know CF
-	; need to restore AX and also preserve CF
-	adc	al,0
-	shr	ax,1
 	xchg	cx,ax
 	pop	di
 	jc	@F
@@ -2060,8 +2052,7 @@ rep_stos_colpair_checked	proc near
 	neg	ax
 	cwd	; AX should always be <8000h in this situation
 	mov	cx,[colour_format]
-	shr	cx,3+8-1; -1 since we're counting pixel pairs
-	and	cl,not 1
+	shr	cx,3+8
 	div	cx
 	; now AX = whole pixels remaining in bank, and DX = leftover bytes
 	mov	cx,ax	; fill this many pixels
@@ -2070,12 +2061,20 @@ rep_stos_colpair_checked	proc near
 	pop	dx
 	pop	ax
 
-	; and save the pixel pair count, and the flags so we remember whether
+	; and save the pixel count, and the flags so we remember whether
 	; or not there was a remainder:
 	push	cx
 	pushf
 	; fill the rest of the bank
-	call	[fn_rep_stos]
+	push	ax
+	push	dx
+	push	si
+	push	bx
+	call	[fn_rep_stos_pair]
+	pop	bx
+	pop	si
+	pop	dx
+	pop	ax
 	; get back flags and count
 	popf
 	pop	cx
@@ -2086,7 +2085,7 @@ rep_stos_colpair_checked	proc near
 	push	dx
 	call	[fn_stos_checked] ; destroys AX/DX
 	mov	ax,bx
-	mov	dx,bp
+	mov	dx,si
 	call	[fn_stos_checked] ; destroys AX/DX
 	pop	dx
 	pop	ax
@@ -2099,8 +2098,11 @@ rep_stos_pair_checked_innextbank:
 	sub	ax,cx	; subtract the pixels we've done so far
 	mov	cx,ax	; make that our new count
 	pop	ax	; get back the colour
+	jz	@F	; if no colours left, then return
 	; and go!
 	jmp	[fn_rep_stos_pair]
+
+@@:	ret
 rep_stos_colpair_checked	endp
 
 sEnd
