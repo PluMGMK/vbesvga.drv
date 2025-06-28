@@ -563,7 +563,7 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
 	jz	short @F
 
-	; Schedule a "BGrnd notify" event - since we don't set fWaitAtt,
+	; Schedule a "BGrnd notify" event - since we don't set fVDD_WaitAtt,
 	; this will immediately also do an "FGrnd notify", effectively
 	; bouncing the VM back and forward. This will reset the graphics
 	; card into the correct VBE mode and redraw the screen, clearing
@@ -827,6 +827,7 @@ smn_regs_setup:
 	; will get trapped back into the VDD's modeset routine and
 	; muck around with any state that we're trying to preserve!
 	push	[edx.VDD_Flags]
+	ClrFlag	[edx.VDD_Flags],fVDD_WaitAtt
 	SetFlag	[edx.VDD_Flags],fVDD_ModeSet
 	TestMem	[edx.VDD_Flags],fVDD_Win
 	jz	short @F
