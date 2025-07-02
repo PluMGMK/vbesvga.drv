@@ -60,7 +60,6 @@ blt88	PROC	NEAR
 	and	word ptr device_flags,NOT DEVFLAG_MOVSB
 	call	compile_color_pattern_fetch
 @@:	call	compile_rop
-	; FIXME: Going bytewise, the transparency is not handled correctly!
 	call	compile_color_stosb
 	pop	bx
 	call	compile_inner_loop_end
