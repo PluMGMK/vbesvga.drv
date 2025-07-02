@@ -352,8 +352,10 @@ wct1a:	jnc	@F		;decrement to make JC instead of JNC
 	;in the unlikely event that we wrap to the next segment, then figure out
 	; how many inner loop iterations are needed before and after the wrap
 	cwd
+	push	bx		;ensure we don't trash translate table pointer
 	mov	bx,1234H	;1234H becomes (***_xExt_bytes/inner_loop_count)
 wct2:	idiv	bx
+	pop	bx		;ensure we don't trash translate table pointer
 	inc	ax		;guarantee it is not zero on this codepath
 	mov	ss:[1234H],ax	;1234H becomes offset of ***_seg_wrap
 wct3:	sub	cx,ax		;CX := iterations left to end of segment
@@ -1268,6 +1270,9 @@ store_in_prev_bank	ENDP
 ;	If the blt is not a transparent blt, then the value is always stored.
 
 color_stosb_mask_template:
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, which never need this masking code :3
 	mov	bx,01234H			;this becomes the phase (0/1/2/3)
 csmp:	and	al,ss:[bx+05678H]		;05678H becomes ptr to colour_mask
 csmpm:	inc	bl
@@ -1311,6 +1316,9 @@ COLOR_STOSB_XPAR16_FIX	=  $ - csx16f + 2
 COLOR_STOSB_XPAR16_PTRLB=  $ - csx16pl + 2
 
 color_stosb_xpar_template_24:
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, whereas this code is for 24bpp modes :3
 	mov	bx,01234H			;this becomes the phase (0/1/2)
 csx24p:	cmp	bl,2
 	jb	csx24e				;byte 0 or 1, go stash it
@@ -1343,6 +1351,9 @@ COLOR_STOSB_XPAR24_FIX2	=  $ - csx24f2 + 1
 COLOR_STOSB_XPAR24_PTRLW=  $ - csx24pl + 2
 
 color_stosb_xpar_template_32:
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, whereas this code is for 32bpp modes :3
 	mov	bx,di
 	and	bx,11b				;get the phase
 	test	bl,2
@@ -1374,6 +1385,9 @@ COLOR_STOSB_XPAR32_PTRUB=  $ - csx32pu + 2
 
 color_stosb_xpar_template_32_386:
 	.386
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, whereas this code is for 32bpp modes :3
 	mov	bx,di
 	and	bx,11b				;get the phase
 	cmp	bl,3
