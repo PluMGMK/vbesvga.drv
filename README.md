@@ -44,6 +44,7 @@ The following changes are needed to your `C:\WINDOWS\SYSTEM.INI` file:
 |`SwapBuffersInterval` | 0 - 55 | Time in milliseconds between buffer swaps if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value of 0 **disables** double-buffering | 16 |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
 |`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits; disable this to prefer 32-bit modes which give the same colour depth but use more RAM | 1 |
+|`BounceOnModeset` | 0 or 1 | This causes the Windows GUI to "bounce" to the background and immediately return to the foreground, when a windowed or background DOS box does a modeset (e.g. when starting up a windowed DOS box). Usually required to prevent display corruption, but does cause an unpleasant flash. You can try disabling it to prevent the flash, but if it causes display corruption you will need to turn it back on! | 1 |
 
 #### Example configuration
 
