@@ -1,0 +1,13 @@
+*.OBJ
+*.MAP
+*.LST
+*.SYM
+*.DRV
+*.386
+*.3GR
+*.BIN
+*.RES
+*.COM
+*.LIB
+MAKEREL
+*.zip
