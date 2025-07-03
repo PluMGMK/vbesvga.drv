@@ -44,7 +44,7 @@ The following changes are needed to your `C:\WINDOWS\SYSTEM.INI` file:
 |`SwapBuffersInterval` | 0 - 55 | Time in milliseconds between buffer swaps if [double-buffering](#linear-modes-and-double-buffering) is enabled; specifying a value of 0 **disables** double-buffering | 16 |
 |`PreferBankedModes` | 0 or 1 | If set to 1, then the driver searches for bank-switching modes **before** searching for linear modes; may be useful for debugging | 0 |
 |`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits; disable this to prefer 32-bit modes which give the same colour depth but use more RAM | 1 |
-|`BounceOnModeset` | 0 or 1 | This causes the Windows GUI to "bounce" to the background and immediately return to the foreground, when a windowed or background DOS box does a modeset (e.g. when starting up a windowed DOS box). Usually required to prevent display corruption, but does cause an unpleasant flash. You can try disabling it to prevent the flash, but if it causes display corruption you will need to turn it back on! | 1 |
+|`BounceOnModeset` | 0 or 1 | This causes the Windows GUI to "bounce" to the background and immediately return to the foreground, when a windowed or background DOS box does a modeset (e.g. when starting up a windowed DOS box). Usually required to prevent display corruption, but does cause an unpleasant flash. You can try disabling it to prevent the flash, but if it causes display corruption you will need to turn it back on! (It is safe to disable this under VirtualBox and DOSBox-X, but not under QEMU or Microsoft Virtual PC.) | 1 |
 
 #### Example configuration
 
@@ -260,9 +260,11 @@ This removes references to the [`TR6` and `TR7` registers](https://en.wikipedia.
 * Add a proper installation mechanism instead of having the user manually edit `SYSTEM.INI` (there are two PRs for this that I must review again!)
 * Add a [minimum implementation of DCI](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM) to `VBESVGA.DRV`
 * Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
+* See if `VDDVBE.386` can work [on newer NVIDIA hardware](https://github.com/PluMGMK/vbesvga.drv/issues/94) (I have an affected card but need to swap it in for testing, which is manual-labour-intensive)
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
 * Consider efficiency improvements in `swap_buffers` and/or `VDD_SwapBuffers`, to reduce [idle CPU usage](https://github.com/PluMGMK/vbesvga.drv/issues/32)
 * Consider adding a virtual RAMDAC to the double-buffering code in `VDDVBE.386` to allow standard 256-colour modes to be emulated on hardware that only supports high-colour VBE modes
+* See if `VDDVBE.386` can work [on newer AMD hardware](https://github.com/PluMGMK/vbesvga.drv/issues/95) (I don't have any affected hardware)
 * Investigate adding [Windows 3.0 support](https://github.com/PluMGMK/vbesvga.drv/issues/49) (perhaps still requiring a 286, i.e. refusing to boot on anything older)
 * Investigate [using VBE/AF](https://github.com/PluMGMK/vbesvga.drv/issues/27) where available for 2D acceleration
 * Investigate adding [Windows 1/2 support](https://github.com/PluMGMK/vbesvga.drv/issues/49)
