@@ -209,8 +209,10 @@ Inst_3 InstDataStruc <,,EGA_I_Addr3,EGA_I_Len3,ALWAYS_Field> ; Video parms ptr
 Inst_4 InstDataStruc <,,EGA_I_Addr4,EGA_I_Len4,ALWAYS_Field>
 
 ;*******
-; INI switch string
+; INI switch strings
 	EXTRN	VDD_SVGA_Mem_Ini:BYTE
+	EXTRN	VDD_VBESVGA_Sec:BYTE
+	EXTRN	VDD_Bounce_Ini:BYTE
 IFDEF SysVMin2ndBank
 	EXTRN	VDD_2ndBank_Ini:BYTE
 ENDIF
@@ -330,6 +332,17 @@ sci_set_vp:
 	xor	dl, dl
 	mov	[VT_Flags],edx			; Init flags
 	mov	[Vid_Flags],0
+
+;*******
+;Check if user disabled BG/FG bounce on windowed modeset
+;
+	or	eax, TRUE			; default = bounce
+	mov	esi, OFFSET32 VDD_VBESVGA_Sec
+	mov	edi, OFFSET32 VDD_Bounce_Ini
+	VMMCall Get_Profile_Boolean
+	not	eax				; track this as "don't bounce"
+	and	eax, fVid_No_Bounce
+	or	[Vid_Flags], eax
 
 ;*******
 ;Allocate part of VM control block for VDD usage

@@ -921,6 +921,7 @@ DefFlag Vid_Dont_Set_Mode   10	; set after a forced mode change, if done before
 DefFlag Vid_SR_Section	    12	; Special save restore "critical" section
 DefFlag Vid_SR_Latch_res    13	; Restore latches at end of SR section
 DefFlag Vid_SR_regs_saved   14	; regs saved for CRTC owner while in SR section
+DefFlag	Vid_No_Bounce	    15	; don't do BG/FG bounce for focus VM on modeset
 EndFlagSet fVid, 32
 
 ;***************************************************************************

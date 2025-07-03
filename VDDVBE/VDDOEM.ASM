@@ -563,6 +563,10 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
 	jz	short @F
 
+	; allow the user to disable bouncing
+	TestMem	[Vid_Flags],fVid_No_Bounce
+	jnz	short @F
+
 	; Schedule a "BGrnd notify" event - since we don't set fVDD_WaitAtt,
 	; this will immediately also do an "FGrnd notify", effectively
 	; bouncing the VM back and forward. This will reset the graphics
