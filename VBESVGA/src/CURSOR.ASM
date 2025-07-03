@@ -19,7 +19,7 @@ include macros.mac
 include windefs.inc
 include gdidefs.inc
 include vgareg.inc
-; include hwcurs.inc
+include display.inc
 include swcurs.inc
 include cursor.inc
 
@@ -154,11 +154,18 @@ cProc	MoveCursor,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
 	parmW	abs_x				;x coordinate of cursor
 	parmW	abs_y				;y coordinate of cursor
 cBegin
-	EnterCrit				;need a coherent state here
 	mov	ax,abs_x
+        mov     dx,abs_y
+
+	; sanity check:
+	cmp	ax,[VScreen_Width]
+	ja	MoveCursor_Busy
+	cmp	dx,[VScreen_Height]
+	ja	MoveCursor_Busy
+
+	EnterCrit				;need a coherent state here
 	mov	cursor_xcoord,ax
-        mov     ax,abs_y
-	mov	cursor_ycoord,ax
+	mov	cursor_ycoord,dx
 	or	cursor_flags,NEW_COORDS
 	LeaveCrit a
 
@@ -173,11 +180,10 @@ Move_cursor_busy_0:
 	EnterCrit				;obtain a coherent state
 	mov	cx,cursor_xcoord
 	mov	bx,cursor_ycoord
-	and	cursor_flags,NOT NEW_COORDS
-	LeaveCrit a
-
 	mov	cursor_xdraw,cx 		;these will be the coordinates
 	mov	cursor_ydraw,bx 		; the cursor will be drawn at
+	and	cursor_flags,NOT NEW_COORDS
+	LeaveCrit a
 
 	test	cursor_flags,LOCAL_LOAD
 	jz	@F
@@ -374,67 +380,6 @@ Get_Cursor_Width_Mask_Done:
 	ret
 
 Get_Cursor_Width_Mask	ENDP
-
-
-
-
-;	Bit_Double_Cursor
-;
-;	This routine assumes that the the non-transparent cursor data is
-;	at most 16 bits wide and it takes those 16 bits and bit-doubles
-;	them out to 32 bits so that a hardware cursor can be implemented.
-;	PARMS:
-;	ds:si	pointer to cursor data (this is the data -- not the header)
-;	es:di	place to store bit doubled cursor
-;	dx	left-alignment shift count -- the amount to shift left one
-;		row of the cursor data at ds:si so that the first non-
-;		transparent bit position becomes the high bit.
-
-PUBLIC	Bit_Double_Cursor
-Bit_Double_Cursor	PROC	NEAR
-
-        push    bp
-	mov	bp,40H				;now bit-double -- grumble!
-	cld
-
-Bit_double_a_row:
-	lodsw
-	mov	bx,ax
-	lodsw					;ax:bx has 32 bit cursor row
-        xchg    al,ah
-	xchg	bl,bh
-	mov	cx,dx				;# to left-align active data
-	or	cx,cx
-	je	Bit_double_aligned
-
-@@:	shl	ax,1				;when we are done aligning, the
-	rcl	bx,1				; active data will all be in ax
-	loop	@B				; since it is < 16 bits wide
-
-Bit_double_aligned:
-	push	dx
-	mov	cx,16
-@@:	rol	bx,1				;bit double ax into dx:bx
-	rcl	dx,1
-	rcl	ax,1
-	ror	bx,1
-	rol	bx,1
-	rcl	dx,1
-	rcl	ax,1
-	loop	@B
-
-	xchg	al,ah
-	xchg	dl,dh
-	stosw
-	mov	ax,dx
-	stosw
-	pop	dx
-	dec	bp
-	jne	Bit_double_a_row
-	pop	bp
-	ret
-
-Bit_Double_Cursor	ENDP
 
 
 
