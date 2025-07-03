@@ -256,17 +256,15 @@ This removes references to the [`TR6` and `TR7` registers](https://en.wikipedia.
 
 ## `TODO` list
 
-* Add a way to produce release (non-debug) builds to my workflow
 * Add a proper installation mechanism instead of having the user manually edit `SYSTEM.INI` (there are two PRs for this that I must review again!)
-* Figure out the root cause of issue #38 and see if it affects anything else
 * Add a [minimum implementation of DCI](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM) to `VBESVGA.DRV`
-* Make sure the driver works just as well on Win9x as it does on Win3.1 (cf. issue #46)
+* Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
-* Consider efficiency improvements in `swap_buffers` and/or `VDD_SwapBuffers`, to reduce idle CPU usage (cf. issue #32)
+* Consider efficiency improvements in `swap_buffers` and/or `VDD_SwapBuffers`, to reduce [idle CPU usage](https://github.com/PluMGMK/vbesvga.drv/issues/32)
 * Consider adding a virtual RAMDAC to the double-buffering code in `VDDVBE.386` to allow standard 256-colour modes to be emulated on hardware that only supports high-colour VBE modes
-* Investigate adding Windows 3.0 support (perhaps still requiring a 286, i.e. refusing to boot on anything older)
-* Investigate using VBE/AF where available for 2D acceleration (cf. issue #27)
-* Investigate adding Windows 1/2 support (cf. issue #49)
+* Investigate adding [Windows 3.0 support](https://github.com/PluMGMK/vbesvga.drv/issues/49) (perhaps still requiring a 286, i.e. refusing to boot on anything older)
+* Investigate [using VBE/AF](https://github.com/PluMGMK/vbesvga.drv/issues/27) where available for 2D acceleration
+* Investigate adding [Windows 1/2 support](https://github.com/PluMGMK/vbesvga.drv/issues/49)
 
 [^1]: In the specific case of DOSBox-X, this list can actually be modified using the `VESAMOED` command, which is documented [here](https://dosbox-x.com/wiki/DOSBox%E2%80%90X%E2%80%99s-Supported-Commands) - thanks to @blue-devil-93 for [pointing this out](https://github.com/PluMGMK/vbesvga.drv/issues/84)! More generally, however, this is obviously not the case.
 [^2]: Just try running a VGA-mode program under QEMU with hardware virtualization enabled - drawing the display can take several seconds!
