@@ -179,7 +179,7 @@ compile_color_pattern_fetch	ENDP
 ; commented-out version only works if pxbytes is a power of two
 ; TODO: Make this a modal function?
 ;pattern_yupdate_template:
-;	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
+;	add	bp,12H		; 12h becomes size in bytes of a pattern row
 ;pyud0:	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
 ;pyud1:	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
 ;					     ; for start of next line. 5678H
@@ -194,7 +194,7 @@ compile_color_pattern_fetch	ENDP
 ;PYUD_PATMASK_OFFSET = $ - pyud1 + 2
 ;I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
 pattern_yupdate_template:
-	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
+	add	bp,12H		; 12h becomes size in bytes of a pattern row
 pyud0:	jnc	pyud1
 	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
 pyud1:	cmp	bp,5678H	; 5678h becomes row counter mask (row size * 7)
@@ -209,7 +209,7 @@ pyud2:	jbe	@F
 
 PYUD_SIZE = $ - pattern_yupdate_template
 PYUD_OFFSET = $ - pattern_yupdate_template
-PYUD_PATSIZE_OFFSET = $ - pyud0 + 2
+PYUD_PATSIZE_OFFSET = $ - pyud0 + 1
 PYUD_PATMASK_OFFSET = $ - pyud1 + 2
 PYUD_PATMASK_OFFSET2 = $ - pyud2 + 2
 I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
@@ -230,7 +230,7 @@ compile_pattern_yupdate PROC	NEAR
 	mov	dx,ax
 	errnz	SIZE_PATTERN-8
 	shr	dx,3				;divide by eight to get one row
-	mov	es:[di - PYUD_PATSIZE_OFFSET],dx
+	mov	es:[di - PYUD_PATSIZE_OFFSET],dl
 	sub	ax,dx				;full size of pattern minus size
 	mov	es:[di - PYUD_PATMASK_OFFSET],ax; of one row = correct mask so
 	mov	es:[di - PYUD_PATMASK_OFFSET2],ax; that the row counter wraps
