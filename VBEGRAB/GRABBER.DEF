@@ -1,0 +1,58 @@
+LIBRARY GRABBER
+
+EXETYPE WINDOWS
+
+PROTMODE
+
+DESCRIPTION 'Microsoft WIN386 Grabber Library V 3.10'
+
+;
+; This program does NOT require a STUB because the target executable
+; does not have a .EXE file extension.
+;
+
+CODE	PRELOAD DISCARDABLE PURE
+
+DATA	NONE
+
+HEAPSIZE 0
+
+;
+; WARNING WARNING WARNING!!!!!!!!!!!!
+;  DO NOT change any of these names or ordinal #s. WINOLDAP.MOD is linked
+;  with a library built from this .DEF file. Changing these would require
+;  WINOLDAP.MOD to be (at least) re-linked.
+;
+; You are also warned that additions to the exports may collide with
+;  additions made in a future version of WIN386.
+;
+;    (C) Copyright MICROSOFT Corp. 1986-1990
+;
+;    ************* MICROSOFT CONFIDENTIAL ******************
+;
+;
+EXPORTS
+	PaintScreen		@1
+	ScreenFree		@2
+	BeginSelection		@3
+	KeySelection		@4
+	MakeSelctRect		@5
+	InvertSelection 	@6
+	RenderSelection 	@7
+	ConsSelecRec		@8
+	EndSelection		@9
+	GetFontList		@10
+	SetPaintFnt		@11
+	UpdateScreen		@12
+	CursorOn		@13
+	CursorPosit		@14
+	CursorOff		@15
+	CheckGRBVersion 	@16
+	AdjustInitEndPt 	@17
+	GetDisplayUpd		@18
+	GrabEvent		@19
+	GrabComplete		@20
+        GrbGetTextColor         @21
+	GrbUnlockApp		@22
+	TranslateWinToFScreen	@23
+	WEP

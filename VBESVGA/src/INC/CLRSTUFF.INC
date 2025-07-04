@@ -1,4 +1,5 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;   es:di -> destination bitmap (or screen)
 ;
 ; clrstuff.inc
 ;
@@ -10,9 +11,10 @@
 ; Color rop inner loops - Opaque first
 ;
 ; entry:
+;   es:di -> destination bitmap (or screen)
 ;   ss:si -> color pattern ( already set to correct byte of pattern for
 ;			     this starting x)
-;   ax = xstart in BYTES
+;   ax = xstart in BYTES (only for ROP C)
 ;   bx = pattern pitch (8, 16, 24 or 32)
 ;   cx = count in PIXELS (guaranteed not zero)
 ;   dh = current xpar mask ( already rotated )
@@ -468,9 +470,9 @@ color_opaque_rop_f endp
 ; Color rop inner loops - Transparent
 ;
 ; entry:
+;   es:di -> destination bitmap (or screen)
 ;   ss:si -> color pattern ( already set to correct byte of pattern for
 ;			     this starting x)
-;   ax = xstart in BYTES
 ;   bx = pattern pitch (8, 16, 24 or 32)
 ;   cx = count in PIXELS (guaranteed not zero)
 ;   dh = current xpar mask ( already rotated )
@@ -889,6 +891,195 @@ color_xpar_rop_f proc
 	; remaining logic is identical to rop 0
 	jmp	cx_rop_0_loop
 color_xpar_rop_f endp
+
+;--------------------------------------------------------------------
+; Masked colour rop inner loops (only 7 and D) - Opaque first
+;
+; entry:
+;   es:di -> destination bitmap (or screen)
+;   ss:si -> color pattern ( already set to correct byte of pattern for
+;			     this starting x)
+;   ss:ax -> colour mask (size == BX SHR 3)
+;   bx = pattern pitch (8, 16, 24 or 32)
+;   cx = count in PIXELS (guaranteed not zero)
+;   dh = current xpar mask ( already rotated )
+;   dl = rotating bit to keep track of pattern byte
+;
+;
+;--------------------------------------------------------------------
+colour_opaque_rop_7_masked proc
+
+	push	bp
+	mov	bp,ax
+
+co_rop_7_masked_loop:
+	mov	bh,bl
+	shr	bh,3	; BH := pxbytes
+
+	push	bp
+@@:	lods	byte PTR ss:[si]
+	and	es:[di],al
+	not	BYTE PTR es:[di]
+	mov	al,[bp]
+	and	es:[di],al
+	inc	di
+	call	colour_check_bank
+	inc	bp
+	dec	bh
+	jnz	@B
+	pop	bp
+
+	rol	dl,1
+	jc	@F
+	loop	co_rop_7_masked_loop
+
+	pop	bp
+	ret
+
+	;update pattern pointer (BH == 0 if we're here)
+@@:	sub	si,bx
+	loop	co_rop_7_masked_loop
+
+	pop	bp
+	ret
+colour_opaque_rop_7_masked endp
+;--------------------------------------------------------------------
+colour_opaque_rop_d_masked proc
+
+	push	bp
+	mov	bp,ax
+
+co_rop_d_masked_loop:
+	mov	bh,bl
+	shr	bh,3	; BH := pxbytes
+
+	push	bp
+@@:	lods	byte PTR ss:[si]
+	not	BYTE PTR es:[di]
+	or	es:[di],al
+	mov	al,[bp]
+	and	es:[di],al
+	inc	di
+	call	colour_check_bank
+	inc	bp
+	dec	bh
+	jnz	@B
+	pop	bp
+
+	rol	dl,1
+	jc	@F
+	loop	co_rop_d_masked_loop
+
+	pop	bp
+	ret
+
+	;update pattern pointer (BH == 0 if we're here)
+@@:	sub	si,bx
+	loop	co_rop_d_masked_loop
+
+	pop	bp
+	ret
+colour_opaque_rop_d_masked endp
+
+;--------------------------------------------------------------------
+; Masked colour rop inner loops (only 7 and D) - Transparent
+;
+; entry:
+;   es:di -> destination bitmap (or screen)
+;   ss:si -> color pattern ( already set to correct byte of pattern for
+;			     this starting x)
+;   ss:ax -> colour mask (size == BX SHR 3)
+;   bx = pattern pitch (8, 16, 24 or 32)
+;   cx = count in PIXELS (guaranteed not zero)
+;   dh = current xpar mask ( already rotated )
+;   dl = rotating bit to keep track of pattern byte
+;
+;
+;--------------------------------------------------------------------
+colour_xpar_rop_7_masked proc
+	push	bp
+	mov	bp,ax
+
+cx_rop_7_masked_loop:
+	mov	bh,bl
+	shr	bh,3	; BH := pxbytes
+
+	push	bp
+cx_rop_7_masked_inner:
+	test	dh,dh
+	jns	@F	; if MSB is clear, this is a transparent pixel
+	;perform rop
+	mov	al,ss:[si]
+	and	es:[di],al
+	not	BYTE PTR es:[di]
+	mov	al,[bp]
+	and	es:[di],al
+@@:	inc	di
+	call	colour_check_bank
+	inc	si
+	inc	bp
+	dec	bh
+	jnz	cx_rop_7_masked_inner
+	pop	bp
+
+	rol	dh,1	; move onto next bit of transparent mask
+	rol	dl,1
+	jc	@F
+	loop	cx_rop_7_masked_loop
+
+	pop	bp
+	ret
+
+	;update pattern pointer (BH == 0 if we're here)
+@@:	sub	si,bx
+	loop	cx_rop_7_masked_loop
+
+	pop	bp
+	ret
+colour_xpar_rop_7_masked endp
+;--------------------------------------------------------------------
+colour_xpar_rop_d_masked proc
+	push	bp
+	mov	bp,ax
+
+cx_rop_d_masked_loop:
+	mov	bh,bl
+	shr	bh,3	; BH := pxbytes
+
+	push	bp
+cx_rop_d_masked_inner:
+	test	dh,dh
+	jns	@F	; if MSB is clear, this is a transparent pixel
+	;perform rop
+	mov	al,ss:[si]
+	not	BYTE PTR es:[di]
+	or	es:[di],al
+	mov	al,[bp]
+	and	es:[di],al
+
+@@:	inc	di
+	call	colour_check_bank
+	inc	si
+	inc	bp
+	dec	bh
+	jnz	cx_rop_d_masked_inner
+	pop	bp
+
+	rol	dh,1	; move onto next bit of transparent mask
+	rol	dl,1
+	jc	@F
+	loop	cx_rop_d_masked_loop
+
+	pop	bp
+	ret
+
+	;update pattern pointer (BH == 0 if we're here)
+@@:	sub	si,bx
+	loop	cx_rop_d_masked_loop
+
+	pop	bp
+	ret
+colour_xpar_rop_d_masked endp
 
 ;--------------------------------------------------------------------
 ; Check if DI has crossed a segment boundary and update bank

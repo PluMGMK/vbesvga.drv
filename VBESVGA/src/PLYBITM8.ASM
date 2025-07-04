@@ -704,11 +704,44 @@ RotateColour32	endp
 ; This is a subroutine since instantiating the dopixel macro everywhere
 ; would seriously blow up the code size in this module...
 ;---------------------------------------------------------------------------;
-public	BM8_wrap ; for debugging
-BM8_wrap	proc	near
+public	BM8_wrap_nomask ; for debugging
+BM8_wrap_nomask	proc	near
 		dopixel <call	BM8>
 		ret
-BM8_wrap	endp
+BM8_wrap_nomask	endp
+;---------------------------------------------------------------------------;
+public	BM8_wrap_masked ; for debugging
+BM8_wrap_masked	proc	near
+		push	si
+		lea	si,ColourMask
+
+		mov	bh,bl
+BM8_masked_next:
+		call	BM8
+		; use AL to hold the mask temporarily
+		xchg	al,ss:[si]
+		and	[di],al
+		; set AL back to the colour before doing RotColour!
+		xchg	al,ss:[si]
+		inc	si
+		call	RotColour
+		inc	di
+		; in 24-bit modes, DI can hit the end of a segment even within a pixel!
+		jnz	@F
+		; we know DI is supposed to be zero, so we can stash DX in it
+		mov	di,dx
+		inc	bank_select
+		mov	dl,bank_select
+		SET_BANK
+		mov	dx,di
+		xor	di,di
+@@:
+		dec	bh
+		jnz	BM8_masked_next
+
+		pop	si
+		ret
+BM8_wrap_masked	endp
 ;---------------------------------------------------------------------------;
 
 ;---------------------------------------------------------------------------;
@@ -724,24 +757,22 @@ BM8_ROP1	proc	near
 BM8_ROP1	endp
 ;---------------------------------------------------------------------------;
 BM8_ROP2	proc	near
-		mov	ah	,al
-		not	ah
-		and	BYTE PTR [di],ah
+		not	al
+		and	BYTE PTR [di],al
+		not	al
 		ret
 BM8_ROP2	endp
 ;---------------------------------------------------------------------------;
 BM8_ROP3	proc	near
-		mov	ah	,al
-		not	ah
-		mov	BYTE PTR [di],ah
+		not	al
+		mov	BYTE PTR [di],al
+		not	al
 		ret
 BM8_ROP3	endp
 ;---------------------------------------------------------------------------;
 BM8_ROP4	proc	near
-		mov	ah	,BYTE PTR [di]
-		not	ah
-		and	ah	,al
-		mov	BYTE PTR [di],ah
+		not	BYTE PTR [di]
+		and	BYTE PTR [di],al
 		ret
 BM8_ROP4	endp
 ;---------------------------------------------------------------------------;
@@ -777,9 +808,9 @@ BM8_ROPA	proc	near
 BM8_ROPA	endp
 ;---------------------------------------------------------------------------;
 BM8_ROPB	proc	near
-		mov	ah	,al
-		not	ah
-		or	BYTE PTR [di],ah
+		not	al
+		or	BYTE PTR [di],al
+		not	al
 		ret
 BM8_ROPB	endp
 ;---------------------------------------------------------------------------;

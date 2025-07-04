@@ -208,6 +208,20 @@ VDD_BkGnd_Notify_Time db 'BkGndNotifyAtPFault', 0
 PUBLIC VDD_Use_ROM_Font_Ini
 VDD_Use_ROM_Font_Ini db 'UseROMfont', 0
 
+;******************************************************************************
+;
+; INI entry to disable "bouncing" the focus VM to background then foreground
+; when a windowed / background VM does a modeset.  Set this switch to FALSE
+; to disable.  This switch would be used on machines where the BIOS doesn't
+; touch any registers unknown to VDDVBE during a VGA modeset, so the correct
+; video state is recoverable after a non-focus modeset without an expensive
+; reset of the VBE mode.
+;
+PUBLIC VDD_VBESVGA_Sec
+VDD_VBESVGA_Sec db "VBESVGA.DRV", 0	; put this config option with the others
+PUBLIC VDD_Bounce_Ini
+VDD_Bounce_Ini db 'BounceOnModeset', 0
+
 IFDEF SysVMin2ndBank
 ;******************************************************************************
 ;

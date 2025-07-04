@@ -44,6 +44,9 @@ VxD_ICODE_SEG
 EXTRN	VDD_Device_Init:NEAR
 EXTRN	VDD_Font_Setup_Msg_Mode_Init:NEAR
 EXTRN	VDD_Font_Save_Msg_Font:NEAR
+IFDEF	VRTCTIMER
+EXTRN	VDD_Clr_VRTC_Time_Out:NEAR
+ENDIF
 VxD_ICODE_ENDS
 
 VxD_CODE_SEG
@@ -108,8 +111,6 @@ VxD_DATA_SEG
 EXTRN	Vid_Flags:DWORD
 EXTRN	VT_Flags:DWORD
 EXTRN	Vid_CB_Off:DWORD
-EXTRN	Vid_Win_Update_Time:DWORD
-EXTRN	Vid_Mode_Update_Time:DWORD
 
 ;*******
 ;State of the physical registers:
@@ -721,6 +722,12 @@ VSCVM_Exit:
 	xor	eax,eax
 	mov	[edi.VDD_Time_Out_Handle],eax
 	mov	[edi.VDD_Get_Mem_Count],eax
+IFDEF	VRTCTIMER
+	; update both bytes in one fell swoop
+	.errnz	VDD_Framerate_Recip-VDD_Framerate-1
+	mov	word ptr [edi.VDD_Framerate],ax
+	mov	[edi.VDD_VRTC_timeout],eax
+ENDIF
 
 	call	VDD_TIO_Set_Trap
 	clc
@@ -2051,6 +2058,111 @@ gvp_exit:
 EndProc VDD_State_Get_Dimensions
 EndProc VDD_State_Get_Display_Dimensions
 
+IFDEF	VRTCTIMER
+;******************************************************************************
+;VDD_State_Calc_Framerate
+;
+;DESCRIPTION:
+;	This routine calculates the framerate based on the CRTC and Misc
+;	registers, and updates VDD_Framerate and VDD_Framerate_Recip
+;	accordingly.
+;
+;ENTRY: EBX = running VM handle
+;	EDI -> VDD CB data
+;
+;EXIT:	AL = framerate (Hz)
+;	AH = millieseconds per frame
+;
+;USES:	Flags, EAX
+;
+;==============================================================================
+BeginProc VDD_State_Calc_Framerate, PUBLIC
+
+	push	ecx
+	push	edx
+	mov	eax,(16*100h)+60; default to 60fps, 16 ms per frame
+	or	ebx,ebx
+	jz	SHORT VS_CFR_Exit
+
+	; cancel any pending time-out since we're recalculating the framerate
+	call	VDD_Clr_VRTC_Time_Out
+
+	movzx	ecx, [edi.VDD_Stt.V_Misc]
+	and	ecx, fMiscDot
+	mov	eax, [ecx+DotClockTable]
+
+	movzx	ecx, [edi.VDD_Stt.C_HTotal]
+	add	ecx, 5		; for some reason, C_HTotal is HTotal-5
+	mov	dl, [edi.VDD_Stt.S_ClMode]
+	test	dl, fSeq1DPCh	; Q: 8 or 9 dots char width?
+	mov	edx, ecx
+	jz	short @F	;   9: edx = ecx
+	xor	edx, edx	;   8: edx = 0
+@@:	lea	ecx,[edx+ecx*8]
+
+	cdq
+	jecxz	VS_CFR_BadState	; some BIOSes may set HTotal to 0 in modeset...
+	div	ecx		; EAX := horiz refresh rate
+
+	movzx	ecx, [edi.VDD_Stt.C_VTotal]
+	mov	ch, [edi.VDD_Stt.CRTC.C_Ovflw]
+	mov	dl, ch
+	and	ch, 1		; retrieve bit8 of VTotal, from bit0 of Ovflw
+	shr	dl, 5-1
+	and	dl, 2		; retrieve bit9 of VTotal, from bit5 of Ovflw
+	or	ch, dl
+	test	[edi.VDD_Stt.C_Mode],4
+	jz	short @F
+	shl	ecx,1		; divide scan line clock by 2 --> double scanlines
+@@:	cdq
+	jecxz	VS_CFR_BadState	; some BIOSes set VTotal to 0 in modeset...
+	div	ecx		; EAX := vertical refresh rate
+
+	; Now AL is hopefully the framerate in Hz. We divide 1000 by AL to get
+	; milliseconds per frame, and stuff that into AH, then update the state
+	; structure accordingly.
+	test	ah,ah		; Q: Framerate > 255?
+	jz	short @F	;    N: keep going
+	xor	ax,ax		;    Y: too fast, abandon calculation
+	jmp	short VS_CFR_Update_State
+
+@@:	mov	cl,al
+	mov	ax,1000
+	cmp	ah,cl		; Q: divide will overflow?
+	jb	short @F	;    N: keep going
+	xor	ax,ax		;    Y: too slow, abandon calculation
+	jmp	short VS_CFR_Update_State
+
+@@:	div	cl
+	mov	ah,al		; milliseconds per frame in AH
+	mov	al,cl		; fps in AL
+
+VS_CFR_Update_State:
+	; update both bytes in one fell swoop
+	.errnz	VDD_Framerate_Recip-VDD_Framerate-1
+	mov	word ptr [edi.VDD_Framerate],ax
+
+VS_CFR_Exit:
+	pop	edx
+	pop	ecx
+	ret
+
+VS_CFR_BadState:
+	; here ECX == 0, and we want AX == 0
+	mov	eax,ecx
+	jmp	short VS_CFR_Exit
+
+VxD_DATA_SEG
+DotClockTable label	dword	; clock select bits
+		dd	25175000;     00 (IBM)
+		dd	28322000;     01 (IBM)
+		dd	39000000;     10 (Genoa SuperEGA)
+		dd	26824000;     11 (Genoa SuperEGA)
+VxD_DATA_ENDS
+
+EndProc VDD_State_Calc_Framerate
+ENDIF	;VRTCTIMER
+
 
 ;******************************************************************************
 ;VDD_State_Scrn_On
@@ -2621,6 +2733,11 @@ IFDEF DEBUG_verbose
 	call	VDD_State_VM_Debug
 ENDIF
 	call	VDD_VGA_Save_Regs		;   N: Save the registers
+IFDEF VRTCTIMER
+	push	eax
+	call	VDD_State_Calc_Framerate
+	pop	eax
+ENDIF
 VS_SvCO_Exit:
 	pop	edi
 	pop	ebx

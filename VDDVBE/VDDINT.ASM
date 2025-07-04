@@ -21,6 +21,7 @@
 .xlist
 	INCLUDE VMM.Inc
 	INCLUDE OPTTEST.INC
+	INCLUDE	vpicd.inc
 	INCLUDE vdd.inc
 	INCLUDE debug.inc
 	INCLUDE vdddef.inc
@@ -80,6 +81,13 @@ Vid_Stub_I10_Vector DD	    ?			; Address of our INT 10h routine
 Vid_I10_Next_CS     DD	    ?
 Vid_I10_Next_EIP    DD	    ?
 
+IFDEF	VRTCTIMER
+;*******
+; IRQ2/9 handle for vertical retrace interrupt
+;
+VDD_VRTC_IRQ_Handle DD      ?
+ENDIF
+
 ;*******
 ; INT 2Fh protect mode selector:offset to chain to if not our INT 2Fh
 ;
@@ -99,6 +107,18 @@ Vid_Alt_Int9	    DB	    1
 
 VxD_DATA_ENDS
 
+
+IFDEF	VRTCTIMER
+VxD_IDATA_SEG
+;*******
+; IRQ2/9 descriptor for vertical retrace interrupt
+;
+VDD_VRTC_IRQ_Desc LABEL DWORD
+VPICD_IRQ_Descriptor <2,VPICD_Opt_Can_Share,		\
+		      OFFSET32 VDD_Int_VRTC_HW_IRQ,,	\
+		      OFFSET32 VDD_Int_VRTC_EOI,,,>
+VxD_IDATA_ENDS
+ENDIF
 
 VxD_ICODE_SEG
 
@@ -123,6 +143,7 @@ VxD_ICODE_SEG
 %OUT Add SYSTEM.INI switch to disable this stuff (just use INT 10 trap)
 VDD_Int_10_Stub PROC NEAR    ;don't use BeginProc/EndProc to avoid any
 				;preamble stuff!
+	push	di			    ; really EDI
 	or	ah, ah			    ;Q: Mode setting?
 	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	eax,4F02h		    ; Q: Mode setting (VBE)?
@@ -149,6 +170,10 @@ VDD_Int_10_Stub PROC NEAR    ;don't use BeginProc/EndProc to avoid any
 	cmp	al, 30h 		    ;Q: Get font info?
 	je	SHORT VIS_reflect	    ;	Y: reflect
 VIS_mode:
+	; allow the end breakpoint handler to see what was originally in EAX,
+	; by stuffing it into EDI (which should be unaffected by any of these
+	; calls)
+	mov	di,ax			    ; really EDI,EAX
 VIS_start_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
 
@@ -160,14 +185,19 @@ VIS_call equ $ - VDD_Int_10_Stub
 
 VIS_end_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
+	pop	di			    ; really EDI
 	iretd				    ; in 16 bit segment this is an iret
 
 VIS_secondchance:
+	; do the pop first to allow a Simulate_IRET on the breakpoint
+	pop	di			    ; really EDI
 VIS_second_bp equ $ - VDD_Int_10_Stub
 	nop				    ; a V86 brkpt will be installed here
+	jmp	SHORT @F
 
 VIS_reflect:
-	;jmp to old handler
+	pop	di			    ; really EDI
+@@:	;jmp to old handler
 	db	0EAh
 VIS_jmp equ $ - VDD_Int_10_Stub
 	dd	?
@@ -296,6 +326,26 @@ alloc_ok:
 	mov	eax, 2Fh
 	VMMcall Set_PM_Int_Vector
 
+IFDEF	VRTCTIMER
+;
+; setup VRTC IRQ virtualization
+;
+	push	ebx
+	VxDCall	VPICD_Get_Version
+	test	ebx,1					; Q: cascaded PICs?
+	pop	ebx					;
+	jz	short @F				;    N: VRTC is IRQ2 
+	mov	[VDD_VRTC_IRQ_Desc.VID_IRQ_Number],9	;    Y: VRTC is IRQ9
+
+@@:	push	edi
+	mov	edi, OFFSET32 VDD_VRTC_IRQ_Desc
+	VxDCall	VPICD_Virtualize_IRQ
+	pop	edi
+	jc	short @F				; no big deal if we can't
+	mov	[VDD_VRTC_IRQ_Handle],eax
+@@:
+ENDIF
+
 	clc
 	ret
 
@@ -304,7 +354,203 @@ EndProc VDD_Int_Device_Init
 VxD_ICODE_ENDS
 
 
+IFDEF	VRTCTIMER
+;---------------------------------------------------------------------------;
+;                   N O N P A G E A B L E   C O D E
+;---------------------------------------------------------------------------;
+
+VxD_LOCKED_CODE_SEG
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+;   VDD_Int_VRTC_HW_IRQ
+;
+;   DESCRIPTION:
+;       Reflects interrupt to current owner or handles it if no owner.
+;
+;   ENTRY:
+;       EAX = IRQ Handle
+;       EBX = Current VM Handle
+;
+;   EXIT:
+;	CF clear if we handled it
+;	CF set if it's not ours
+;
+;   USES:
+;       Flags, EAX, EBX
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+BeginProc VDD_Int_VRTC_HW_IRQ
+
+	push	edx
+	mov	dx,pStt0EGA
+	in	al,dx			; get misc status
+	pop	edx
+	test	al,fStt0VRTC		; Q: VRTC interrupt asserted?
+	jnz	short @F		;    Y: Pass it to CRTC owner
+	stc				;    N: not ours, don't service
+	ret
+
+@@:	mov	ebx,[Vid_CRTC_VM]
+	VMMCall	Validate_VM_Handle	; Q: CRTC owned by valid VM?
+	jc	short @F		;    N: handle it ourselves
+        VxDcall VPICD_Set_Int_Request   ;    Y: set int request and return
+	push	ecx
+	VxDcall	VPICD_Get_Complete_Status
+	test	ecx,VPICD_Stat_Virt_Mask; Q: CRTC owner has masked the IRQ?
+	pop	ecx			;
+	jz	short @F		;    N: let it send the EOI
+	VxDcall	VPICD_Phys_EOI		;    Y: send EOI NOW while virtual IRQ pending
+@@:     clc
+        ret
+
+@@:	; we're handling the IRQ ourselves - reset the IRQ Clear bit,
+	; and send EOI
+	push	edx
+	push	eax
+
+	mov	dx,pCRTCIndxColr
+	in	al,dx
+	mov	bl,al			; save index
+
+	mov	al,C_VRTCEnd-C_HTotal
+	out	dx,al
+	inc	dx
+	in	al,dx
+	and	al,NOT fVRTCEndIRQClr	; turn off IRQ Clear bit
+	out	dx,al
+	or	al,fVRTCEndIRQClr	; turn it back on
+	out	dx,al
+
+	dec	dx
+	mov	al,bl			; restore index
+	out	dx,al
+
+	pop	eax
+	pop	edx
+        VxDcall	VPICD_Phys_EOI		; physical end of interrupt
+	clc
+	ret
+
+EndProc VDD_Int_VRTC_HW_IRQ
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;
+;   VDD_Int_VRTC_EOI
+;
+;   DESCRIPTION:
+;       Clears the interrupt request and does the physical EOI
+;
+;   ENTRY:
+;       EAX = IRQ Handle
+;       EBX = Current VM Handle
+;
+;   EXIT:
+;
+;   USES:
+;       Flags
+;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+BeginProc VDD_Int_VRTC_EOI
+
+	cmp	ebx,[Vid_CRTC_VM]	; Q: EOI came from CRTC owner?
+	jne	short @F		;    N: it's a virtual IRQ
+        VxDcall VPICD_Clear_Int_Request	;    Y: clear virtual IRQ request
+
+	push	ecx
+	VxDcall	VPICD_Get_Complete_Status
+	test	ecx,VPICD_Stat_Phys_In_Serv
+	pop	ecx			; Q: IRQ still in service?
+	jz	short VIVE_done		;    N: we're finished
+	VxDjmp	VPICD_Phys_EOI		;    Y: physical end of interrupt
+
+@@:	; this is a virtual IRQ, check if it's been acked correctly
+	push	edi
+	SetVDDPtr edi
+	TestMem	[edi.VDD_Stt.V_Stat0],fStt0VRTC
+	pop	edi
+	jnz	short @F
+VIVE_done:
+	ret
+
+@@:	; If the virtual flip-flop stayed high, it means the VM didn't
+	; acknowledge the VRTC IRQ correctly before sending EOI.
+	; This means we need to clear the request NOW rather than
+	; assuming it was done already. It also probably means that
+	; the VM didn't really want a VRTC IRQ, but just programmed
+	; the registers incorrectly. Since the flip-flop stays high,
+	; they won't be bothered again, but let's make a note of it...
+IFDEF	DEBUG
+	Debug_Out "#EBX did not ack VRTC IRQ before sending EOI!"
+ENDIF
+	VxDcall	VPICD_Clear_Int_Request	; clear request anyway
+	ret
+
+EndProc VDD_Int_VRTC_EOI
+
+VxD_LOCKED_CODE_ENDS
+ENDIF	;VRTCTIMER
+
+
 VxD_CODE_SEG
+
+IFDEF	VRTCTIMER
+;******************************************************************************
+;
+;   VDD_Int_Set_VRTC_IRQ
+;
+;   DESCRIPTION:    Send a virtual VRTC IRQ to the VM
+;
+;   ENTRY:  EBX = VM handle
+;
+;   EXIT:   none
+;
+;   USES:   Flags
+;
+;==============================================================================
+BeginProc VDD_Int_Set_VRTC_IRQ
+
+	push	eax
+	mov	eax, [VDD_VRTC_IRQ_Handle]
+	test	eax, eax
+IFDEF	DEBUG
+	jnz	SHORT @F
+	Debug_Out "#EBX requires VRTC IRQ, which we failed to virtualize"
+@@:
+ENDIF
+	jz	SHORT @F
+	VxDcall	VPICD_Set_Int_Request
+@@:	pop	eax
+	ret
+
+EndProc VDD_Int_Set_VRTC_IRQ
+
+;******************************************************************************
+;
+;   VDD_Int_Clear_VRTC_IRQ
+;
+;   DESCRIPTION:    Turn off a virtual VRTC IRQ for the VM
+;
+;   ENTRY:  EBX = VM handle
+;
+;   EXIT:   none
+;
+;   USES:   Flags
+;
+;==============================================================================
+BeginProc VDD_Int_Clear_VRTC_IRQ
+
+	push	eax
+	mov	eax, [VDD_VRTC_IRQ_Handle]
+	test	eax, eax
+	jz	SHORT @F
+	VxDcall	VPICD_Clear_Int_Request
+@@:	pop	eax
+	ret
+
+EndProc VDD_Int_Clear_VRTC_IRQ
+ENDIF	;VRTCTIMER
+
 
 ;******************************************************************************
 ;
@@ -321,7 +567,14 @@ VxD_CODE_SEG
 ;==============================================================================
 BeginProc VDD_Int_Sys_Critical_Exit
 
-	mov	ecx, [Vid_I10_OldVector]
+IFDEF	VRTCTIMER
+	mov	eax, [VDD_VRTC_IRQ_Handle]
+	test	eax, eax
+	jz	SHORT @F
+	VxDCall VPICD_Force_Default_Behavior
+ENDIF
+
+@@:	mov	ecx, [Vid_I10_OldVector]
 	jecxz	SHORT VSCE_Return
 	movzx	edx, cx
 	shr	ecx, 16
@@ -574,6 +827,7 @@ VI10_Mode:
 	call	VDD_Int_10_Mode_Change_Start
 	mov	eax, 5000
 	mov	esi, OFFSET32 VDD_Int_10_Mode_Change_End
+	mov	edx, [ebp.Client_EAX]
 	VMMCall Call_When_VM_Returns
 	mov	[edi.VDD_Mod_Rect],-1	    ; !!!look at everything
 VI10_Reflect:
@@ -1173,7 +1427,7 @@ BeginProc VDD_Int_10_Mode_Switch
 	bt	[edi.VDD_Flags],bVDD_ModeSet	; Q: Already doing mode set?
 	jnc	short VDD_Int_10_Mode_Change_Start
 	; if we're already modesetting, then skip over the second breakpoint!
-	mov	eax,(VIS_jmp-1) - (VIS_start_bp+1)
+	mov	eax,(VIS_reflect - VDD_Int_10_Stub) - (VIS_start_bp+1)
 	add	[ebp.Client_IP],ax
 
 ; This entry point is used by the INT 10h trapping code
@@ -1266,6 +1520,7 @@ BeginProc VDD_Int_10_Mode_Sw_Done
 	Assert_Client_Ptr ebp
 
 	inc	[ebp.Client_IP] 		; inc past the brkpt
+	mov	edx,[ebp.Client_EDI]		; get original EAX
 
 ; This entry point is from call back if mode change is detected from
 ; INT 10 trap instead of breakpoint.

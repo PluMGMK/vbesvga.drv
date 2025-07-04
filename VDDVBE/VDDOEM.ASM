@@ -155,7 +155,6 @@ EXTRN	VDD_State_Get_CRTC_Index_Port:NEAR
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 EXTRN	VDD_State_Get_Mode:NEAR
 EXTRN	VDD_Proc_BGrnd_INT2F:NEAR
-EXTRN	VDD_Proc_FGrnd_INT2F:NEAR
 EXTRN	VDD_VM_Mem_Lock_SaveMem_Page:NEAR
 ENDIF	;VGA8514
 VxD_Code_ENDS
@@ -296,7 +295,7 @@ ENDIF	;CTVGA
 
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
-	jz	VOSCI_NotVBE
+	jz	SHORT VOSCI_NotVBE
 	; create a dual-use buffer in conventional memory that we can use to:
 	; * get mode info from int 10h
 	; * pass CRTC Info block to int 10h if needed
@@ -529,6 +528,7 @@ EndProc VDD_OEM_Chk_Cursor
 ;	This routine is called when a VM has just finished a mode switch.
 ;
 ;ENTRY: EBX = VM_Handle of VM getting CRTC state (= 0 if VDD)
+;	EDX = Original EAX value at start of modeset
 ;	EDI -> VDD CB data
 ;
 ;EXIT:	none
@@ -542,15 +542,13 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	jz	msd_not_vbe
 
 	Assert_Client_Ptr ebp
-	mov	ax,[ebp.Client_AX]
-	cmp	al,4Fh			;Q: attempted VBE modeset?
+	cmp	dx,4F02h		;Q: attempted VBE modeset?
 	je	short msd_vbe_mode	;   Y: go check status
 	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;N: indicate non-VBE mode
 
 	; if a windowed VM has switched into a VGA mode, then the BIOS may
 	; have reprogrammed some registers we know nothing about. So let's
-	; check if the focus VM is in a "non-VGA-compatible" mode, and, if
-	; so, schedule a foreground notification.
+	; schedule a foreground notification.
 	; For some reason, the "windowed" flag isn't set if a VM is *starting
 	; up* in windowed mode, so just check whether or not the VM has focus
 	; instead!
@@ -564,12 +562,19 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	SetVDDPtr edi
 	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0 ;VBE mode?
 	jz	short @F
-	TestMem	[edi.VDD_Stt.V_Extend.VBE_ModeAttrs],fVModeAttr_NonVGA
-	jz	short @F
 
+	; allow the user to disable bouncing
+	TestMem	[Vid_Flags],fVid_No_Bounce
+	jnz	short @F
+
+	; Schedule a "BGrnd notify" event - since we don't set fVDD_WaitAtt,
+	; this will immediately also do an "FGrnd notify", effectively
+	; bouncing the VM back and forward. This will reset the graphics
+	; card into the correct VBE mode and redraw the screen, clearing
+	; any artefacts caused by the windowed modeset!
 	cmp	[edi.VDD_NotifyEvent], 0	;Q: bgrnd notify pending?
 	jne	short @F			;   Y: just wait for it
-	mov	esi, OFFSET32 VDD_OEM_Bounce_VM	;   N: schedule event
+	mov	esi, OFFSET32 VDD_Proc_BGrnd_INT2F; N: schedule event
 	VMMCall Schedule_VM_Event		;	 to notify VM
 	mov	[edi.VDD_NotifyEvent], esi
 
@@ -580,7 +585,7 @@ msd_nowin:
 	ret
 
 msd_vbe_mode:
-	test	ah,ah			;Q: was modeset successful?
+	cmp	[ebp.Client_AX],4Fh	;Q: was modeset successful?
 	jnz	msd_not_vbe		;   N: do nothing
 	mov	ax,[ebp.Client_BX]	;   Y: get the mode
 
@@ -609,6 +614,9 @@ msd_vbe_mode:
 	VMMcall	Begin_Nest_V86_Exec
 	Push_Client_State
 	mov	[ebp.Client_AX],4F01h	; Get mode info
+	; take out the flags, because the BIOS may not recognize the mode number
+	; when they are included...
+	and	ax,NOT (fVESA_UCRTC+fVESA_VBEAFInit+fVESA_Linear+fVESA_PreserveMem)
 	mov	[ebp.Client_CX],ax	; mode number
 	mov	ax,[VBE_Int10_Off]
 	mov	[ebp.Client_DI],ax
@@ -742,7 +750,7 @@ VxD_DATA_ENDS
 	mov	[ebp.Client_BX], AX
 
 	bt	ax,bVESA_UCRTC
-	jnc	smn_regs_setup
+	jnc	short smn_regs_setup
 
 	; set CRTC Info Block pointer
 	mov	ax,[VBE_Int10_Off]
@@ -768,8 +776,6 @@ smn_regs_setup:
 	; to set the mode "on behalf of" the new CRTC owner, which is
 	; a *different VM*, we need to back up as much of the state
 	; as possible to prevent weird / unexpected side effects!
-	int	3
-
 	movzx	eax,[edx.VDD_fontpages]
 	push	eax
 	push	esi
@@ -825,6 +831,7 @@ smn_regs_setup:
 	; will get trapped back into the VDD's modeset routine and
 	; muck around with any state that we're trying to preserve!
 	push	[edx.VDD_Flags]
+	ClrFlag	[edx.VDD_Flags],fVDD_WaitAtt
 	SetFlag	[edx.VDD_Flags],fVDD_ModeSet
 	TestMem	[edx.VDD_Flags],fVDD_Win
 	jz	short @F
@@ -886,33 +893,6 @@ smn_regs_setup:
 	ret
 
 EndProc VDD_OEM_Set_Mode_Nested
-
-;******************************************************************************
-;
-;   VDD_OEM_Bounce_VM
-;
-;   DESCRIPTION:    send VM a background notification immediately followed by
-;		    foreground notification
-;
-;   ENTRY:	    EBX = VM Handle
-;
-;   EXIT:	    EDI -> VDD_CB_Struc
-;
-;   USES:	    EAX, ECX, ESI, EDI, Flags
-;
-;==============================================================================
-BeginProc VDD_OEM_Bounce_VM
-
-	;if this is not set, then BGrnd function does both
-	SetVDDPtr edi
-	TestMem [edi.VDD_Flags], fVDD_WaitAtt
-	jz	VDD_Proc_BGrnd_INT2F
-
-	call	VDD_Proc_BGrnd_INT2F
-	call	VDD_Proc_FGrnd_INT2F
-	ret
-
-EndProc VDD_OEM_Bounce_VM
 ENDIF
 
 
@@ -3456,6 +3436,20 @@ V7SvLT_30:
 VO_SL_NotCLV7:
 ENDIF	;CLV7VGA
 
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	SHORT VO_SL_NotVBE
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0
+	jz	SHORT VO_SL_NotVBE	; not in a VBE mode
+	; in VBE modes, there is no guarantee on modern hardware that
+	; the latches are engaged in any way, so there is no point in
+	; trying to save / restore them.
+	stc
+	ret
+
+VO_SL_NotVBE:
+ENDIF	;VGA8514
+
 	clc
 	ret
 EndProc VDD_OEM_Save_Latches
@@ -3548,6 +3542,20 @@ V7ReLT_30:
 	ret
 VO_RL_NotCLV7:
 ENDIF	;CLV7VGA
+
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	TestMem [edi.VDD_TFlags],<fVT_VBESVGA>
+	jz	SHORT VO_RL_NotVBE
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],0
+	jz	SHORT VO_RL_NotVBE	; not in a VBE mode
+	; in VBE modes, there is no guarantee on modern hardware that
+	; the latches are engaged in any way, so there is no point in
+	; trying to save / restore them.
+	stc
+	ret
+
+VO_RL_NotVBE:
+ENDIF	;VGA8514
 
 	clc
 	ret

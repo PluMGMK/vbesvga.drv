@@ -26,5 +26,7 @@ EXTRN   compile_jmp_back_to_start:NEAR
 EXTRN	compile_src_splitbank_yupdate:NEAR
 EXTRN	compile_dst_splitbank_yupdate:NEAR
 EXTRN	compile_color_stosb:NEAR
+EXTRN	compile_begin_subroutine:NEAR
+EXTRN	compile_end_subroutine:NEAR
 ENDIF
 

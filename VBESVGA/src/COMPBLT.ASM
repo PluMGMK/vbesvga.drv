@@ -179,7 +179,7 @@ compile_color_pattern_fetch	ENDP
 ; commented-out version only works if pxbytes is a power of two
 ; TODO: Make this a modal function?
 ;pattern_yupdate_template:
-;	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
+;	add	bp,12H		; 12h becomes size in bytes of a pattern row
 ;pyud0:	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
 ;pyud1:	mov	word ptr ss:[1234H],5678H    ;zero out pattern column counter
 ;					     ; for start of next line. 5678H
@@ -194,7 +194,7 @@ compile_color_pattern_fetch	ENDP
 ;PYUD_PATMASK_OFFSET = $ - pyud1 + 2
 ;I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
 pattern_yupdate_template:
-	add	bp,1234H	; 1234h becomes size in bytes of a pattern row
+	add	bp,12H		; 12h becomes size in bytes of a pattern row
 pyud0:	jnc	pyud1
 	and	bp,5678H	; 5678h becomes row counter mask (row size * 7)
 pyud1:	cmp	bp,5678H	; 5678h becomes row counter mask (row size * 7)
@@ -209,7 +209,7 @@ pyud2:	jbe	@F
 
 PYUD_SIZE = $ - pattern_yupdate_template
 PYUD_OFFSET = $ - pattern_yupdate_template
-PYUD_PATSIZE_OFFSET = $ - pyud0 + 2
+PYUD_PATSIZE_OFFSET = $ - pyud0 + 1
 PYUD_PATMASK_OFFSET = $ - pyud1 + 2
 PYUD_PATMASK_OFFSET2 = $ - pyud2 + 2
 I_SUB_BP_I	equ	0ED83H		  ;sub bp,#	   instruction
@@ -230,7 +230,7 @@ compile_pattern_yupdate PROC	NEAR
 	mov	dx,ax
 	errnz	SIZE_PATTERN-8
 	shr	dx,3				;divide by eight to get one row
-	mov	es:[di - PYUD_PATSIZE_OFFSET],dx
+	mov	es:[di - PYUD_PATSIZE_OFFSET],dl
 	sub	ax,dx				;full size of pattern minus size
 	mov	es:[di - PYUD_PATMASK_OFFSET],ax; of one row = correct mask so
 	mov	es:[di - PYUD_PATMASK_OFFSET2],ax; that the row counter wraps
@@ -352,8 +352,10 @@ wct1a:	jnc	@F		;decrement to make JC instead of JNC
 	;in the unlikely event that we wrap to the next segment, then figure out
 	; how many inner loop iterations are needed before and after the wrap
 	cwd
+	push	bx		;ensure we don't trash translate table pointer
 	mov	bx,1234H	;1234H becomes (***_xExt_bytes/inner_loop_count)
 wct2:	idiv	bx
+	pop	bx		;ensure we don't trash translate table pointer
 	inc	ax		;guarantee it is not zero on this codepath
 	mov	ss:[1234H],ax	;1234H becomes offset of ***_seg_wrap
 wct3:	sub	cx,ax		;CX := iterations left to end of segment
@@ -376,10 +378,16 @@ compile_inner_loop_wrapchecks	PROC	NEAR
 	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
 	jz	wcdst	; we don't support wrapping memory segments (not needed)
 
+	; next check to make sure src_xExt_bytes and inner_loop_count
+	; are the same - otherwise there's a unit mismatch which will
+	; turn these calculations into a nonsense (think screen-to-mono)
+	mov	ax,src_xExt_bytes
+	cmp	ax,inner_loop_count
+	jne	wcdst
+
 	lea	si,wrap_check_template
 	mov	cx,WCT_SIZE
 	rep	movs byte ptr es:[di], cs:[si]
-	mov	ax,src_xExt_bytes
 	lea	bx,src_seg_wrap
 	mov	cx,inner_loop_count
 	cwd
@@ -552,6 +560,13 @@ compile_inner_loop_wraps	PROC	NEAR
 	jz	dstwrap
 	test	word ptr [device_flags],DEVFLAG_SRC_SCREEN
 	jz	dstwrap	; we don't support wrapping memory segments (not needed)
+
+	; next check to make sure src_xExt_bytes and inner_loop_count
+	; are the same - otherwise we skipped this in wrapchecks so
+	; we need to skip it here too!
+	mov	ax,src_xExt_bytes
+	cmp	ax,inner_loop_count
+	jne	dstwrap
 
 	lea	si,wrap_screen_template
 	mov	cx,WST_SIZE
@@ -1254,6 +1269,25 @@ store_in_prev_bank	ENDP
 ;	stosb is skipped; otherwise the value gets stored in the dst bitmap.
 ;	If the blt is not a transparent blt, then the value is always stored.
 
+color_stosb_mask_template:
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, which never need this masking code :3
+	mov	bx,01234H			;this becomes the phase (0/1/2/3)
+csmp:	and	al,ss:[bx+05678H]		;05678H becomes ptr to colour_mask
+csmpm:	inc	bl
+	cmp	bl,034H				;034H becomes pxbytes
+csmpb:	jb	@F
+	xor	bl,bl
+@@:	mov	byte ptr ss:[05678H],bl		;05678H will become csmp-2
+csmpp:
+
+COLOR_STOSB_MASK_LEN	=  $ - color_stosb_mask_template
+COLOR_STOSB_MASK_PHASE	=  $ - csmp + 2
+COLOR_STOSB_MASK_PTRMASK=  $ - csmpm + 2
+COLOR_STOSB_MASK_PXBYTES=  $ - csmpb + 1
+COLOR_STOSB_MASK_PPHASE	=  $ - csmpp + 2
+
 color_stosb_xpar_template:
 	cmp	al,034H 			;034H will become the bg color
 cstxf:	je	@F
@@ -1282,6 +1316,9 @@ COLOR_STOSB_XPAR16_FIX	=  $ - csx16f + 2
 COLOR_STOSB_XPAR16_PTRLB=  $ - csx16pl + 2
 
 color_stosb_xpar_template_24:
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, whereas this code is for 24bpp modes :3
 	mov	bx,01234H			;this becomes the phase (0/1/2)
 csx24p:	cmp	bl,2
 	jb	csx24e				;byte 0 or 1, go stash it
@@ -1314,6 +1351,9 @@ COLOR_STOSB_XPAR24_FIX2	=  $ - csx24f2 + 1
 COLOR_STOSB_XPAR24_PTRLW=  $ - csx24pl + 2
 
 color_stosb_xpar_template_32:
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, whereas this code is for 32bpp modes :3
 	mov	bx,di
 	and	bx,11b				;get the phase
 	test	bl,2
@@ -1345,6 +1385,9 @@ COLOR_STOSB_XPAR32_PTRUB=  $ - csx32pu + 2
 
 color_stosb_xpar_template_32_386:
 	.386
+	; !!! this trashes BX, which may be a translate table !!!
+	; this is OK, since translate tables only come into the picture
+	; in 8bpp modes, whereas this code is for 32bpp modes :3
 	mov	bx,di
 	and	bx,11b				;get the phase
 	cmp	bl,3
@@ -1367,7 +1410,24 @@ COLOR_STOSB_XPAR33_PTRL3=  $ - csx33pl + 2
 PUBLIC	compile_color_stosb
 compile_color_stosb	PROC	NEAR
 
-	cmp	word ptr background_mode,OPAQUE
+	mov	ax,word ptr colour_mask[0]
+	or	ax,word ptr colour_mask[2]
+	jz	@F
+
+	; need to mask the byte before storing it...
+	lea	si,color_stosb_mask_template
+	mov	cx,COLOR_STOSB_MASK_LEN
+	rep	movs byte ptr es:[di], cs:[si]
+	lea	bx,colour_mask
+	mov	ax,[pxbytes]
+	mov	es:[di - COLOR_STOSB_MASK_PTRMASK],bx
+	mov	es:[di - COLOR_STOSB_MASK_PXBYTES],al
+	lea	bx,[di - COLOR_STOSB_MASK_PHASE]
+	xor	ax,ax	; initialize phase to zero
+	mov	es:[bx],ax
+	mov	es:[di - COLOR_STOSB_MASK_PPHASE],bx
+
+@@:	cmp	word ptr background_mode,OPAQUE
 	jne	@F
 	; opaque: we just store the byte at ES:DI, and done
 	mov	al,I_STOSB
@@ -1450,6 +1510,46 @@ compile_color_stosb	PROC	NEAR
 	ret
 
 compile_color_stosb	ENDP
+
+;
+;	compile_begin_subroutine
+;
+;	Indicate that we are beginning the body of a subroutine.
+;	Basically all we have to do is create a near JMP to go around
+;	the subroutine until it's ready to be called. The destination of
+;	the JMP will be fixed up in compile_end_subroutine.
+;
+
+PUBLIC	compile_begin_subroutine
+compile_begin_subroutine	PROC	NEAR
+
+	mov	al,I_JMP_NEAR
+	stosb
+	lea	di,[di+2]		;leave two bytes for the dest
+	ret
+
+compile_begin_subroutine	ENDP
+
+;
+;	compile_end_subroutine
+;
+;	Generate the RETN instruction to end the subroutine body, and
+;	go back and fix up the JMP destination from the beginning to
+;	point at the new instruction pointer.
+;	Entry requirement: BX points at the END of the JMP instruction!
+;
+
+PUBLIC	compile_end_subroutine
+compile_end_subroutine	PROC	NEAR
+
+	mov	al,I_RET_NEAR
+	stosb
+	mov	si,di
+	sub	si,bx			;calculate delta for near JMP
+	mov	es:[bx-2],si		;slot it into the JMP instruction
+	ret
+
+compile_end_subroutine	ENDP
 
 sEnd
 

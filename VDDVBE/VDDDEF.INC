@@ -93,6 +93,7 @@ TTVGA		EQU	-1		; Turn on Trident code
 PVGA		EQU	-1		; Turn on Paradise VGA code
 VGAMONO 	EQU	-1		; Turn on VGA support for mode 7 and F
 RESERVEROMC6C7	EQU	-1		; Turn on detection and reserve of ROM
+VRTCTIMER	EQU	-1		; Turn on framerate timer for VRTC
 ENDIF	; NOT CTVGA
 ;;ENDIF   ; NOT VGA8514
 
@@ -117,7 +118,7 @@ ENDIF
 IFDEF	CLVGA				; Cirrus Logic
 %OUT	---- Cirrus Logic support   ----
 ENDIF
-IFDEF	NEWCLVGA				; Cirrus Logic
+IFDEF	NEWCLVGA			; Cirrus Logic
 %OUT	---- Cirrus Logic 6410 support --
 ENDIF
 IFDEF	PVGA				; Paradise VGA
@@ -143,6 +144,9 @@ IFDEF	VGAMONO 			; Monochrome VGA
 ENDIF
 IFDEF	RESERVEROMC6C7			; Support for ROM w/o signature
 %OUT	---- C6, C7 w/o sig support ----
+ENDIF
+IFDEF	VRTCTIMER			; Support for vertical retrace timing
+%OUT	---- VSync timing support   ----
 ENDIF
 %OUT
 ENDIF	;IF1
@@ -708,7 +712,14 @@ VDD_saved_visible   DD	?
 
 VDD_Postponed_TimeOuts	DB  ?		; # of time-outs that have been postponed
 VDD_Owned_Pages     DB	?		; count of physical pages alloc'ed
+
+IFDEF	VRTCTIMER
+VDD_Framerate	    DB	?		; frames per second for current VGA mode
+VDD_Framerate_Recip DB	?		; milliseconds per frame
+VDD_VRTC_timeout    DD	?		; timeout event for Vertical Retrace
+ELSE
 VDD_Padding	    DB	2 dup(?)	; for padding only, reclaim as needed
+ENDIF
 
 VDD_CB_Struc	 ENDS
 
@@ -910,6 +921,7 @@ DefFlag Vid_Dont_Set_Mode   10	; set after a forced mode change, if done before
 DefFlag Vid_SR_Section	    12	; Special save restore "critical" section
 DefFlag Vid_SR_Latch_res    13	; Restore latches at end of SR section
 DefFlag Vid_SR_regs_saved   14	; regs saved for CRTC owner while in SR section
+DefFlag	Vid_No_Bounce	    15	; don't do BG/FG bounce for focus VM on modeset
 EndFlagSet fVid, 32
 
 ;***************************************************************************
@@ -933,6 +945,9 @@ pCRTCIndxMono	EQU	3B4h
 
 pCRTCDataColr	EQU	3D5h		; CRTC data register
 pCRTCDataMono	EQU	3B5h
+
+fVRTCEndIRQEna	EQU	00100000b	; default-on bit DISABLES the IRQ (yep...)
+fVRTCEndIRQClr	EQU	00010000b	; used to reset the flip-flop
 
 ;***************
 pStatColr	EQU	3DAh		; Status register
@@ -976,7 +991,8 @@ pStt0EGA	EQU	pMisc		; Miscellaneous status
 fStt0Swit	EQU	00010000b	;   Switch sense(addr'd by dot clk sel)
 fStt0FCI0	EQU	00100000b	;   Feature card input 0
 fStt0FCI1	EQU	01000000b	;   Feature card input 1
-fStt0VRTC	EQU	10000000b	;   VRTC
+fStt0VRTC	EQU	10000000b	;   VRTC IRQ flip-flop
+bStt0VRTC	EQU	7
 
 ;***************
 pAttr		EQU	3C0h		; Attribute(palette) address/data

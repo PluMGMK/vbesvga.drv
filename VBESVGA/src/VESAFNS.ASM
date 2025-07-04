@@ -289,7 +289,10 @@ assumes cs,Code
 externB		??BigFontFlags
 externW		_cstods		; in CURSOR.ASM
 externW		pxbytes		; in SWCURS.ASM
+externFP	sum_RGB_alt_far	; in ROBJECT.ASM
 externFP	DoInt10h	; in INT10.ASM
+externD		white		; in BLTUTIL.ASM
+externD		notwhite	; in BLTUTIL.ASM
 
 ; This goes in the Code segment for ease of access, and in case the
 ; BankSwitch function is included in the buffer (unlikely?)
@@ -328,12 +331,18 @@ VESAImagePages	db ?
 		db ?	; supposedly 1 if VBE 3.0, zero if less
 OFF_VESA_RDEPTH	equ $-VESAModeStruct
 VESARFieldSize	db ?
+public	red_shl
+red_shl		label byte	; how far left to shift red byte before ORing in
 VESARFieldPos	db ?
 OFF_VESA_GDEPTH	equ $-VESAModeStruct
 VESAGFieldSize	db ?
+public	green_shl
+green_shl	label byte	; how far left to shift green byte before ORing in
 VESAGFieldPos	db ?
 OFF_VESA_BDEPTH	equ $-VESAModeStruct
 VESABFieldSize	db ?
+public	blue_shl
+blue_shl	label byte	; how far left to shift blue byte before ORing in
 VESABFieldPos	db ?
 public	PaddingBits
 PaddingBits	label byte
@@ -368,16 +377,10 @@ VESA_MODE_LEN	equ $ - VESAModeStruct
 ; these are all to help with colour conversion - set to FFh if using palettes
 public	red_shr
 red_shr		db 0FFh	; how far right to shift red byte (8-RFieldSize)
-public	red_shl
-red_shl		db 0FFh	; how far left to shift it before ORing in (RFieldPos)
 public	green_shr
 green_shr	db 0FFh	; how far right to shift green byte (8-GFieldSize)
-public	green_shl
-green_shl	db 0FFh	; how far left to shift it before ORing in (GFieldPos)
 public	blue_shr
 blue_shr	db 0FFh	; how far right to shift blue byte (8-BFieldSize)
-public	blue_shl
-blue_shl	db 0FFh	; how far left to shift it before ORing in (BFieldPos)
 
 
 ; Functions to switch bank if the mode doesn't include a pointer
@@ -1268,9 +1271,10 @@ endif
 FindMode_done:
 	.286
 	test	di,di
-	jnz	@F
+	jz	@F
+	jmp	@@donewithsel
 
-	; Before fully committing to the mode, do some sanity checks on the
+@@:	; Before fully committing to the mode, do some sanity checks on the
 	; window. These are guaranteed to pass for a linear mode (since we've
 	; just set all the window attributes ourselves) but should stop us
 	; from making fools of ourselves with banked modes. I reckon that if
@@ -1279,7 +1283,7 @@ FindMode_done:
 	; back out to ENABLE and get it to display some details...
 	call	vesa_win_sanity_check
 	test	di,di
-	jnz	@F
+	jnz	@@donewithsel
 
 	; Set ScreenSelector based on what has taken place above
 	mov	ax,[VESAWinASeg]
@@ -1318,21 +1322,36 @@ FindMode_done:
 	lods	word ptr es:[si]
 	sub	al,8
 	neg	al	; AL = 8 - FieldSize
-	stosw
+	stosb
 	loop	@@colourloop
 	pop	di
 	pop	si
 
 @@skipcolourloop:
+	; now that the "shl" and "shr" bytes are set correctly, we can get
+	; the physical representation of "white", to be used (if needed)
+	; by masking functions
+	xor	ax,ax
+	mov	dh,al
+	not	ax
+	mov	dl,al
+	call	sum_RGB_alt_far
+	mov	[white.lo],ax
+	mov	[white.hi],dx
+	not	ax
+	not	dx
+	mov	[notwhite.lo],ax
+	mov	[notwhite.hi],dx
+
 	; setup a fallback bank-switch function, just in case we somehow got
 	; this far without one...
 	cmp	[VESABankSwitch.sel],0
-	jnz	@F
+	jnz	@@donewithsel
 
 	mov	[VESABankSwitch.sel],seg BankSwitchInt10
 	mov	[VESABankSwitch.off],offset BankSwitchInt10
 
-@@:
+@@donewithsel:
 	; time to free the selector
 	cCall	FreeSelector,<[CodeSel]>
 	assumes	es,nothing

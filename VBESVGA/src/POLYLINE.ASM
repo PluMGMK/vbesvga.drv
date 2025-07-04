@@ -175,15 +175,6 @@
         call    LineSeg_check_stack
                 endm
 
-; Most of the routines in the original driver seemed to assume that segments do
-; NOT contain partial scanlines - i.e. each scanline is guaranteed to lie within
-; a single bank; no need to bank-switch while running across a scanline.
-; This may be true for memory bitmaps (enforced by GDI?) but it is definitely
-; not true in general for VESA-compliant graphics cards. This switch enables
-; code to calculate drawing positions for cards that have partial scanlines at
-; the beginning/end of banks.
-?PARTIAL_SCANLINES = 1
-
 
 incLogical      = 1                     ;Include GDI Logical object definitions
 incDrawMode     = 1                     ;Include GDI DrawMode definitions
@@ -198,6 +189,7 @@ incOutput       = 1                     ;Include GDI Output definitions
         include polyline.inc
         include display.inc
         include cursor.inc
+        include bltutil.inc
 .list
 
 ??_out polyline
@@ -448,6 +440,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
 	localD	ForeColor
 	localW	DrawModeIndex		; ROP code
         localD  TmpColor                ; pen color
+	localD	ColourMask		; only for ROPs 7 and D
         localB  DeviceFlags             ; identifies type of device
 	localB	BytesPerPixel		; how big is each pixel for an RGB map?
 
@@ -461,6 +454,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localW  NotFillBytes            ; last valid address in huge segment
         localW  NextSegOff              ; offset to next hugemap segment
         localW  BM8                     ; point to BM8_... dataROT routine
+        localW  BM8_wrap                ; point to BM8_... dataROT routine
 	localW	RotColour		; point to colour rotation routine
 
 ; following variables are used for styled lines
@@ -718,13 +712,33 @@ ld_bg_color2:
         mov     BackColor.lo,ax	    ; save the background color
         mov     BackColor.hi,dx
 
-	mov	bx,es:[di].Rop2 	    ; get the ROP code
-        dec     bx                          ; make it zero based
-        and     bx,RASTER_OP_MASK           ; only 4 bits are significant
-        mov     DrawModeIndex,bx            ; save a copy
-	shiftl	bx,1
+	mov	ax,es:[di].Rop2 	    ; get the ROP code
+        dec     ax                          ; make it zero based
+        and     ax,RASTER_OP_MASK           ; only 4 bits are significant
+	mov	bx,si
+        test    DeviceFlags,TYPE_IS_BYTEMAP ; only colour bitmaps need sanitization
+	jz	@F
+
+	xor	si,si                       ; we don't want to sanitize any pattern!
+	call	sanitize_binary_rop
+	jc	@F
+	; if CF clear, then we may need to OR something into our colours
+	or	BackColor.lo,dx
+	or	BackColor.hi,cx
+	or	ForeColor.lo,dx
+	or	ForeColor.hi,cx
+	; and there's no need for masking
+	xor	cx,cx
+	mov	dx,cx
+
+@@:	mov	si,bx
+        mov     DrawModeIndex,ax            ; save a copy
+	shiftl	ax,1
+	mov	bx	,ax
 	mov	bx	,cs:[BM8_ROP_Table][bx]
 	mov	BM8	,bx
+	; assume no masking
+	mov	BM8_wrap,offset BM8_wrap_nomask
 
 	mov	bl,BytesPerPixel
 	dec	bl
@@ -733,7 +747,14 @@ ld_bg_color2:
 	mov	bx	,cs:[RotateColourTable][bx]
 	mov	RotColour,bx
 
-	mov	cl,[si].oem_pen_style	    ; get the requested style
+	mov	ColourMask.lo,dx
+	mov	ColourMask.hi,cx
+	or	cx,dx
+	jz	@F
+	; need masking
+	mov	BM8_wrap,offset BM8_wrap_masked
+
+@@:	mov	cl,[si].oem_pen_style	    ; get the requested style
         mov     LineStyle,cl                ; save style
         cmp     cl,MaxLineStyle             ; test for validity
         jg      jump_error_exit1            ; illegal style
@@ -1453,19 +1474,7 @@ calculate_for_bytemap:
 
 calculate_for_screen:
 
-ife	?PARTIAL_SCANLINES
-	inc	dx
-	sub	ax,wScans		; subtract no of scans/seg from Y
-	jnc	calculate_for_screen
-
-	dec	dx
-	neg	ax			; ax has no of scan lines from bot
-	mov	ScansLeftFromBot,ax	; save it
-	neg	ax
-	add	ax,wScans		; ax now has scan pos from top of seg
-else
 ;
-;	Let's try some new code to handle the general case...
 ;	Remember we now have DI == BX == StartX, AX == StartY
 ;
         mul     NextScan	; DX:AX := Beginning of scanline
@@ -1496,7 +1505,6 @@ no_fill:
 	; Set DX:DI to the offset
 	mov	dx,cx
 	mov	di,bx
-endif	; Back to common code...
 
 	mov	bank_select,dl		; initialize current bank
         mov     TempBank,dl
@@ -1505,12 +1513,7 @@ endif	; Back to common code...
 
 	mov	ds,TempCurSeg		; for EGA segment value saved
 
-if	?PARTIAL_SCANLINES
-	mov	ax,di			; all the multiplying up's already done
-else
-        mul     NextScan
-        add     ax,di                   ; make DS:DX:AX = absolute video address
-endif
+	mov	ax,di			; make DS:DX:AX = absolute video address
 
         add     ax,TempCurOff           ; + screen begin offset
         mov     TempCurByte,ax

@@ -85,11 +85,7 @@ getvendor:
 	cmp	ax,4Fh		; check for success
 	jne	@@next
 
-	push	ds
-	push	cs
-	pop	ds		; back to tiny model...
-
-	mov	ax,[wAttrs]
+	mov	ax,cs:[wAttrs]
 	; Check if supported by current hardware...
 	test	al,VESA_ATTR_HWSUPPORT
 	jz	@@next
@@ -99,6 +95,10 @@ getvendor:
 	; Is it colour?
 	test	al,VESA_ATTR_COLOUR
 	jz	@@next
+
+	push	ds
+	push	cs
+	pop	ds		; back to tiny model...
 
 	; Write the mode number
 	mov	ax,cx
