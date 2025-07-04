@@ -104,8 +104,39 @@ havesystemini_nextsection2:
 	lea	di, [svbesvgalower]
 	call	section_recognizer
 	jz	havesystemini_vbesvga
+	lea	di, [sboot]
+	call	section_recognizer
+	jz	havesystemini_boot
 	call	readnextline
 	jmp	havesystemini_nextsection
+havesystemini_boot:
+	call	readnextline
+	test	si, si
+	jz	havesystemini_eof
+	call	any_section_recognizer
+	je	havesystemini_nextsection2
+	lea	di, [pupdatetimelwr]
+	call	assign_recognizer
+	jne	havesystemini_boot
+	call	silly_atoi
+	mov	[update], bx
+	test	bx, bx
+	jnz	@F
+	cmp	byte ptr [si - 1], '0'
+	jne	@F
+	mov	byte ptr [updatel], 0	; Blank entry
+	jmp	havesystemini_boot
+@@:	mov	cx, 10
+	mov	ax, bx
+	mov	bl, 0
+@@:	xor	dx, dx
+	div	cx
+	inc	bl
+	xor	dx, dx
+	test	ax, ax
+	jnz	@B
+	mov	[updatel], bl
+	jmp	havesystemini_boot
 havesystemini_vbesvga:
 	call	readnextline
 	test	si, si
@@ -138,10 +169,16 @@ havesystemini_vbesvga:
 	jmp	havesystemini_vbesvga
 @@:	lea	di, [pfontsz]
 	call	assign_recognizer
-	jne	havesystemini_vbesvga
+	jne	@F
 	call	silly_char
 	mov	[fontsz], al
-	jmp	havesystemini_vbesvga
+@@:	lea	di, [pbouncelwr]
+	call	assign_recognizer
+	jne	@F
+	call	silly_char
+	sub	al, '0'
+	mov	[bounce], al
+@@:	jmp	havesystemini_vbesvga
 
 havesystemini_eof:
 
@@ -160,10 +197,10 @@ drawscreenanew:
 	lea	si, [configvbe]
 	mov	dx, 1Ah
 	call	drawstringat
-	mov	dx, 080Fh
+	mov	dx, 090Fh
 	lea	si, [enterbase]
 	call	drawstringat
-	mov	dx, 090Fh
+	mov	dx, 0A0Fh
 	lea	si, [escbase]
 	call	drawstringat
 	mov	dx, 20Fh
@@ -174,6 +211,12 @@ drawscreenanew:
 	call	drawstringat
 	lea	si, [fontsizebase]
 	mov	dx, 40Fh
+	call	drawstringat
+	lea	si, [updatewndbase]
+	mov	dx, 50Fh
+	call	drawstringat
+	lea	si, [bouncebase]
+	mov	dx, 60Fh
 	call	drawstringat
 
 drawscreen:
@@ -196,7 +239,7 @@ drawscreen2:
 	mov	al, "$"
 	stosb
 	pop	si
-	mov	dx, 32Dh
+	mov	dx, 032Dh
 	call	blankfield
 	call	drawstringat
 	call	decodefontsize
@@ -204,7 +247,25 @@ drawscreen2:
 	mov	dx, 042Dh
 	call	blankfield
 	call	drawstringat
-	call	decodedefault
+	mov	dx, 32Dh
+	lea	di, [genln]
+	push	di
+	cmp	[updatel], 255
+	je	@F
+	cmp	[updatel], 0
+	je	@F
+	mov	ax, [update]
+	call	itoa
+@@:	mov	al, "$"
+	stosb
+	pop	si
+	mov	dx, 52Dh
+	call	blankfield
+	call	drawstringat
+	call	decodebouncedisplay
+	mov	dx, 62Dh
+	call	blankfield
+	call	drawstringat
 	
 basecfgstate:
 	mov	ah, 0
@@ -221,6 +282,14 @@ basecfgstate:
 	je	setmode
 	cmp	al, "m"
 	je	setmode
+	cmp	al, 'B'
+	je	toggleb
+	cmp	al, 'b'
+	je	toggleb
+	cmp	al, 'U'
+	je	setupdate
+	cmp	al, 'u'
+	je	setupdate
 	cmp	al, 13
 	je	exit_save
 	cmp	al, 10
@@ -252,98 +321,55 @@ togglefsmall:
 	mov	al, 's'
 	jmp	toggleffinal
 
+toggleb:
+	mov	al, [bounce]
+	dec	al
+	cmp	al, 1
+	jbe	toggleb_done
+	mov	al, 2
+toggleb_done:
+	mov	[bounce], al
+	jmp	drawscreen
+
 setrefresh:
-	mov	dx, 32Dh
-	mov	ah, 2
-	int	10h
-	mov	bx, 70h
-	mov	cx, 4
-	mov	ax, 920h
-	int	10h
+	sub	sp, 6
+	mov	bp, sp
+	mov	word ptr [bp], 32Dh
+	mov	ax, [refresh]
+	mov	[bp + 2], ax
+	xor	cx, cx
+	mov	[bp + 4], cx
+	call	setsomenumber
+	jc	@F
+	mov	ax, [bp + 2]
+	mov	[refresh], ax
+@@:	add	sp, 6
+	jmp	drawscreen
 
-setrefresh_value:
-	mov	bp, [refresh]
-setrefresh_draw:
-	lea	di, [genln]
-	mov	si, di
-	mov	ax, bp
-	call	itoa
-	push	bp		; Some implementation destory BP for int10h due to bug
-	mov	bh, 0
-	mov	dx, 32Dh
-@@:	mov	ah, 2
-	int	10h
-	lodsb
-	mov	ah, 0Ah
-	mov	cx, 1
-	int	10h
-	inc	dl
-	cmp	si, di
-	jb	@B
-	push	dx
-@@:	mov	bh, 0
-	mov	ah, 2h
-	int	10h
-	mov	cx, 1
-	mov	ax, 0A20h
-	int	10h
-	inc	dl
-	cmp	dl, 2Fh
-	jb	@B
-	pop	dx
-	mov	bh, 0
-	mov	ah, 2
-	int	10h
-	pop	bp
-
-setrefresh_key:
-	mov	ah, 0
-	int	16h
-	cmp	al, "0"
-	jb	@F
-	cmp	al, "9"
-	ja	@F
-	jmp	setrefresh_digit
-@@:	cmp	al, 8
-	je	setrefresh_bksp
-	cmp	al, 27
-	je	setrefresh_esc
-	cmp	al, "X"
-	je	setrefresh_esc
-	cmp	al, "x"
-	je	setrefresh_esc
-	cmp	al, 13
-	je	setrefresh_set
-	cmp	al, 10
-	je	setrefresh_set
-	jmp	setrefresh_key
-
-setrefresh_digit:
-	mov	bl, al
-	mov	bh, 0
-	sub	bl, "0"
-	xchg	ax, bp
-	mov	cx, 10
-	mul	cx
-	add	ax, bx
-	cmp	ax, 255
-	jbe	@F
-	mov	ax, 255
-@@:	xchg	ax, bp
-	jmp	setrefresh_draw
-
-setrefresh_bksp:
-	xchg	ax, bp
-	xor	dx, dx
-	mov	cx, 10
-	div	cx
-	xchg	ax, bp
-	jmp	setrefresh_draw
-
-setrefresh_set:
-	mov	[refresh], bp
-setrefresh_esc:
-	jmp	drawscreenanew
+setupdate:
+	sub	sp, 6
+	mov	bp, sp
+	mov	word ptr [bp], 52Dh
+	mov	ax, [update]
+	mov	ch, 1
+	mov	cl, [updatel]
+	cmp	cl, 255
+	jne	@F
+	mov	cl, 0
+@@:	mov	[bp + 2], ax
+	mov	[bp + 4], cx
+	call	setsomenumber
+	jc	@F
+	mov	ax, [bp + 2]
+	mov	cl, [bp + 4]
+	cmp	cl, 0
+	jne	setupdate_hasvalue
+	mov	cl, 255
+setupdate_hasvalue:
+	mov	[update], ax
+	mov	[updatel], cl
+@@:	add	sp, 6
+	jmp	drawscreen
 
 setmode:	; Select video mode from popup
 	; Draws the popup
@@ -571,6 +597,110 @@ eraseui:
 	mov	ah, 2
 	int	10h
 	ret
+
+	; Receives 6 byte descriptor in BP, [BP + 0] = line, [BP + 2] = value, [BP + 4] = # digits, [BP + 5] = # digits valid
+	; Writes new data back to descriptor, returns CF clear on save, CF set on discard
+setsomenumber:
+setsomenumber_draw:
+	lea	di, [genln]
+	mov	si, di
+	cmp	byte ptr [bp + 5], 0
+	je	@F
+	cmp	byte ptr [bp + 4], 0
+	jz	setsomenumber_emptystring
+@@:	mov	ax, [bp + 2]
+	call	itoa
+setsomenumber_emptystring:
+	mov	dx, [bp]
+	push	bp		; Some implementation destory BP for int10h due to bug
+	cmp	si, di
+	je	setsomenumber_emptystring2
+	mov	bh, 0
+@@:	mov	ah, 2
+	int	10h
+	lodsb
+	mov	ah, 0Ah
+	mov	cx, 1
+	int	10h
+	inc	dl
+	cmp	si, di
+	jb	@B
+setsomenumber_emptystring2:
+	push	dx
+@@:	mov	bh, 0
+	mov	ah, 2h
+	int	10h
+	mov	cx, 1
+	mov	ax, 0A20h
+	int	10h
+	inc	dl
+	cmp	dl, 2Fh
+	jb	@B
+	pop	dx
+	mov	bh, 0
+	mov	ah, 2
+	int	10h
+	pop	bp
+
+setsomenumber_key:
+	mov	ah, 0
+	int	16h
+	cmp	al, "0"
+	jb	@F
+	cmp	al, "9"
+	ja	@F
+	jmp	setsomenumber_digit
+@@:	cmp	al, 8
+	je	setsomenumber_bksp
+	cmp	al, 27
+	je	setsomenumber_esc
+	cmp	al, "X"
+	je	setsomenumber_esc
+	cmp	al, "x"
+	je	setsomenumber_esc
+	cmp	al, 13
+	je	setsomenumber_set
+	cmp	al, 10
+	je	setsomenumber_set
+	jmp	setsomenumber_key
+
+setsomenumber_digit:
+	mov	bl, al
+	mov	bh, 0
+	sub	bl, "0"
+	mov	ax, [bp + 2]
+	mov	cx, 10
+	mul	cx
+	add	ax, bx
+	inc	byte ptr [bp + 4]
+	cmp	ax, 255		; If we need a different saturation value later, use bp + 8
+	jbe	@F
+	mov	ax, 255
+	mov	byte ptr [bp + 4], 3	; and this in [bp + 5]
+@@:	mov	[bp + 2], ax
+	jmp	setsomenumber_draw
+
+setsomenumber_bksp:
+	cmp	byte ptr [bp + 5], 0
+	je	@F
+	cmp	byte ptr [bp + 4], 0
+	jz	setsomenumber_nobksp
+@@:	mov	ax, [bp + 2]
+	xor	dx, dx
+	mov	cx, 10
+	div	cx
+	mov	[bp + 2], ax
+	dec	byte ptr [bp + 4]
+setsomenumber_nobksp:
+	jmp	setsomenumber_draw
+
+setsomenumber_set:
+	clc
+	ret
+setsomenumber_esc:
+	stc
+	ret
+
 	;*** End Configuration UI ***
 
 decodedefault:
@@ -592,6 +722,21 @@ decodefontsizesmall:
 	ret
 decodefontsizelarge:
 	lea	si, [large]
+	ret
+
+decodebouncedisplay:
+	mov	al, [bounce]
+	cmp	al, 0
+	je	decodebounceoff
+	cmp	al, 1
+	je	decodebounceon
+	lea	si, [default]
+	ret
+decodebounceon:
+	lea	si, [on]
+	ret
+decodebounceoff:
+	lea	si, [off]
 	ret
 
 exit_save:
@@ -630,13 +775,50 @@ save_boot_nextline2:
 	je	@F
 	lea	di, [pdisplaydrv]
 	call	assign_recognizer
+	je	save_boot_removeline
+	lea	di, [pgrabber]
+	call	assign_recognizer
+	je	save_boot_removeline
+	lea	di, [pupdatetimelwr]
+	call	assign_recognizer
 	jne	save_boot_nextline
+	cmp	[updatel], 255
+	je	save_boot_removeline
+	push	si			; We want to insert here after removing
+	call	remove_line
+	pop	si
+	lea	di, [pupdatetime]
+	cmp	[updatel], 0
+	je	save_boot_updateempty
+	mov	ax, [update]
+	call	insertpropnumeric
+	jmp	save_boot_updatedone
+save_boot_updateempty:
+	call	insert_line
+save_boot_updatedone:
+	mov	[updatel], 255
+	jmp	save_boot_nextline2
+save_boot_removeline:
 	call	remove_line
 	jmp	save_boot_nextline2
 @@:	mov	si, bp
 save_boot_insert:
 	lea	di, [pdisplaydrv]
 	call	insert_line
+	lea	di, [pgrabber]
+	call	insert_line
+	cmp	[updatel], 255
+	je	save_boot_newupdatedone
+	cmp	[updatel], 0
+	je	save_boot_newupdateempty
+	mov	ax, [update]
+	lea	di, [pupdatetime]
+	call	insertpropnumeric
+	jmp	save_boot_newupdatedone
+save_boot_newupdateempty:
+	lea	di, [pupdatetime]
+	call	insert_line
+save_boot_newupdatedone:
 	
 	;Step 2: Locate [386Enh] and add
 save_fenh:
@@ -723,6 +905,9 @@ save_vbesvga_nextline2:
 	lea	di, [pswapbufferlwr]
 	call	assign_recognizer
 	je	save_vbesvga_remove
+	lea	di, [pbouncelwr]
+	call	assign_recognizer
+	je	save_vbesvga_remove
 	jmp	save_vbesvga_nextline
 save_vbesvga_remove:
 	call	remove_line
@@ -756,6 +941,13 @@ save_vbesvga_insert:
 @@:	mov	ax, [refresh]	; SwapBuffersInterval= (always generated)
 	lea	di, [pswapbuffer]
 	call	insertpropnumeric
+	mov	al, [bounce]	; BounceOnModeset=
+	cmp	al, 2
+	jae	@F
+	mov	ah, 0
+	lea	di, [pbounce]
+	call	insertpropnumeric
+@@:
 save_buffer:
 	lea	si, [pname1]	; Now save buffer
 	lea	di, [pname2]
@@ -894,7 +1086,7 @@ popvidmodes:	; Fills MODES structure with video modes, stopping it with an all z
 	lea	di, [modes]
 	xor	ax, ax		; Blank out EDID generation space
 	mov	cx, 24 * 3
-	stosw
+	rep	stosw
 	lea	di, [buf]
 	mov	word ptr [di], "VB"
 	mov	word ptr [di + 2], "E2"
@@ -1305,6 +1497,8 @@ configvbe	db	"Configure SVGA Video Settings$"
 modebase	db	"M  Video Mode$"
 dblbuffbase	db	"D  Double Buffer Refresh(ms)$"
 fontsizebase	db	"F  Font Size$"
+updatewndbase	db	"U  Update DOS Window Tm (ms)$"
+bouncebase	db	"B  Bounce on Mode Set$"
 enterbase	db	"ENTER  Save & Exit$"
 escbase		db	"ESC    Exit$"
 
@@ -1318,6 +1512,7 @@ sboot		db	"[boot]$"
 
 pdisplay	db	"display=vddvbe.386$"
 pdisplaydrv	db	"display.drv=vbesvga.drv$"
+pgrabber	db	"386grabber=vbevmdib.3gr$"
 pwidthlower	db	"width="
 pwidth		db	"Width=$"
 pheightlower	db	"height="
@@ -1327,8 +1522,14 @@ pdepth		db	"Depth=$"
 pfontsz		db	"fontsize=$"
 pswapbufferlwr	db	"swapbuffersinterval="
 pswapbuffer	db	"SwapBuffersInterval=$"
+pbouncelwr	db	"bounceonmodeset="
+pbounce		db	"BounceOnModeset=$"
+pupdatetimelwr	db	"windowupdatetime=$"
+pupdatetime	db	"WindowUpdateTime=$"
 small		db	"small$"
 large		db	"large$"
+on		db	"on$"
+off		db	"off$"
 more		db	"PG/DN More$"
 less		db	"PG/UP Prev$"
 default0	db	"0) "
@@ -1343,9 +1544,12 @@ depth	dw	0
 pmid	db	0
 fontsz	db	0
 refresh	dw	16
+bounce	db	2
+updatel	db	255
+update	dw	0
 
 issetupexe:
-	;*** SETUP.EXE copies AUXSTACK.COM, VGASVGA.DRV, VDDVBE.386, VIDMODES.COM, VBESVGA.TXT
+	;*** SETUP.EXE copies AUXSTACK.COM, VGASVGA.DRV, VDDVBE.386, VBEVMDIB.3GR VIDMODES.COM, VBESVGA.TXT
 	;*** generates VBESVGA.EXE, then runs configuration screen
 
 	; This generates VBESVGA.EXE's body
@@ -1414,6 +1618,9 @@ foundwindir_nadj:
 	call	copyfile
 	jc	ioerror
 	lea	si, [vddvbe386]
+	call	copyfile
+	jc	ioerror
+	lea	si, [vbevmdib]
 	call	copyfile
 	jc	ioerror
 	pop	di
@@ -1654,6 +1861,7 @@ dosxexe		db	"DOSX.EXE", 0
 vmm32vxd	db	"VMM32.VXD", 0
 auxstack	db	"AUXSTACK.COM", 0
 vbesvgadrv	db	"VBESVGA.DRV", 0
+vbevmdib	db	"VBEVMDIB.3GR", 0
 vddvbe386	db	"VDDVBE.386", 0
 vidmodescom	db	"VIDMODES.COM", 0
 vbesvgatxt	db	"VBESVGA.TXT", 0
