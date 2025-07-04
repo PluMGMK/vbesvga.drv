@@ -91,9 +91,11 @@ jwasm -bin ../AUXSTACK.ASM
 mv -v AUXSTACK.BIN AUXSTACK.COM
 jwasm -bin ../VIDMODES.ASM
 mv -v VIDMODES.BIN VIDMODES.COM
+jwasm -bin ../SETUP.ASM
+mv -v SETUP.BIN SETUP.EXE # !
 
 # Zip it all up
-zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM VIDMODES.COM
+zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM VIDMODES.COM SETUP.EXE
 
 # Make a debug ZIP too (for my own setup)
 if [ -x make-debug.sh ]; then
