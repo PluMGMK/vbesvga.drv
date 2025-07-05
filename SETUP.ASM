@@ -948,6 +948,41 @@ save_vbesvga_insert:
 	lea	di, [pbounce]
 	call	insertpropnumeric
 @@:
+
+	;Step 4: update boot.description
+save_fbootdesc:
+	call	readfirstlineagain
+@@:	test	si, si
+	jz	save_buffer		; If they don't have boot.description don't make it
+	lea	di, [sbootdesc]		; It's optional anyway, respect the user's choice
+	call	section_recognizer
+	je	save_bootdesc
+	call	readnextline
+	jmp	@B
+save_bootdesc:
+	call	readnextline
+	test	si, si
+	jnz	@F
+	mov	si, [inend]
+@@:	mov	bp, si
+save_bootdesc_nextline:
+	call	readnextline
+	call	any_section_recognizer
+	je	save_bootdesc_nodisplay
+	lea	di, [pbootdesc]
+	call	assign_recognizer
+	jne	save_bootdesc_nextline
+	push	si
+	call	remove_line
+	pop	si
+save_bootdesc_insert:
+	lea	di, [pbootdesc]
+	call	insert_line
+	jmp	save_buffer
+save_bootdesc_nodisplay:
+	mov	si, bp
+	jmp	save_bootdesc_insert
+
 save_buffer:
 	lea	si, [pname1]	; Now save buffer
 	lea	di, [pname2]
@@ -1509,6 +1544,7 @@ svbesvga	db	"[VBESVGA.DRV]$"
 senhlower	db	"[386enh]"
 senh		db	"[386Enh]$"
 sboot		db	"[boot]$"
+sbootdesc	db	"[boot.description]$"
 
 pdisplay	db	"display=vddvbe.386$"
 pdisplaydrv	db	"display.drv=vbesvga.drv$"
@@ -1526,6 +1562,7 @@ pbouncelwr	db	"bounceonmodeset="
 pbounce		db	"BounceOnModeset=$"
 pupdatetimelwr	db	"windowupdatetime=$"
 pupdatetime	db	"WindowUpdateTime=$"
+pbootdesc	db	"display.drv=Modern SVGA driver$"
 small		db	"small$"
 large		db	"large$"
 on		db	"on$"
