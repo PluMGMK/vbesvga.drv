@@ -89,13 +89,15 @@ mv -v WIN16DDK/386/VBEGRAB/VBEVMDIB.SYM relsyms
 # Build the tools as well
 jwasm -bin ../AUXSTACK.ASM
 mv -v AUXSTACK.BIN AUXSTACK.COM
+jwasm -bin ../AUXCHECK.ASM
+mv -v AUXCHECK.BIN AUXCHECK.COM
 jwasm -bin ../VIDMODES.ASM
 mv -v VIDMODES.BIN VIDMODES.COM
 jwasm -bin ../SETUP.ASM
 mv -v SETUP.BIN SETUP.EXE # !
 
 # Zip it all up
-zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM VIDMODES.COM SETUP.EXE
+zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM AUXCHECK.COM VIDMODES.COM SETUP.EXE
 
 # Make a debug ZIP too (for my own setup)
 if [ -x make-debug.sh ]; then
