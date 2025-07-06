@@ -1,0 +1,242 @@
+; ---------------------------------------------------------------
+; Modern Generic SVGA driver
+; Copyright 2023, 2024, 2025 Michael Keyes
+; ---------------------------------------------------------------
+
+[data]
+    Version="3.10"
+
+[disks]
+    1 =. ,"Microsoft Windows 3.1 Disk #1",disk1
+    2 =. ,"Microsoft Windows 3.1 Disk #2",disk2
+    5 =. ,"Microsoft Windows 3.1 Disk #5",disk5
+[oemdisks]
+    V =.,  "Modern Generic SVGA driver", vbesvgadisk
+
+[display]
+;profile      = driver,        Description of driver,             resolution,    286 grabber,    logo code,     VDD,           386grabber, ega.sys, logo data,     optional work section
+vbesvgaautol  = V:vbesvga.drv, "Modern SVGA Automatic 256 Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbeautl
+vbesvgaautos  = V:vbesvga.drv, "Modern SVGA Automatic 256 Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbeauts
+vbesvga640    = V:vbesvga.drv, "Modern SVGA   640x480 256 colors", "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe640
+vbesvga600l   = V:vbesvga.drv, "Modern SVGA   800x600 256 Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe800l
+vbesvga600s   = V:vbesvga.drv, "Modern SVGA   800x600 256 Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe800s
+vbesvga768l   = V:vbesvga.drv, "Modern SVGA  1024x768 256 Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe768l
+vbesvga768s   = V:vbesvga.drv, "Modern SVGA  1024x768 256 Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe768s
+vbesvgaautol15= V:vbesvga.drv, "Modern SVGA Automatic 32k Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15autl
+vbesvgaautos15= V:vbesvga.drv, "Modern SVGA Automatic 32k Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15auts
+vbesvga64015  = V:vbesvga.drv, "Modern SVGA   640x480 32k colors", "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15640
+vbesvga600l15 = V:vbesvga.drv, "Modern SVGA   800x600 32k Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15800l
+vbesvga600s15 = V:vbesvga.drv, "Modern SVGA   800x600 32k Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15800s
+vbesvga768l15 = V:vbesvga.drv, "Modern SVGA  1024x768 32k Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15768l
+vbesvga768s15 = V:vbesvga.drv, "Modern SVGA  1024x768 32k Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbe15768s
+vbesvgaautolhi= V:vbesvga.drv, "Modern SVGA Automatic 65k Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehiautl
+vbesvgaautoshi= V:vbesvga.drv, "Modern SVGA Automatic 65k Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehiauts
+vbesvga640hi  = V:vbesvga.drv, "Modern SVGA   640x480 65k colors", "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehi640
+vbesvga600lhi = V:vbesvga.drv, "Modern SVGA   800x600 65k Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehi800l
+vbesvga600shi = V:vbesvga.drv, "Modern SVGA   800x600 65k Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehi800s
+vbesvga768lhi = V:vbesvga.drv, "Modern SVGA  1024x768 65k Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehi768l
+vbesvga768shi = V:vbesvga.drv, "Modern SVGA  1024x768 65k Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbehi768s
+vbesvgaautoltr= V:vbesvga.drv, "Modern SVGA Automatic 16M Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetrautl
+vbesvgaautostr= V:vbesvga.drv, "Modern SVGA Automatic 16M Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetrauts
+vbesvga640tr  = V:vbesvga.drv, "Modern SVGA   640x480 16M colors", "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetr640
+vbesvga600ltr = V:vbesvga.drv, "Modern SVGA   800x600 16M Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetr800l
+vbesvga600str = V:vbesvga.drv, "Modern SVGA   800x600 16M Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetr800s
+vbesvga768ltr = V:vbesvga.drv, "Modern SVGA  1024x768 16M Large" , "100,120,120", 2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetr768l
+vbesvga768str = V:vbesvga.drv, "Modern SVGA  1024x768 16M Small" , "100,96,96",   2:vgacolor.2gr, 2:vgalogo.lgo, V:vddvbe.386,  V:vbevmdib.3gr,,       2:vgalogo.rle,  vbetr768s
+
+[vbeauts]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbeautl]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbe640]
+,,system.ini,vbesvga.drv,"Width=","Width=640"
+,,system.ini,vbesvga.drv,"Height","Height=480"
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize",""
+
+[vbe800s]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbe800l]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbe768s]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbe768l]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=8"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbe15auts]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbe15autl]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbe15640]
+,,system.ini,vbesvga.drv,"Width=","Width=640"
+,,system.ini,vbesvga.drv,"Height","Height=480"
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize",""
+
+[vbe15800s]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbe15800l]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbe15768s]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbe15768l]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=15"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbehiauts]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbehiautl]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbehi640]
+,,system.ini,vbesvga.drv,"Width=","Width=640"
+,,system.ini,vbesvga.drv,"Height","Height=480"
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize",""
+
+[vbehi800s]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbehi800l]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbehi768s]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbehi768l]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=16"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbetrauts]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbetrautl]
+,,system.ini,vbesvga.drv,"Width=",""
+,,system.ini,vbesvga.drv,"Height",""
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbetr640]
+,,system.ini,vbesvga.drv,"Width=","Width=640"
+,,system.ini,vbesvga.drv,"Height","Height=480"
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize",""
+
+[vbetr800s]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbetr800l]
+,,system.ini,vbesvga.drv,"Width=","Width=800"
+,,system.ini,vbesvga.drv,"Height","Height=600"
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[vbetr768s]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+
+[vbetr768l]
+,,system.ini,vbesvga.drv,"Width=","Width=1024"
+,,system.ini,vbesvga.drv,"Height","Height=768"
+,,system.ini,vbesvga.drv,"Depth","Depth=24"
+,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+
+[sysfonts]
+1:vgasys.fon,"VGA (640x480) resolution System Font", "100,96,96"
+1:8514sys.fon,"8514/a (1024x768) resolution System Font", "100,120,120"
+
+[fixedfonts]
+2:vgafix.fon,"VGA (640x480) resolution Fixed System Font", "100,96,96"
+2:8514fix.fon,"8514/a (1024x768) resolution Fixed System Font",  "100,120,120"
+
+[oemfonts]
+2:vgaoem.fon,"VGA (640x480) resolution Terminal Font (USA/Europe)", "100,96,96",1
+2:8514oem.fon,"8514/a (1024x768) resolution Terminal Font (USA/Europe)", "100,120,120",1
+
+[fonts]
+   5:SSERIFE.FON, "MS Sans Serif 8,10,12,14,18,24 (VGA res)", "100,96,96"
+   5:SSERIFF.FON, "MS Sans Serif 8,10,12,14,18,24 (8514/a res)", "100,120,120"
+
+   5:COURE.FON, "Courier 10,12,15 (VGA res)", "100,96,96"
+   5:COURF.FON, "Courier 10,12,15 (8514/a res)", "100,120,120"
+
+   5:SERIFE.FON, "MS Serif 8,10,12,14,18,24 (VGA res)", "100,96,96"
+   5:SERIFF.FON, "MS Serif 8,10,12,14,18,24 (8514/a res)", "100,120,120"
+
+   5:SYMBOLE.FON, "Symbol 8,10,12,14,18,24 (VGA res)", "100,96,96"
+   5:SYMBOLF.FON, "Symbol 8,10,12,14,18,24 (8514/a res)", "100,120,120"
+
+   5:SMALLE.FON, "Small Fonts (VGA res)", "100,96,96"
+   5:SMALLF.FON, "Small Fonts (8514/a res)", "100,120,120"
+
