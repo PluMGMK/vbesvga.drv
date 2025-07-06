@@ -1909,8 +1909,9 @@ vbesvgatxt	db	"VBESVGA.TXT", 0
 vbesvgaexes	db	"VBESVGA.EXE $"
 nowindir	db	"Windows directory not found; try running SETUP C:\WINDIR", 13, 10, "$"
 nosysdir	db	"System directory not found or DOSX.EXE missing", 13, 10, "$"
-auxstackmsg	db	"Windows 3.1 may require AUXSTACK.COM loaded on certain video BIOSes", 13, 10
-		db	"due to small stack size in WIN.COM; this can NOT be detected automatically.", 13, 10, "$"
+auxstackmsg	db	"Standard-Mode Windows 3.1 requires AUXSTACK.COM loaded on certain video BIOSes,", 13, 10
+		db	"if you intend to open an MS-DOS Prompt, due to small stack size in WIN.COM;", 13, 10
+		db	"you can use AUXCHECK.COM to see if this is the case for your machine.", 13, 10, "$"
 
 	ALIGN 2
 
