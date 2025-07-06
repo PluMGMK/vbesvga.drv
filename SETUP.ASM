@@ -1586,7 +1586,7 @@ updatel	db	255
 update	dw	0
 
 issetupexe:
-	;*** SETUP.EXE copies AUXSTACK.COM, VGASVGA.DRV, VDDVBE.386, VBEVMDIB.3GR VIDMODES.COM, VBESVGA.TXT
+	;*** SETUP.EXE copies AUXSTACK.COM, AUXCHECK.COM, VGASVGA.DRV, VDDVBE.386, VBEVMDIB.3GR, VIDMODES.COM, VBESVGA.TXT
 	;*** generates VBESVGA.EXE, then runs configuration screen
 
 	; This generates VBESVGA.EXE's body
@@ -1663,6 +1663,9 @@ foundwindir_nadj:
 	pop	di
 foundwindir_auxstack:
 	lea	si, [auxstack]
+	call	copyfile
+	jc	ioerror
+	lea	si, [auxcheck]
 	call	copyfile
 	jc	ioerror
 foundwindir_vidmodes:
@@ -1897,6 +1900,7 @@ systemdir	db	"SYSTEM\", 0
 dosxexe		db	"DOSX.EXE", 0
 vmm32vxd	db	"VMM32.VXD", 0
 auxstack	db	"AUXSTACK.COM", 0
+auxcheck	db	"AUXCHECK.COM", 0
 vbesvgadrv	db	"VBESVGA.DRV", 0
 vbevmdib	db	"VBEVMDIB.3GR", 0
 vddvbe386	db	"VDDVBE.386", 0
