@@ -99,7 +99,7 @@ jwasm -bin ../SETUP.ASM
 mv -v SETUP.BIN SETUP.EXE # !
 
 # Create the plain-text documentation (I'm lazy...)
-pandoc ../README.md -t plain -o VBESVGA.TXT || echo pandoc failed to convert README.md to plain text!
+sed 's/×/\\*/g' ../README.md | pandoc -f markdown-smart --eol=crlf --ascii=true -t plain -o VBESVGA.TXT || echo pandoc failed to convert README.md to plain text!
 
 # Zip it all up
 zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM AUXCHECK.COM VIDMODES.COM SETUP.EXE OEMSETUP.INF
