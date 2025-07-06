@@ -27,12 +27,31 @@ This screenshot showcases the True Colour rendering capability, in the wallpaper
 
 ### Setup / Configuration Procedure
 
-The following changes are needed to your `C:\WINDOWS\SYSTEM.INI` file:
+There are a few different ways to setup and configure the driver, according to your tastes and requirements. In all cases, the first step is to extract the `vbesvga-release.zip` archive to a folder on your DOS/Win3.1 machine.
 
-* In the `[boot]` section, change the `display.drv=` line to point to `vbesvga.drv`. You should specify the full path, or else copy the file to `C:\WINDOWS\SYSTEM`. (Note that if the path is too long, it can cause the CodeView debugger to crash on startup!)
-* Also in the `[boot]` section, change the `386grabber=` line to point to `vbevmdib.3gr`. Again, you should specify the full path, or else copy the file to `C:\WINDOWS\SYSTEM`.
-* Likewise, in the `[386Enh]` section, change the `display=` line to point to `vddvbe.386`.
-* If needed (usually not), create a `[VBESVGA.DRV]` section to configure the driver, with some or all of the entries detailed in the following table:
+#### Generic `OEMSETUP.INF`
+
+The `OEMSETUP.INF` file provided in the release archives, which can be used with the Windows Setup tool, includes some basic profiles, typical of early SVGA hardware. You can choose a resolution of 640×480, 800×600, 1024×768, or "Automatic", meaning that your monitor's preferred resolution is auto-detected (which falls back to 1024×768 on failure). For each choice of resolution, you can pick 256 (8-bit), 32k (15-bit), 65k (16-bit) or 16M (24-bit) colours, and Large (120-dpi) or Small (96-dpi) fonts.
+
+There is no guarantee that your system will support all of these modes, so you may wish to use one of the other setup methods to get a more customized configuration.
+
+Thanks to @jschwartzenberg, @corma16 and @albertus82 for their help with creating this file!
+
+#### Interactive `SETUP.EXE`
+
+Also included in the release archives is the `SETUP.EXE` tool, which is an interactive DOS program. Simply run it, and it will present a configuration interface and copy the required files into your Windows folder. You can use it to select any display mode supported by your hardware, and choose Large or Small fonts. Unlike the `OEMSETUP.INF`, you can also configure the `SwapBuffersInterval` and `BounceOnModeset` values documented below.
+
+Once it installs the driver, it also creates a `VBESVGA.EXE` DOS program in the Windows directory that you can use to reconfigure the driver without reinstalling.
+
+Thanks to @joshudson for creating this tool!
+
+#### Generating a bespoke `OEMSETUP.INF`
+
+You can also use [@albertus82's BASIC script](https://github.com/albertus82/vbesvga-oemsetup/) to generate a bespoke `OEMSETUP.INF` for your machine, and then install the driver using Windows Setup.
+
+#### Full list of configuration options
+
+All of these options are recognized in the `[VBESVGA.DRV]` section of `SYSTEM.INI`. You can edit them manually, but the most important ones can be set using the `SETUP.EXE` / `VBESVGA.EXE` tool described above.
 
 |Parameter |Valid values |Meaning |Default value |
 --- | --- | --- | ---
@@ -46,18 +65,37 @@ The following changes are needed to your `C:\WINDOWS\SYSTEM.INI` file:
 |`Allow3ByteMode` | 0 or 1 | Allow using modes with a *total* depth of 24 bits; disable this to prefer 32-bit modes which give the same colour depth but use more RAM | 1 |
 |`BounceOnModeset` | 0 or 1 | This causes the Windows GUI to "bounce" to the background and immediately return to the foreground, when a windowed or background DOS box does a modeset (e.g. when starting up a windowed DOS box). Usually required to prevent display corruption, but does cause an unpleasant flash. You can try disabling it to prevent the flash, but if it causes display corruption you will need to turn it back on! (It is safe to disable this under VirtualBox and DOSBox-X, but not under QEMU or Microsoft Virtual PC.) | 1 |
 
-#### Example configuration
-
-Note that in many cases, the driver should now work out of the box, without any extra configuration, since it detects your monitor's preferred resolution and mostly uses sane defaults.
+#### Example configuration (showing only relevant snippets of `SYSTEM.INI`)
 
 ```
-[VBESVGA.DRV]
+[boot]
+display.drv=vbesvga.drv
+386grabber=vbevmdib.3gr
+<... more stuff ...>
+
+[386Enh]
+display=vddvbe.386
+WindowUpdateTime=15
+<... more stuff ...>
+
+[vbesvga.drv]
 Width=1440
 Height=900
 Depth=15
 SwapBuffersInterval=15
 fontsize=large
 ```
+
+#### Using debug builds
+
+To use the debug builds, you can place the `VDDVBE.386`, `VBEVMDIB.3GR` and/or `VBESVGA.DRV` files from the `vbesvga-debug.zip` archive in your `SYSTEM` directory, replacing the ones installed from `vbesvga-release.zip`. The corresponding `SYM` files can be used with `WDEB386` (supplied with the [Win16 DDK](http://www.win3x.org/win3board/viewtopic.php?t=2776)) or the Open Watcom debugger (only if the `SYM`s are placed in the `SYSTEM` directory).
+
+To make the aforementioned debugger `WDEB386.EXE` work on anything newer than a 486, you need to change some bytes:
+
+* At position `63D8`, you need to change `0F 24 F0` to `66 33 C0`
+* At position `63DF`, you need to change `0F 24 F8` to `66 33 C0`
+
+This removes references to the [`TR6` and `TR7` registers](https://en.wikipedia.org/wiki/Test_register), which crash the system since they only existed on the 386, 486 and a few other less-well-known chips!
 
 ### Limitations in Windows programs / components
 
@@ -223,7 +261,7 @@ Unfortunately, the practical uses for this are probably nil, since the most reli
 
 Thanks to @lss4 for [pointing out some omissions](https://github.com/PluMGMK/vbesvga.drv/issues/19) in the setup process!
 
-Note that the only step below which requires Windows is the initial installation of Visual C++ - the build process itself is purely DOS-based and can be automated using a batch file (or a Dosbox configuration file on a modern system!).
+Note that the only step below which requires Windows is the initial installation of Visual C++ - the build process itself is purely DOS-based and can be automated using a batch file. See the file `release-work/make-release.sh` for an example of how this can be done using DOSBox on Linux.
 
 ### `vbesvga.drv` (needed in both Standard and 386 Enhanced Mode)
 
@@ -248,22 +286,19 @@ Note that the only step below which requires Windows is the initial installation
 * In addition, ensure `386\TOOLS` from the DDK is in your `PATH`
 * Go to the `VBEGRAB` folder and run `nmake`; this should create the file `VBEVMDIB.3GR` which can be loaded by Windows
 
-### Tip for using the DDK on a modern system
-
-To make the debugger `WDEB386` work, you need to change some bytes:
-
-* At position `63D8`, you need to change `0F 24 F0` to `66 33 C0`
-* At position `63DF`, you need to change `0F 24 F8` to `66 33 C0`
-
-This removes references to the [`TR6` and `TR7` registers](https://en.wikipedia.org/wiki/Test_register), which crash the system since they only existed on the 386, 486 and a few other less-well-known chips!
-
 ## `TODO` list
 
-* Add a proper installation mechanism instead of having the user manually edit `SYSTEM.INI` (there are two PRs for this that I must review again!)
+### Things that should probably done before v1.0.0
+
+* Add more informative error messages to the `VDDVBE.386` startup sequence
 * Add a [minimum implementation of DCI](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM) to `VBESVGA.DRV`
 * Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
 * See if `VDDVBE.386` can work [on newer NVIDIA hardware](https://github.com/PluMGMK/vbesvga.drv/issues/94) (I have an affected card but need to swap it in for testing, which is manual-labour-intensive)
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
+* Investigate adding support for colour / animated cursors, for Win9x
+
+### Things that might come later
+
 * Consider efficiency improvements in `swap_buffers` and/or `VDD_SwapBuffers`, to reduce [idle CPU usage](https://github.com/PluMGMK/vbesvga.drv/issues/32)
 * Consider adding a virtual RAMDAC to the double-buffering code in `VDDVBE.386` to allow standard 256-colour modes to be emulated on hardware that only supports high-colour VBE modes
 * See if `VDDVBE.386` can work [on newer AMD hardware](https://github.com/PluMGMK/vbesvga.drv/issues/95) (I don't have any affected hardware)

@@ -19,6 +19,8 @@ echo - The full Visual C++ 1.5 directory hierarchy at:
 echo   $(pwd)/MSVC
 echo - A copy of EXE2BIN.EXE at:
 echo   $(pwd)/EXE2BIN.EXE
+echo - Optionally a working pandoc in your PATH,
+echo   to generate VBESVGA.TXT
 echo
 
 # Check that everything is present...
@@ -96,8 +98,14 @@ mv -v VIDMODES.BIN VIDMODES.COM
 jwasm -bin ../SETUP.ASM
 mv -v SETUP.BIN SETUP.EXE # !
 
+# Create the plain-text documentation (I'm lazy...)
+pandoc ../README.md -t plain -o VBESVGA.TXT || echo pandoc failed to convert README.md to plain text!
+
 # Zip it all up
 zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM AUXCHECK.COM VIDMODES.COM SETUP.EXE OEMSETUP.INF
+if [ -e VBESVGA.TXT ]; then
+	zip -u -9 vbesvga-release.zip VBESVGA.TXT
+fi
 
 # Make a debug ZIP too (for my own setup)
 if [ -x make-debug.sh ]; then
