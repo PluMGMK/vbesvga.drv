@@ -220,6 +220,10 @@ ENDIF
 ;*******
 ; Strings used in Fatal_Exit during initialization only
 	EXTRN	VDD_Str_BadDevice:BYTE
+	EXTRN	VDD_Str_BadInst1:BYTE
+	EXTRN	VDD_Str_BadInst2:BYTE
+	EXTRN	VDD_Str_BadInst3:BYTE
+	EXTRN	VDD_Str_BadInst4:BYTE
 
 VxD_IDATA_ENDS
 
@@ -482,7 +486,7 @@ ENDIF
 ; Set up interrupt trapping
 ;
 	call	VDD_Int_Device_Init
-	jc	short VDD_DI_Err	;   If error, quit
+	jc	VDD_DI_Err		;   If error, quit
 
 ;*******
 ; Set up Virtual Video memory state
@@ -511,13 +515,21 @@ ENDIF
 ;Specify instanced RAM (BIOS data area)
 ;
 	VMMCall _AddInstanceItem, <<OFFSET32 Inst_1>, 0>
-	jz	SHORT VDD_DI_Err
+	mov	esi,OFFSET32 VDD_Str_BadInst1
+	test	eax,eax
+	jz	SHORT VDD_Inst_Err
 	VMMCall _AddInstanceItem, <<OFFSET32 Inst_2>, 0>
-	jz	SHORT VDD_DI_Err
+	mov	esi,OFFSET32 VDD_Str_BadInst2
+	test	eax,eax
+	jz	SHORT VDD_Inst_Err
 	VMMCall _AddInstanceItem, <<OFFSET32 Inst_3>, 0>
-	jz	SHORT VDD_DI_Err
+	mov	esi,OFFSET32 VDD_Str_BadInst3
+	test	eax,eax
+	jz	SHORT VDD_Inst_Err
 	VMMCall _AddInstanceItem, <<OFFSET32 Inst_4>, 0>
-	jz	SHORT VDD_DI_Err
+	mov	esi,OFFSET32 VDD_Str_BadInst4
+	test	eax,eax
+	jz	SHORT VDD_Inst_Err
 
 	clc
 	popad
@@ -525,6 +537,11 @@ ENDIF
 
 VDD_DI_Err:
 	Fatal_Error <OFFSET32 VDD_Str_BadDevice>
+
+VDD_Inst_Err:
+	; ESI has been set to the error message,
+	; and EAX is zero, clearing all flags
+	VMMjmp	Fatal_Error_Handler
 
 EndProc VDD_Device_Init
 
@@ -992,7 +1009,7 @@ IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	mov	ax,4F03h	; get current video mode
 	int	10h
 	cmp	al,4Fh		; function supported?
-	jne	@F
+	jne	short @F
 
 	mov	edx,fVT_VBESVGA
 	; TODO: we should really detect the VRAM size here - it can be done by

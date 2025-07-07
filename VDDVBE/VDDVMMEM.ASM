@@ -169,7 +169,7 @@ VxD_ICODE_SEG
 ;   ENTRY:	    EBX = SYS VM Handle
 ;		    EDI -> VDD_CB_Struc
 ;
-;   EXIT:	    Carry set, if init failed
+;   EXIT:	    Carry clear, or Fatal_Error called
 ;
 ;   USES:	    EAX, ECX, EDX, ESI, Flags
 ;
@@ -447,7 +447,7 @@ ENDIF
 	xor	eax,eax
 	VMMCall _Get_Device_V86_Pages_Array,<eax,<OFFSET32 VMPagesBuf>,eax>
 	mov	eax,[VMPagesBuf+((0A0h/32)*4)]
-	test	eax,0FF00FFFFh
+	test	eax,0FF00FFFFh	; bits corresponding to A0-AF and B8-BF
 	jz	SHORT VDD_SI_PagesFree
 Debug_Out "VDD ERROR:  Video pages already allocated: #EAX"
 	jmp	SHORT VDD_SI_ErrPgs
@@ -708,7 +708,7 @@ EndProc VDD_VM_Mem_Grow_PageMaps
 ;   ENTRY:	    EBX = VM handle
 ;		    EDI -> VDD CB data
 ;
-;   EXIT:	    none
+;   EXIT:	    Carry cleared
 ;
 ;   USES:	    EDX, Flags
 ;

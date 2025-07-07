@@ -25,8 +25,48 @@ BeginMsg
 ;   device drivers. Another device driver is conflicting with the VDD.
 PUBLIC VDD_Str_CheckVidPgs
 VDD_Str_CheckVidPgs DB	"Cannot run Windows because of video device "
-		    DB	"conflict. You need to run the Setup program "
-		    DB	"again.",0
+		    DB	"conflict. Another VxD has reserved memory "
+		    DB	"in the range A0000-AFFFF and/or B8000-BFFFF "
+		    DB	"before VDDVBE.386. You may need to run the "
+		    DB	"Windows Setup program again.",0
+
+; The following is a message that results from failure to trap EGA/VGA I/O
+;   ports in the VDD, probably due to a device conflict. 0000 is replaced
+;   with port number at runtime.
+PUBLIC VDD_Str_BadIO
+VDD_Str_BadIO       DB	"0000 port could not be trapped by VDDVBE.386, "
+		    DB  "probably due to a conflict with another VxD. "
+		    DB  "You may need to run the Setup program again.",0
+
+; The following is a message that results from failure to switch to text
+;   mode for message-mode setup. I'm not sure how this could happen, but
+;   it's provided for in code, so...
+PUBLIC VDD_Str_BadMsgMode
+VDD_Str_BadMsgMode  DB	"Failed to switch to a recognizable text mode "
+		    DB	"for VDDVBE.386 message-mode init. Your VBIOS "
+		    DB	"may be malfunctioning...",0
+
+; The following messages indicate that BDA memory couldn't be instanced.
+PUBLIC VDD_Str_BadInst1
+VDD_Str_BadInst1    DB	"Mem range 40:49-66h couldn't be instanced by "
+		    DB  "VDDVBE.386, probably due to a conflict with "
+		    DB  "another VxD. You may need to run the Windows "
+		    DB	"Setup program again.",0
+PUBLIC VDD_Str_BadInst2
+VDD_Str_BadInst2    DB	"Mem range 40:84-8Ah couldn't be instanced by "
+		    DB  "VDDVBE.386, probably due to a conflict with "
+		    DB  "another VxD. You may need to run the Windows "
+		    DB	"Setup program again.",0
+PUBLIC VDD_Str_BadInst3
+VDD_Str_BadInst3    DB	"Mem range 40:A8-ABh couldn't be instanced by "
+		    DB  "VDDVBE.386, probably due to a conflict with "
+		    DB  "another VxD. You may need to run the Windows "
+		    DB	"Setup program again.",0
+PUBLIC VDD_Str_BadInst4
+VDD_Str_BadInst4    DB	"Mem range 40:10-11h couldn't be instanced by "
+		    DB  "VDDVBE.386, probably due to a conflict with "
+		    DB  "another VxD. You may need to run the Windows "
+		    DB	"Setup program again.",0
 
 ; The following is a message that results from incorrect initialization of
 ;   of the VDD, probably due to insufficient memory, incorrect display

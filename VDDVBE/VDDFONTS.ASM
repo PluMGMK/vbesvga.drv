@@ -103,7 +103,7 @@ VxD_ICODE_SEG
 ;   ENTRY:	    EBX = VM_Handle of SYS VM
 ;		    EDI -> VDD CB data
 ;
-;   EXIT:	    Carry set if failed
+;   EXIT:	    Carry clear, or Fatal_Memory_Error called
 ;
 ;   USES:
 ;
@@ -175,8 +175,9 @@ EndProc VDD_Font_Setup_Msg_Mode_Init
 ;   ENTRY:	    EBX = VM_Handle of SYS VM
 ;		    EDI -> VDD CB data
 ;
-;   EXIT:	    Carry set, if unable to allocate memory for font save
-;			or planar mode not initialized (should never occur)
+;   EXIT:	    Carry clear, or Fatal_Memory_Error called if unable to
+;			allocate memory for font save or planar mode not
+;			initialized (should never occur)
 ;
 ;   USES:	    EAX, ECX, EDX, ESI, Flags
 ;
@@ -389,7 +390,6 @@ ENDIF
 
 smf_done:
 	clc
-smf_exit:
 IFDEF DEBUG
 	mov	edi, [Vid_MsgFont]
 	Trace_Out 'Msg Mode Font @#edi'

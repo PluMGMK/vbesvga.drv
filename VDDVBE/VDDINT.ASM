@@ -217,7 +217,7 @@ VDD_Int_10_Stub ENDP
 ;   ENTRY:  EBX = VM_Handle of System VM
 ;	    EDI = VDD control block data ptr
 ;
-;   EXIT:   None
+;   EXIT:   Carry cleared or Fatal_Memory_Error called
 ;
 ;   USES:   Flags, EAX, ECX, EDX, ESI
 ;

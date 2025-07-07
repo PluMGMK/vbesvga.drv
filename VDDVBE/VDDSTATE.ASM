@@ -104,6 +104,10 @@ EXTRN	Vid_Text_Rows_Sect:DWORD
 IFDEF IBMXGA
 EXTRN	VDD_XGA_Ini:BYTE
 ENDIF
+
+;*******
+; Strings used in Fatal_Exit during initialization only
+	EXTRN	VDD_Str_BadMsgMode:BYTE
 VxD_IDATA_ENDS
 
 
@@ -340,7 +344,7 @@ Assert_VDD_ptrs ebx,edi
 
 ; Initialize the control block
 	call	VDD_State_Create_VM	    ; Init SYS VM's control block
-	jc	SHORT VS_DI_Exit	    ;	If error, return CF=1
+	jc	SHORT VS_DI_Exit	    ;	If error (never), return CF=1
 
 	call	VDD_VGA_Save_Regs	    ; Save the registers
 
@@ -365,7 +369,7 @@ ENDIF
 	call	VDD_State_Get_Initial_Lines ; Get number of lines
 
 	call	VDD_State_Init_MemC_Planar  ; Set up planar reg state
-	jc	SHORT VS_DI_Exit	    ;	If error, return CF=1
+	jc	SHORT VS_DI_Exit	    ;	If error (never), return CF=1
 
 	call	VDD_State_Init_Message_Mode ; Set up message reg state
 	jc	SHORT VS_DI_Exit	    ;	If error, return CF=1
@@ -496,7 +500,7 @@ EndProc VDD_State_Init_MemC_Planar
 ;ENTRY: EBX = VM_Handle of SYS VM
 ;	EDI -> VDD CB data
 ;
-;EXIT:	Carry set, if error
+;EXIT:	Carry clear, or Fatal_Error called
 ;
 ;USES:	Flags, EAX, EDX, ESI
 ;
@@ -506,7 +510,7 @@ BeginProc VDD_State_Init_Message_Mode, PUBLIC
 Assert_VDD_ptrs ebx,edi
 
 	call	VDD_Font_Setup_Msg_Mode_Init
-	jc	save_msgf_failed
+	; this dies on failure, it doesn't set CF and return
 
 ;*******
 ; Set video mode via INT 10
@@ -571,11 +575,13 @@ imm_copy_msg_dac:
 ; Save Font
 ;
 	call	VDD_Font_Save_Msg_Font	    ; Save the Font
-	jc	short save_msgf_failed
+	; this dies on failure, it doesn't set CF and return
 	SetFlag [Vid_Flags], fVid_MsgInit   ; Message mode state init'd
+	; at this point, CF should be clear (from the OR instruction)
+	ret
 
 save_msgf_failed:
-	ret
+	Fatal_Error <OFFSET32 VDD_Str_BadMsgMode>
 
 EndProc VDD_State_Init_Message_Mode
 

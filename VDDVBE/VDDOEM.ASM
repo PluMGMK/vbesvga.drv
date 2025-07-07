@@ -346,6 +346,9 @@ IFDEF	ATIVGA
 	mov	edi, OFFSET32 Vid_ATIVGA_IO_Table
 	VMMCall Install_Mult_IO_Handlers	; Install the port traps
 	pop	edi
+	; FIXME: ideally should do an informative Fatal_Error message here
+	; (same as the one in VDD_TIO_Device_Init), but ATIVGA isn't our
+	; main usecase...
 VIOTIOT_NotATIVGA:
 ENDIF
 	ret

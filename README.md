@@ -290,7 +290,6 @@ Note that the only step below which requires Windows is the initial installation
 
 ### Things that should probably done before v1.0.0
 
-* Add more informative error messages to the `VDDVBE.386` startup sequence
 * Add a [minimum implementation of DCI](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM) to `VBESVGA.DRV`
 * Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
 * See if `VDDVBE.386` can work [on newer NVIDIA hardware](https://github.com/PluMGMK/vbesvga.drv/issues/94) (I have an affected card but need to swap it in for testing, which is manual-labour-intensive)

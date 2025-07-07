@@ -194,6 +194,10 @@ Begin_VxD_IO_Table Vid_8514_IO_Table
 End_VxD_IO_Table Vid_8514_IO_Table
 ENDIF
 
+;*******
+; Strings used in Fatal_Exit during initialization only
+	EXTRN	VDD_Str_BadIO:BYTE
+
 VxD_IDATA_ENDS
 
 
@@ -346,7 +350,7 @@ VxD_ICODE_SEG
 ;
 ;   ENTRY:
 ;
-;   EXIT:
+;   EXIT:	Carry cleared
 ;
 ;   USES:
 ;
@@ -390,7 +394,7 @@ EndProc VDD_TIO_Sys_Critical_Init
 ;ENTRY: EBX = SYS VM handle
 ;	EDI = VDD CB ptr for SYS VM
 ;
-;EXIT:	CF = 1 if error
+;EXIT:	CF = 0, or Fatal_Error called
 ;
 ;USES:	Flags
 ;
@@ -410,7 +414,7 @@ BeginProc VDD_TIO_Device_Init
 ;
 	mov	edi, OFFSET32 Vid_IO_Table	; Table of ports
 	VMMCall Install_Mult_IO_Handlers	; Install the port traps
-	jc	VIOI_Exit
+	jc	VIOI_TrapFailed
 
 IFDEF	VGAMONO
 ;
@@ -470,11 +474,44 @@ IFDEF PVGA
 VIOI_NotPVGA:
 ENDIF
 	clc					; return with no error
-VIOI_Exit:
 
 	pop	edi
 	popad
 	ret
+
+VIOI_TrapFailed:
+	; at this point, EDX has the index of a port that couldn't be trapped,
+	; so fill it into the error message and print it out.
+	mov	al,dl				; fetch two lower digits
+	mov	ah,al
+	and	ah,0Fh
+	shr	al,4
+
+	or	ax,'00'				; convert to decimal numbers
+	cmp	ah,'0'+0Ah			; Q: >= 10?
+	jb	short @F			;    N: next digit
+	add	ah,'A'-'0'+0Ah			;    Y: convert to hex
+@@:	cmp	al,'0'+0Ah			; Q: >= 10?
+	jb	short @F			;    N: next digit
+	add	al,'A'-'0'+0Ah			;    Y: convert to hex
+@@:	shl	eax,10h				; move lower digits into upper half (big-endian!)
+	
+	mov	al,dh				; fetch two upper digits
+	mov	ah,al
+	and	ah,0Fh
+	shr	al,4
+
+	or	ax,'00'				; convert to decimal numbers
+	cmp	ah,'0'+0Ah			; Q: >= 10?
+	jb	short @F			;    N: next digit
+	add	ah,'A'-'0'+0Ah			;    Y: convert to hex
+@@:	cmp	al,'0'+0Ah			; Q: >= 10?
+	jb	short @F			;    N: done
+	add	al,'A'-'0'+0Ah			;    Y: convert to hex
+@@:
+	mov	dword ptr [VDD_Str_BadIO],eax
+	Fatal_Error <OFFSET32 VDD_Str_BadIO>
+
 EndProc VDD_TIO_Device_Init
 
 VxD_ICODE_ENDS
