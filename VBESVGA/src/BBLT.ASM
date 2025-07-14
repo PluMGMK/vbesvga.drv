@@ -30,6 +30,7 @@ include blt18.inc
 include blt81.inc
 include blt88.inc
 include bltstos.inc
+include int3.inc
 
 externFP PrestoChangeoSelector	; CS <--> DS conversion (hopefully CS <-> SS)
 externFP GetSelectorBase
@@ -674,7 +675,7 @@ bitblt_dispatch_done:
         xor     ax,ax
         cmp     cblt_code_end, ax
         je      bitblt_dispatch_exit
-ifdef DEBUG
+ifdef	INT3
         int 3
 endif
         pop     bx                              ; remove return addr.
