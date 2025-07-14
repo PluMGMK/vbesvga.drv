@@ -1055,7 +1055,7 @@ BeginProc VDD_PH_Mem_Get_Visible_Pages
 	jne	short @F
 	mov	ecx, [Vid_Sys_Visible_Pages]
 	inc	ecx
-	jecxz	short @F		    ; calculate, if -1
+	jz	short @F		    ; calculate, if -1
 	dec	ecx
 	movzx	eax, [Vid_Sys_First_Visible]
 	stc
@@ -1200,7 +1200,7 @@ IFDEF DEBUG
 	add	eax, ecx
 	cmp	eax, 16
 	jbe	short @F
-	Debug_Out 'VDD: visible pages (#ax) > 16'
+	Debug_Out 'VDD: visible pages (#ax) > 0010h'
 @@:
 	pop	eax
 	popfd

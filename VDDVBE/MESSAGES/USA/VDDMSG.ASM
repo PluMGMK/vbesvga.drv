@@ -24,48 +24,48 @@ BeginMsg
 ; The following is a message that results from incorrect installation of
 ;   device drivers. Another device driver is conflicting with the VDD.
 PUBLIC VDD_Str_CheckVidPgs
-VDD_Str_CheckVidPgs DB	"Cannot run Windows because of video device "
-		    DB	"conflict. Another VxD has reserved memory "
-		    DB	"in the range A0000-AFFFF and/or B8000-BFFFF "
-		    DB	"before VDDVBE.386. You may need to run the "
+VDD_Str_CheckVidPgs DB	"Cannot run Windows because of video device ",0Dh,0Ah
+		    DB	"conflict. Another VxD has reserved memory ",0Dh,0Ah
+		    DB	"in the range A0000-AFFFF and/or B8000-BFFFF ",0Dh,0Ah
+		    DB	"before VDDVBE.386. You may need to run the ",0Dh,0Ah
 		    DB	"Windows Setup program again.",0
 
 ; The following is a message that results from failure to trap EGA/VGA I/O
 ;   ports in the VDD, probably due to a device conflict. 0000 is replaced
 ;   with port number at runtime.
 PUBLIC VDD_Str_BadIO
-VDD_Str_BadIO       DB	"0000 port could not be trapped by VDDVBE.386, "
-		    DB  "probably due to a conflict with another VxD. "
+VDD_Str_BadIO       DB	"0000 port could not be trapped by VDDVBE.386, ",0Dh,0Ah
+		    DB  "probably due to a conflict with another VxD. ",0Dh,0Ah
 		    DB  "You may need to run the Setup program again.",0
 
 ; The following is a message that results from failure to switch to text
 ;   mode for message-mode setup. I'm not sure how this could happen, but
 ;   it's provided for in code, so...
 PUBLIC VDD_Str_BadMsgMode
-VDD_Str_BadMsgMode  DB	"Failed to switch to a recognizable text mode "
-		    DB	"for VDDVBE.386 message-mode init. Your VBIOS "
+VDD_Str_BadMsgMode  DB	"Failed to switch to a recognizable text mode ",0Dh,0Ah
+		    DB	"for VDDVBE.386 message-mode init. Your VBIOS ",0Dh,0Ah
 		    DB	"may be malfunctioning...",0
 
 ; The following messages indicate that BDA memory couldn't be instanced.
 PUBLIC VDD_Str_BadInst1
-VDD_Str_BadInst1    DB	"Mem range 40:49-66h couldn't be instanced by "
-		    DB  "VDDVBE.386, probably due to a conflict with "
-		    DB  "another VxD. You may need to run the Windows "
+VDD_Str_BadInst1    DB	"Mem range 40:49-66h couldn't be instanced by ",0Dh,0Ah
+		    DB  "VDDVBE.386, probably due to a conflict with ",0Dh,0Ah
+		    DB  "another VxD. You may need to run the Windows ",0Dh,0Ah
 		    DB	"Setup program again.",0
 PUBLIC VDD_Str_BadInst2
-VDD_Str_BadInst2    DB	"Mem range 40:84-8Ah couldn't be instanced by "
-		    DB  "VDDVBE.386, probably due to a conflict with "
-		    DB  "another VxD. You may need to run the Windows "
+VDD_Str_BadInst2    DB	"Mem range 40:84-8Ah couldn't be instanced by ",0Dh,0Ah
+		    DB  "VDDVBE.386, probably due to a conflict with ",0Dh,0Ah
+		    DB  "another VxD. You may need to run the Windows ",0Dh,0Ah
 		    DB	"Setup program again.",0
 PUBLIC VDD_Str_BadInst3
-VDD_Str_BadInst3    DB	"Mem range 40:A8-ABh couldn't be instanced by "
-		    DB  "VDDVBE.386, probably due to a conflict with "
-		    DB  "another VxD. You may need to run the Windows "
+VDD_Str_BadInst3    DB	"Mem range 40:A8-ABh couldn't be instanced by ",0Dh,0Ah
+		    DB  "VDDVBE.386, probably due to a conflict with ",0Dh,0Ah
+		    DB  "another VxD. You may need to run the Windows ",0Dh,0Ah
 		    DB	"Setup program again.",0
 PUBLIC VDD_Str_BadInst4
-VDD_Str_BadInst4    DB	"Mem range 40:10-11h couldn't be instanced by "
-		    DB  "VDDVBE.386, probably due to a conflict with "
-		    DB  "another VxD. You may need to run the Windows "
+VDD_Str_BadInst4    DB	"Mem range 40:10-11h couldn't be instanced by ",0Dh,0Ah
+		    DB  "VDDVBE.386, probably due to a conflict with ",0Dh,0Ah
+		    DB  "another VxD. You may need to run the Windows ",0Dh,0Ah
 		    DB	"Setup program again.",0
 
 ; The following is a message that results from incorrect initialization of
@@ -73,7 +73,7 @@ VDD_Str_BadInst4    DB	"Mem range 40:10-11h couldn't be instanced by "
 ;   adapter or bad files. User should verify that enough system memory
 ;   is available and that SETUP was completed properly.
 PUBLIC VDD_Str_BadDevice
-VDD_Str_BadDevice   DB	"Video initialization failed. You need to run "
+VDD_Str_BadDevice   DB	"Video initialization failed. You need to run ",0Dh,0Ah
 		    DB	"the Setup program again.",0
 
 ;******************************************************************************

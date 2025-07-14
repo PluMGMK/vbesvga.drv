@@ -1975,7 +1975,7 @@ BeginProc VDD_Init_DspDrv_DblBuf
 	mov	[ebp.Client_CX], dx
 	mov	esi, OFFSET32 VDD_DblBuf_Service
 	VMMCall Allocate_PM_Call_Back
-	jnc	@F
+	jnc	short @F
 
 	; if we fail, return zero
 	xor	eax,eax

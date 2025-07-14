@@ -722,6 +722,7 @@ BeginProc VDD_OEM_Set_Mode_Nested
 ; everything we can think of right here. I really don't like it because there's
 ; probably some stuff I haven't thought of, and this may just keep growing.
 ; But at least it's static so it won't be dynamically eating pages...
+; FIXME: use Instance Data defines for this instead of reinventing the wheel!
 VIDEO_BDA_SIZE	equ 96
 VIDEO_BDA_START	equ 449h
 
@@ -973,13 +974,14 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 	; determine the non-VBE mode from the saved state...
 	call	VDD_State_Get_Mode
 	cmp	eax,-1			;Q: valid mode?
-	je	short @F		;   N: skip modeset
-	; then call the BIOS to reset the VGA to that mode!
+	jne	short @F		;   Y: go set it
+	mov	eax,3			;   N: use text mode as baseline...
+@@:	; then call the BIOS to reset the VGA to that mode!
 	; set the MSB of AL to indicate we want to preserve VRAM
 	or	al,80h
 	; CF is clear from "or" above so this will do non-VBE modeset
 	call	VDD_OEM_Set_Mode_Nested
-@@:	jmp	short oce_not_vbe
+	jmp	short oce_not_vbe
 
 set_vbe_mode:
 	; if VM knows how to restore their own state, then skip
