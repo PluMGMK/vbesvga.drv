@@ -43,8 +43,11 @@ VDD_Str_BadIO       DB	"0000 port could not be trapped by VDDVBE.386, ",0Dh,0Ah
 ;   it's provided for in code, so...
 PUBLIC VDD_Str_BadMsgMode
 VDD_Str_BadMsgMode  DB	"Failed to switch to a recognizable text mode ",0Dh,0Ah
-		    DB	"for VDDVBE.386 message-mode init. Your VBIOS ",0Dh,0Ah
-		    DB	"may be malfunctioning...",0
+		    DB	"for VDDVBE.386 message-mode init, probably ",0Dh,0Ah
+		    DB	"because you are using a DBCS version of DOS ",0Dh,0Ah
+		    DB	"(e.g. Japanese). You need to load VDDD.386, ",0Dh,0Ah
+		    DB	"from the Japanese version of Windows 3.1. ",0Dh,0Ah
+		    DB	"See GitHub issue #98.",0
 
 ; The following messages indicate that BDA memory couldn't be instanced.
 PUBLIC VDD_Str_BadInst1

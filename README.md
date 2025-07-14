@@ -49,6 +49,12 @@ Thanks to @joshudson for creating this tool!
 
 You can also use [@albertus82's BASIC script](https://github.com/albertus82/vbesvga-oemsetup/) to generate a bespoke `OEMSETUP.INF` for your machine, and then install the driver using Windows Setup.
 
+#### Using the driver with DBCS versions of Windows / DOS (e.g. Japanese)
+
+Currently, `VDDVBE.386` only supports standard text mode for "message mode" (better known as BSoDs). To boot it on a DBCS version of DOS, you will need to use the shim driver `VDDD.386`, found in the Japanese version of Windows 3.1. This problem probably only arises with DBCS versions of Win9x, which normally support graphical-mode BSoDs, but (for now) cannot do so with this driver.
+
+See also [issue #98](https://github.com/PluMGMK/vbesvga.drv/issues/98).
+
 #### Full list of configuration options
 
 All of these options are recognized in the `[VBESVGA.DRV]` section of `SYSTEM.INI`. You can edit them manually, but the most important ones can be set using the `SETUP.EXE` / `VBESVGA.EXE` tool described above.
@@ -295,6 +301,7 @@ Note that the only step below which requires Windows is the initial installation
 * See if `VDDVBE.386` can work [on newer NVIDIA hardware](https://github.com/PluMGMK/vbesvga.drv/issues/94) (I have an affected card but need to swap it in for testing, which is manual-labour-intensive)
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
 * Investigate adding support for colour / animated cursors, for Win9x
+* Investigate adding proper support for graphical-mode BSoDs, for DBCS versions of Win9x
 
 ### Things that might come later
 
