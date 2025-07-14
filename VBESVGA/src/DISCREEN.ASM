@@ -406,6 +406,9 @@ discreen_not_transparent:
 	inc	cl
         ENDM
 
+	; Win9x may have given us a 16-bit DIB, tell it we can't handle it:
+	jmp	let_gdi_do_it
+
 parameter_error:
 	xor	ax,ax
         jmp     discreen_ret            ; error return
