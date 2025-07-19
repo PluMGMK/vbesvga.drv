@@ -32,8 +32,8 @@ setupexetaillen	equ	(_end - mzheader) AND 511
 	dw	2	; Size of header
 	dw	0FFFh	; Uses 64KB; I'm too lazy to make it smaller
 	dw	0FFFh	; If you're going to be running Windows you can spare it.
-	dw	0	; See above
-	dw	0FFF0h	; Initial SS
+	dw	0	; Initial SS (See above)
+	dw	0FFF0h	; Initial SP
 	dw	0	; Checksum - not used
 	dw	0	; Initial IP
 	dw	0	; Initial CS
@@ -1924,8 +1924,8 @@ vbemztaillen	equ	(issetupexe - mzheader) AND 511
 	dw	2	; Size of header
 	dw	0FFFh	; Uses 64KB; I'm too lazy to make it smaller
 	dw	0FFFh	; If you're going to be running Windows you can spare it.
-	dw	0	; See above
-	dw	0FFF0h	; Initial SS
+	dw	0	; Initial SS (See above)
+	dw	0FFF0h	; Initial SP
 	dw	0	; Checksum - not used
 	dw	0	; Initial IP
 	dw	0	; Initial CS
