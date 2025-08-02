@@ -289,6 +289,7 @@ getvendor:
 	lea	dx,modes
 	int	21h
 
+	mov	[total_found],0
 	lds	si,[lpModes]
 @@next:
 	lodsw
@@ -403,9 +404,24 @@ getvendor:
 	int	21h
 
 	pop	ds
+	inc	cs:[total_found]
 	jmp	@@next
 
 @@done:
+	; restore our own data segment
+	push	cs
+	pop	ds
+
+	mov	ah,9		; write to stdout
+	lea	dx,newline
+	int	21h
+
+	; print version and total modes found
+	lea	dx,verstr
+	int	21h
+	mov	ax,[total_found]
+	call	prtdw
+
 	mov	ax,4C00h	; EXIT with success
 	int	21h
 
@@ -527,6 +543,15 @@ ef_bhdr	db "[Invalid EDID header]",0Dh,0Ah,"$"
 ef_bchk	db "[EDID data checksum failure]",0Dh,0Ah,"$"
 ef_pres	db "[Preferred resolution not specified in first EDID DTD]",0Dh,0Ah,"$"
 
+; version string
+ifdef	VIDMODES_COMMIT
+verstr	db "VIDMODES.COM from Git commit ",VIDMODES_COMMIT,0Dh,0Ah
+else
+verstr	db "VIDMODES.COM from uncontrolled debug build",0Dh,0Ah
+endif
+; runs into this one
+	db "Total modes found: ","$"
+
 ; memory model descriptions
 models	dw mtext,mcga,mhgc,mega,mpacked,mseq256,mdirect,myuv
 mtext	db " Text (NG for VBESVGA.DRV)",'$'
@@ -634,5 +659,7 @@ desc3		DspDesc <?>
 n_extblocks	db ?
 ; Checksum C
 edid_checksum	db ?
+
+total_found	dw ?
 
 end	getvendor
