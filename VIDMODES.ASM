@@ -20,6 +20,52 @@ VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
 VESA_ATTR_HWSTEREO	= 0000100000000000b
 VESA_ATTR_DUAL		= 0001000000000000b
 
+; Detailed Timing Description
+DTD	struc
+pixclock_10kHz	dw ?	; pixel clock in 10-kHz units
+			; NOTE: RBIL and OSDev wiki both claim that this
+			; is two bytes, the first being the horizontal
+			; rate in kHz and the second being the vertical
+			; rate in Hz - but I can't find any evidence that
+			; this was ever the case!
+horizpixels_low	db ?	; width in pixels
+horizblnk_low	db ?	; blanking pixels
+horiz_high	db ?	; each nibble is high bits of previous two numbers
+vertlines_low	db ?	; height scanlines
+vertblnk_low	db ?	; blanking scanlines
+vert_high	db ?	; each nibble is high bits of previous two numbers
+horizporch_low	db ?
+horizsync_low	db ?
+vert_low	db ?	; nibbles are low bits of vertical porch and sync
+porch_sync_high	db ?	; two highest bits of each of four previous numbers!
+horiz_size_mmlo	db ?	; width in millimetres
+vert_size_mmlo	db ?	; height in millimetres
+size_mmhi	db ?	; each nibble is high bits of previous two numbers
+horiz_border	db ?
+vert_border	db ?
+display_type	db ?
+DTD	ends
+
+; Display Descriptor Tag values
+TAG_DUMMY	=  10h
+TAG_ESTTIMINGS	= 0F7h	; third set of established timings
+TAG_CVT3BYTE	= 0F8h
+TAG_DCMDATA	= 0F9h
+TAG_STDTIMINGS	= 0FAh
+TAG_COLOURPTS	= 0FBh
+TAG_PRODNAME	= 0FCh
+TAG_RANGELIMS	= 0FDh
+TAG_ASCII	= 0FEh
+TAG_SERIALNO	= 0FFh
+
+DspDesc	struc
+resd0	dw ?	; zero
+resd2	db ?	; zero
+tag	db ?	; see TAG_*
+rlimitf	db ?	; Display Range Limits Offsets: FLAGS
+descdat	db 13 dup (?)
+DspDesc	ends
+
 .code
 org	100h
 getvendor:
@@ -68,6 +114,177 @@ getvendor:
 	lea	dx,newline
 	int	21h
 
+	; Next query the monitor
+	mov	ah,9		; write to stdout
+	lea	dx,newline
+	int	21h
+	mov	ah,9		; write to stdout
+	lea	dx,screen
+	int	21h
+	mov	ah,9		; write to stdout
+	lea	dx,newline
+	int	21h
+
+	mov	ax,4F15h	; get EDID info
+	mov	bl,1
+	xor	cx,cx
+	mov	dx,cx
+	lea	di,edid_hdr
+	int	10h
+	cmp	ax,4Fh		; successful call?
+	jne	@@EDID_call_fail
+
+	mov	al,0FFh		; check for valid header block
+	mov	ah,es:[di]
+	cmp	ah,al		; first byte should be 0 or FFh
+	je	@F
+	test	ah,ah
+	jnz	@@EDID_bad_header
+@@:	; bytes 1-6 should be FFh
+	inc	di
+	mov	cx,6
+	cld
+	repe	scasb
+	jne	@@EDID_bad_header
+	; last byte should be same as first
+	mov	al,ah
+	scasb
+	jne	@@EDID_bad_header
+
+	; now check the checksum - the full structure should sum to zero
+	xor	ah,ah
+	lea	cx,edid_checksum[1]
+	lea	si,edid_hdr[0]
+	sub	cx,si
+@@:	lods	byte ptr es:[si]
+	add	ah,al
+	loop	@B
+	; AH should now be zero, and ZF should be set
+	jnz	@@EDID_bad_checksum
+
+	; we have good EDID data: print as much info as we can
+	; about the manufacturer / model
+	mov	ah,2		; write character to stdout
+	; start with the three-letter manufacturer name
+	mov	bx,[id_mfg_name]
+	mov	dx,bx
+	mov	cl,10
+	shr	dx,cl		; bits 14-10 = first letter
+	and	dl,1Fh
+	or	dl,40h		; 1 --> 'A', 2 --> 'B', etc.
+	int	21h
+	mov	dx,bx
+	mov	cl,5
+	shr	dx,cl		; bits 9-5 = second letter
+	and	dl,1Fh
+	or	dl,40h		; 1 --> 'A', 2 --> 'B', etc.
+	int	21h
+	mov	dx,bx
+	and	dl,1Fh
+	or	dl,40h		; 1 --> 'A', 2 --> 'B', etc.
+	int	21h
+	mov	dl,' '		; space before model number
+	int	21h
+
+	; check if there's a textual model number
+	lea	si,desc0
+@@:	cmp	[si].DspDesc.resd0,0	; if first word is zero, could be text
+	jne	@@EDID_check_next_desc
+	cmp	[si].DspDesc.resd2,0	; if third byte is also zero, it's text
+	jne	@@EDID_check_next_desc
+	cmp	[si].DspDesc.tag,TAG_PRODNAME
+	je	@@EDID_print_prodname
+@@EDID_check_next_desc:
+	add	si,size DspDesc
+	cmp	si,offset desc3
+	jna	@B
+	ja	@@EDID_prodname_done
+@@EDID_print_prodname:
+	lea	si,[si].DspDesc.descdat
+	inc	si		; skip initial zero
+	call	prtz
+@@EDID_prodname_done:
+
+	; now print the physical size in centimetres
+	mov	ah,9		; write to stdout
+	lea	dx,scrsize
+	int	21h
+	xor	ah,ah
+	mov	al,[horiz_size_cm]
+	call	prtdw
+	mov	ah,9		; write to stdout
+	lea	dx,cm_x
+	int	21h
+	xor	ah,ah
+	mov	al,[vert_size_cm]
+	call	prtdw
+	mov	ah,9		; write to stdout
+	lea	dx,cm_y
+	int	21h
+
+	; finally print the preferred resolution, from the first DTD,
+	; just like VBESVGA.DRV itself does (there are other ways, but
+	; the only one helpful to users of this program is the one that
+	; matches the behaviour of the driver itself!)
+	cmp	[desc0.pixclock_10kHz],0
+	jz	@@EDID_no_prefres
+
+	mov	al,es:[desc0.horizpixels_low]
+	mov	ah,es:[desc0.horiz_high]
+	mov	cl,4
+	shr	ah,cl	; upper nibble
+	call	prtdw
+	mov	ah,2		; write character to stdout
+	mov	dl,'*'
+	int	21h
+	mov	al,es:[desc0.vertlines_low]
+	mov	ah,es:[desc0.vert_high]
+	mov	cl,4
+	shr	ah,cl	; upper nibble
+	call	prtdw
+
+	; print the physical size *of this specific mode* in millimetres
+	; (confusing, I know...)
+	mov	ah,9		; write to stdout
+	lea	dx,scrsize
+	int	21h
+	mov	al,[desc0.horiz_size_mmlo]
+	mov	bx,word ptr [desc0.vert_size_mmlo]
+	mov	ah,bh
+	; extract the upper nibble of size_mmhi to get the upper byte
+	; of the width...
+	mov	cl,4
+	shr	ah,cl
+	; and the lower nibble of size_mmhi to get the upper byte of
+	; the height - confused yet?
+	and	bh,0Fh
+	call	prtdw		; print width
+	mov	ah,9		; write to stdout
+	lea	dx,mm_x
+	int	21h
+	mov	ax,bx
+	call	prtdw		; print height
+	mov	ah,9		; write to stdout
+	lea	dx,mm_y
+	int	21h
+	jmp	@@EDID_all_done
+
+@@EDID_call_fail:
+	lea	dx,ef_call
+	jmp	@@EDID_failure_message
+@@EDID_bad_header:
+	lea	dx,ef_bhdr
+	jmp	@@EDID_failure_message
+@@EDID_bad_checksum:
+	lea	dx,ef_bchk
+	jmp	@@EDID_failure_message
+@@EDID_no_prefres:
+	lea	dx,ef_pres
+@@EDID_failure_message:
+	mov	ah,9		; write to stdout
+	int	21h
+
+@@EDID_all_done:
 	mov	ah,9		; write to stdout
 	lea	dx,modes
 	int	21h
@@ -196,7 +413,7 @@ getvendor:
 	mov	ax,4C01h	; EXIT with failure
 	int	21h
 
-; Print ASCIZ string
+; Print ASCIZ (or LF-terminated) string
 ; In:	DS:SI (string)
 ; Out:	SI points past end of string
 ; Kill: AX, DL
@@ -206,6 +423,8 @@ prtz	proc	near
 @@:	lodsb
 	test	al,al
 	jz	@F
+	cmp	al,0Ah		; LF terminator (needed for EDID)
+	je	@F
 	mov	dl,al
 	int	21h
 	jmp	@B
@@ -292,8 +511,21 @@ failure	db "No SVGA BIOS"
 newline	db 0Dh,0Ah,"$"
 card	db "Your card"
 colon	db ": ","$"
-modes	db 0Dh,0Ah,"Available modes:",0Dh,0Ah,"$"
+screen	db "Your monitor: ","$"
+scrsize	db 0Dh,0Ah,"- Physical size: ","$"
+cm_x	db " cm * ","$"
+cm_y	db " cm",0Dh,0Ah	; runs onto next string...
+prefres	db "- Preferred resolution: ","$"
+mm_x	db " mm * ","$"
+mm_y	db " mm",0Dh,0Ah,"$"
+modes	db 0Dh,0Ah,"Available VBE video modes:",0Dh,0Ah,"$"
 nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
+
+; EDID failure messages
+ef_call	db "[VBIOS failed to return EDID data]",0Dh,0Ah,"$"
+ef_bhdr	db "[Invalid EDID header]",0Dh,0Ah,"$"
+ef_bchk	db "[EDID data checksum failure]",0Dh,0Ah,"$"
+ef_pres	db "[Preferred resolution not specified in first EDID DTD]",0Dh,0Ah,"$"
 
 ; memory model descriptions
 models	dw mtext,mcga,mhgc,mega,mpacked,mseq256,mdirect,myuv
@@ -359,5 +591,48 @@ pFBuf	dd ?
 dOSoff	dd ?
 wOSsize	dw ?
 	db 206 dup (?)
+
+; Monitor info
+edid_hdr	db 8 dup (?)
+; Vendor & Product Identification
+id_mfg_name	dw ?
+id_prod_code	dw ?
+id_serial	dd ?
+mfg_week	db ?	; or FFh to indicate model year
+mfg_year	db ?	; or model year
+; EDID Structure Version & Revision
+edid_ver	db ?
+edid_rev	db ?
+; Basic Display Parameters & Features
+vid_input_def	db ?
+horiz_size_cm	db ?	; physical monitor width in centimetres
+vert_size_cm	db ?	; physical monitor height in centimetres
+gamma		db ?
+features	db ?
+; Colour Characteristics
+rg_low_bits	db ?	; Red / Green
+bw_low_bits	db ?	; Blue / White
+rx_high_bits	db ?	; Red-x
+ry_high_bits	db ?	; Red-y
+gx_high_bits	db ?	; Green-x
+gy_high_bits	db ?	; Green-y
+bx_high_bits	db ?	; Blue-x
+by_high_bits	db ?	; Blue-y
+wx_high_bits	db ?	; White-x
+wy_high_bits	db ?	; White-y
+; Established Timings
+est_timings	dw ?
+oem_timings	db ?
+; Standard Timings
+std_timings	dw 8 dup (?)
+; 18-Byte Data Blocks
+desc0		DTD <?>	; if EDID >= 1.3, this HAS to be Preferred Timing Desc
+desc1		DspDesc <?>
+desc2		DspDesc <?>
+desc3		DspDesc <?>
+; Extension Block Count N
+n_extblocks	db ?
+; Checksum C
+edid_checksum	db ?
 
 end	getvendor
