@@ -135,7 +135,7 @@ getvendor:
 	jne	@@EDID_call_fail
 
 	mov	al,0FFh		; check for valid header block
-	mov	ah,es:[di]
+	mov	ah,[di]
 	cmp	ah,al		; first byte should be 0 or FFh
 	je	@F
 	test	ah,ah
@@ -156,7 +156,7 @@ getvendor:
 	lea	cx,edid_checksum[1]
 	lea	si,edid_hdr[0]
 	sub	cx,si
-@@:	lods	byte ptr es:[si]
+@@:	lods	byte ptr [si]
 	add	ah,al
 	loop	@B
 	; AH should now be zero, and ZF should be set
@@ -229,18 +229,20 @@ getvendor:
 	cmp	[desc0.pixclock_10kHz],0
 	jz	@@EDID_no_prefres
 
-	mov	al,es:[desc0.horizpixels_low]
-	mov	ah,es:[desc0.horiz_high]
+	mov	al,[desc0.horizpixels_low]
+	mov	ah,[desc0.horiz_high]
 	mov	cl,4
 	shr	ah,cl	; upper nibble
+	mov	[wcheck],ax
 	call	prtdw
 	mov	ah,2		; write character to stdout
 	mov	dl,'*'
 	int	21h
-	mov	al,es:[desc0.vertlines_low]
-	mov	ah,es:[desc0.vert_high]
+	mov	al,[desc0.vertlines_low]
+	mov	ah,[desc0.vert_high]
 	mov	cl,4
 	shr	ah,cl	; upper nibble
+	mov	[hcheck],ax
 	call	prtdw
 
 	; print the physical size *of this specific mode* in millimetres
@@ -355,9 +357,11 @@ getvendor:
 	; by eight straight away
 	mov	bl,[bDepth]
 	cmp	dx,offset mpacked
-	je	@@check_depth
+	jne	@F
+	call	chkboot		; use total depth for this check
+	jmp	@@check_depth
 
-	; If direct, we need to calculate total & significant depths
+@@:	; If direct, we need to calculate total & significant depths
 	cmp	dx,offset mdirect
 	jne	@@depth_checked	; otherwise, we have no more info to offer
 
@@ -366,6 +370,7 @@ getvendor:
 	mov	bl,[bRSize]
 	add	bl,[bGSize]
 	add	bl,[bBSize]
+	call	chkboot		; use significant depth for this check
 	mov	ax,bx
 	call	prtdw
 	mov	ah,2		; write character to stdout
@@ -412,6 +417,36 @@ getvendor:
 	push	cs
 	pop	ds
 
+	; state whether or not VBESVGA.DRV can be expected to boot
+	mov	ah,9		; write to stdout
+	lea	dx,vbesvga
+	int	21h
+	; use canboot to determine which string to print next
+	lea	dx,wont
+	cmp	[canboot],0
+	jz	@F
+	lea	dx,should
+@@:	int	21h
+	lea	dx,boot
+	int	21h
+
+	; state which mode we checked
+	mov	ax,[wcheck]
+	call	prtdw
+	mov	ah,2		; write character to stdout
+	mov	dl,'*'
+	int	21h
+
+	mov	ax,[hcheck]
+	call	prtdw
+	mov	ah,2		; write character to stdout
+	mov	dl,'*'
+	int	21h
+
+	mov	al,[dcheck]
+	xor	ah,ah
+	call	prtdw
+
 	mov	ah,9		; write to stdout
 	lea	dx,newline
 	int	21h
@@ -422,11 +457,17 @@ getvendor:
 	mov	ax,[total_found]
 	call	prtdw
 
-	mov	ax,4C00h	; EXIT with success
+	mov	ah,4Ch		; EXIT
+	mov	al,[canboot]
+	xor	al,1		; 1 (fail) if can't boot, 0 (success) if it can
 	int	21h
 
 @@failure:
-	mov	ax,4C01h	; EXIT with failure
+	mov	ah,9		; write to stdout
+	lea	dx,failure
+	int	21h
+
+	mov	ax,4C02h	; EXIT with failure (distinct from "bad mode" above)
 	int	21h
 
 ; Print ASCIZ (or LF-terminated) string
@@ -522,6 +563,27 @@ prtdw	proc	near
 	ret
 prtdw	endp
 
+
+; Set canboot based on currently-queried VBE mode
+; In:	BL = depth to check (significant)
+; Out:	canboot set to 1 if mode good, otherwise unchanged
+; Kill: AX
+;
+chkboot	proc	near
+	; check if this mode matches the default / desired one
+	cmp	bl,[dcheck]
+	jne	@F
+	mov	ax,[wWidth]
+	cmp	ax,[wcheck]
+	jne	@F
+	mov	ax,[wHeight]
+	cmp	ax,[hcheck]
+	jne	@F
+	; all checks passed, VBESVGA.DRV should be able to boot!
+	or	[canboot],1
+@@:	ret
+chkboot	endp
+
 .data
 failure	db "No SVGA BIOS"
 newline	db 0Dh,0Ah,"$"
@@ -536,6 +598,13 @@ mm_x	db " mm * ","$"
 mm_y	db " mm",0Dh,0Ah,"$"
 modes	db 0Dh,0Ah,"Available VBE video modes:",0Dh,0Ah,"$"
 nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
+vbesvga	db 0Dh,0Ah,"VBESVGA.DRV ","$"
+should	db "should","$"
+wont	db "will NOT","$"
+boot	db " boot with default / desired mode ","$"
+check	db "To check another mode, use /w, /h and /d switches",0Dh,0Ah
+	db "to specify desired width / height / depth - e.g.:",0Dh,0Ah
+	db 9,"vidmodes/w800/h600/d16",0Dh,0Ah,"$"
 
 ; EDID failure messages
 ef_call	db "[VBIOS failed to return EDID data]",0Dh,0Ah,"$"
@@ -544,13 +613,14 @@ ef_bchk	db "[EDID data checksum failure]",0Dh,0Ah,"$"
 ef_pres	db "[Preferred resolution not specified in first EDID DTD]",0Dh,0Ah,"$"
 
 ; version string
+verstr	db 0Dh,0Ah,"VIDMODES.COM from "
 ifdef	VIDMODES_COMMIT
-verstr	db "VIDMODES.COM from Git commit ",VIDMODES_COMMIT,0Dh,0Ah
+	db "Git commit ",VIDMODES_COMMIT
 else
-verstr	db "VIDMODES.COM from uncontrolled debug build",0Dh,0Ah
+	db "uncontrolled debug build"
 endif
 ; runs into this one
-	db "Total modes found: ","$"
+	db 0Dh,0Ah,"Total modes found: ","$"
 
 ; memory model descriptions
 models	dw mtext,mcga,mhgc,mega,mpacked,mseq256,mdirect,myuv
@@ -564,6 +634,14 @@ mdirect	db " Direct-colour, ",'$'
 myuv	db " YUV (NG for VBESVGA.DRV)",'$'
 
 align	2
+; specific mode to check for when determining if driver will boot
+; (1024*768*24 is the default, width/height will be overridden by EDID)
+wcheck	dw 1024
+hcheck	dw 768
+dcheck	db 24
+canboot	db 0
+
+; VBE card info
 sig	db "VBE2"
 .data?
 vesaver	dw ?
