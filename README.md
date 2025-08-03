@@ -148,7 +148,10 @@ If you're not sure which resolution to try, the `VIDMODES.COM` tool included in 
 Your card: 
 DOSBox Development Team DOSBox - The DOS Emulator 2
 
-Available modes:
+Your monitor: 
+[VBIOS failed to return EDID data]
+
+Available VBE video modes:
 0100: 640*400*8 Packed-pixel
 0101: 640*480*8 Packed-pixel
 0102: 800*600*4 EGA-type (NG for VBESVGA.DRV)
@@ -202,12 +205,25 @@ Available modes:
 020A: 1152*864*16 Direct-colour, 16S/16T
 020B: 1152*864*32 Direct-colour, 24S/32T
 0213: 640*400*32 Direct-colour, 24S/32T
+
+VBESVGA.DRV should boot with default / desired mode 1024*768*24
+To check another mode, use /w, /h and /d switches
+to specify desired width / height / depth - e.g.:
+	vidmodes/w800/h600/d16
+
+VIDMODES.COM from Git commit cf263dc
+Total modes found: 53
 ```
 Another example can be seen in the screenshot above, running on real hardware.
 
 You can see that it lists all detected colour graphics modes, showing their resolutions in typical `Width*Height*NominalBitDepth` form. It then indicates the memory model for each one - only *packed-pixel* and *direct-colour* modes are usable with `VBESVGA.DRV`, so all others say "NG" (no good).
 
 Direct-colour modes may have padding bits in each pixel, so the bit depths for these modes are listed with and without padding. The "S" number is what I call the *significant depth*, which excludes padding bits, and the "T" number is the *total depth*, which is the physical size of a pixel in memory. The driver searches for modes whose significant depths match what is specified in `SYSTEM.INI` (or 24 by default), but also makes sure the total depth is divisible by eight. If it is not divisible by eight, then pixels are not byte-aligned, and so those modes are also "NG" as seen above.
+
+You can also use `VIDMODES.COM` as part of a batch file to check whether or not `VBESVGA.DRV` can be expected to boot with certain mode settings. An example usage is given at the end of the output above. The errorlevel is set to:
+* `0` (**success**) if a successful boot is expected
+* `1` if a corresponding mode is **not** found
+* `2` if your graphics card doesn't support VBE at all
 
 ### Linear Modes and Double Buffering
 
