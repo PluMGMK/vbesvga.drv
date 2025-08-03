@@ -287,6 +287,58 @@ getvendor:
 	int	21h
 
 @@EDID_all_done:
+	; parse the command line
+	xor	ch,ch
+	mov	cl,ds:[80h]	; length of cmdtail
+	mov	di,81h		; address of cmdtail
+@@find_next_switch:
+	mov	al,'/'		; search for switches
+	repne	scasb
+	jcxz	@@cmdtail_done
+
+	; found a switch
+	mov	si,di
+	lodsb			; get the name of the switch
+	mov	di,si		; we've moved to next character!
+	or	al,' '		; force lowercase
+
+	lea	bx,wcheck
+	cmp	al,'w'
+	je	@F
+	lea	bx,hcheck
+	cmp	al,'h'
+	je	@F
+	lea	bx,dcheck
+	cmp	al,'d'
+	je	@F
+	loop	@@find_next_switch
+	jmp	@@cmdtail_done	; if loop terminates, we're done
+
+@@:	; next thing to do is parse a number
+	xor	bp,bp		; accumulate the number in BP
+@@:	lodsb
+	cmp	al,'0'
+	jb	@F
+	cmp	al,'9'
+	ja	@F
+	; AL contains a digit - convert to a number in AX
+	sub	al,'0'
+	xor	ah,ah
+	xchg	bp,ax
+	mov	dx,10
+	mul	dx		; multiply previous number by 10
+	add	bp,ax		; and accumulate
+	loop	@B
+@@:	; number is finished, store it
+	mov	[bx],bp
+	jcxz	@@cmdtail_done
+	; SI points beyond the "next" character (the one that isn't a digit),
+	; so rewind by one position when checking the next switch!
+	lea	di,[si-1]
+	inc	cl
+	jmp	@@find_next_switch
+
+@@cmdtail_done:
 	mov	ah,9		; write to stdout
 	lea	dx,modes
 	int	21h
@@ -356,12 +408,11 @@ getvendor:
 	; If packed-pixel, we can check the depth's divisibility
 	; by eight straight away
 	mov	bl,[bDepth]
+	mov	[cur_sigdepth],bl
 	cmp	dx,offset mpacked
-	jne	@F
-	call	chkboot		; use total depth for this check
-	jmp	@@check_depth
+	je	@@check_depth
 
-@@:	; If direct, we need to calculate total & significant depths
+	; If direct, we need to calculate total & significant depths
 	cmp	dx,offset mdirect
 	jne	@@depth_checked	; otherwise, we have no more info to offer
 
@@ -370,7 +421,7 @@ getvendor:
 	mov	bl,[bRSize]
 	add	bl,[bGSize]
 	add	bl,[bBSize]
-	call	chkboot		; use significant depth for this check
+	mov	[cur_sigdepth],bl
 	mov	ax,bx
 	call	prtdw
 	mov	ah,2		; write character to stdout
@@ -397,9 +448,23 @@ getvendor:
 
 @@check_depth:
 	test	bl,7
-	jz	@@depth_checked
+	jnz	@F
 
-	mov	ah,9		; write to stdout
+	; check if this mode matches the default / desired one
+	mov	al,[cur_sigdepth]
+	cmp	al,[dcheck]
+	jne	@@depth_checked
+	mov	ax,[wWidth]
+	cmp	ax,[wcheck]
+	jne	@@depth_checked
+	mov	ax,[wHeight]
+	cmp	ax,[hcheck]
+	jne	@@depth_checked
+	; all checks passed, VBESVGA.DRV should be able to boot!
+	or	[canboot],1
+	jmp	@@depth_checked
+
+@@:	mov	ah,9		; write to stdout
 	lea	dx,nondiv
 	int	21h
 
@@ -448,7 +513,7 @@ getvendor:
 	call	prtdw
 
 	mov	ah,9		; write to stdout
-	lea	dx,newline
+	lea	dx,check
 	int	21h
 
 	; print version and total modes found
@@ -563,27 +628,6 @@ prtdw	proc	near
 	ret
 prtdw	endp
 
-
-; Set canboot based on currently-queried VBE mode
-; In:	BL = depth to check (significant)
-; Out:	canboot set to 1 if mode good, otherwise unchanged
-; Kill: AX
-;
-chkboot	proc	near
-	; check if this mode matches the default / desired one
-	cmp	bl,[dcheck]
-	jne	@F
-	mov	ax,[wWidth]
-	cmp	ax,[wcheck]
-	jne	@F
-	mov	ax,[wHeight]
-	cmp	ax,[hcheck]
-	jne	@F
-	; all checks passed, VBESVGA.DRV should be able to boot!
-	or	[canboot],1
-@@:	ret
-chkboot	endp
-
 .data
 failure	db "No SVGA BIOS"
 newline	db 0Dh,0Ah,"$"
@@ -602,7 +646,7 @@ vbesvga	db 0Dh,0Ah,"VBESVGA.DRV ","$"
 should	db "should","$"
 wont	db "will NOT","$"
 boot	db " boot with default / desired mode ","$"
-check	db "To check another mode, use /w, /h and /d switches",0Dh,0Ah
+check	db 0Dh,0Ah,"To check another mode, use /w, /h and /d switches",0Dh,0Ah
 	db "to specify desired width / height / depth - e.g.:",0Dh,0Ah
 	db 9,"vidmodes/w800/h600/d16",0Dh,0Ah,"$"
 
@@ -739,5 +783,8 @@ n_extblocks	db ?
 edid_checksum	db ?
 
 total_found	dw ?
+
+; current significant depth - for check
+cur_sigdepth	db ?
 
 end	getvendor
