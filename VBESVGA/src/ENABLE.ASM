@@ -518,22 +518,22 @@ enable_read_profile	PROC	NEAR
 
 enable_read_profile_done:
 	push	es
-        cCall   AllocCSToDSAlias, <cs>          ;physical_device is in code seg
+        cCall   AllocCSToDSAlias, <cs>          ;physical_device is in init seg
         mov     es,ax
-	push	ax				; parameter for FreeSelector
+	push	ax				;parameter for FreeSelector
 
         mov     si,InitSegOFFSET info_table_base
         lea     di,physical_device
-	mov	ax,windowsVersion 	;fixup GDI info table
+	mov	ax,windowsVersion 		;fixup GDI info table
 	mov	es:[si].dpVersion,ax
         mov     ax,dpi_size
 	mov	es:[si].dpLogPixelsX,ax
         mov     es:[si].dpLogPixelsY,ax
 
-	call	vesa_gdi_fixup		;fixup GDI info table
+	call	vesa_gdi_fixup			;fixup GDI info table
 
         xor     bx,bx
-        mov     es,bx                   ;invalidate es before freeing
+        mov     es,bx                   	;invalidate es before freeing
         cCall   FreeSelector
         pop     es
 

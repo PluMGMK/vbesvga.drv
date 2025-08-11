@@ -1633,9 +1633,8 @@ vesa_gdi_fixup	proc near
 	mov	al,dl
 	mov	es:[si].dpPlanes,ax
 
-	mov	ax,[VESAScanLineLen]
-	mov	cx,ax
-        mov     es:[di].bmWidthBytes,ax
+	mov	cx,[VESAScanLineLen]
+        mov     es:[di].bmWidthBytes,cx
 	; set the # of scanlines per segment
 	mov	ax,[VESAWinSize]
 	cwd		; set DX to zero for the DIV we do below
