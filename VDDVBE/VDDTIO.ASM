@@ -1915,15 +1915,30 @@ ENDIF
 	call	VDD_OEM_Out_CRTC		    ; Q: OEM specific?
 IFDEF	VRTCTIMER
 	jc	VIOT_Out_CRTC_OutOnly		    ;	Y: Value handled, exit
+	jnz	VIOT_Out_Exit			    ;	Y: Don't do output
 ELSE
 	jc	SHORT VIOT_Out_CRTC_OutOnly	    ;	Y: Value handled, exit
-ENDIF
 	jnz	SHORT VIOT_Out_Exit		    ;	Y: Don't do output
+ENDIF
 	cmp	ebx,[Vid_CRTC_VM]		    ;	N: Q: CRTC owner?
 	jnz	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
 	TestMem [Vid_Flags], fVid_MsgInit	    ; Q: Message mode init'd?
-	jz	short VIOT_OUT_CRTC_NoOut	    ;	N:
-	cmp	cl,C_AddrH-C_HTotal		    ; Q: CRTC start address chg?
+	jnz	short @F			    ;	Y: go ahead
+	cmp	cl,C_IMaxIBM			    ;	N: Q: unknown OEM reg?
+	jna	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
+	; If the OEM routine didn't handle this unknown register, then just do
+	; the physical output of both the index and the data, which is valid
+	; since this is the CRTC owner, just with MsgMode not inited yet.
+	; This is required for NVIDIA GeForces which expose some weird APIs via
+	; extended CRTC registers. The approach here mirrors the one used in
+	; Win9x's VDD.VXD.
+	Debug_Out "Output to unknown CRTC register #CL before MsgMode inited"
+	dec	dl
+	mov	ah,al
+	mov	al,cl
+	out	dx,ax
+	jmp	short VIOT_Out_Exit
+@@:	cmp	cl,C_AddrH-C_HTotal		    ; Q: CRTC start address chg?
 	jb	SHORT VIOT_Out_CRTC_DoOut	    ;	N: continue
 	cmp	cl,C_AddrL-C_HTotal
 	ja	SHORT VIOT_Out_CRTC_DoOut	    ;	N: continue
@@ -1997,7 +2012,22 @@ VIOT_VI_CRT:
 	cmp	eax,eax
 	call	VDD_OEM_In_CRTC
 	jnz	short VIOT_VI_CRT_End
-	mov	al, [edi.VDD_Stt.CRTC][ecx]	    ; get virtual value
+	cmp	cl,C_IMaxIBM
+	jna	short @F
+	; If the OEM routine didn't handle this unknown register, then just do
+	; the physical output of the index and input of the data.
+	; This is required for NVIDIA GeForces which expose some weird APIs via
+	; extended CRTC registers. The approach here mirrors the one used in
+	; Win9x's VDD.VXD.
+	Debug_Out "Input from unknown CRTC register #CL"
+	dec	dl
+	mov	al,cl
+	out	dx,al
+	inc	dl
+	in	al,dx
+	jmp	short VIOT_VI_CRT_End
+
+@@:	mov	al, [edi.VDD_Stt.CRTC][ecx]	    ; get virtual value
 VIOT_VI_CRT_End:
 IFDEF DEBUG_virtualization
 	mov	ah, al

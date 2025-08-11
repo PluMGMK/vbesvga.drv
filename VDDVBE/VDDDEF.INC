@@ -819,6 +819,8 @@ mx_CRTC 	EQU	3Fh		; Mask for CRTC index
 ENDIF	;PVGA
 
 C_IMax		EQU	C_Last-C_HTotal
+; last valid CRTC index in the IBM VGA (i.e. last non-OEM one)
+C_IMaxIBM	EQU	C_Extension-C_HTotal-1
 .ERRE		mx_CRTC EQ C_IMax
 
 ;***************
