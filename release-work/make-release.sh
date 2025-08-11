@@ -103,10 +103,15 @@ mv -v SETUP.BIN SETUP.EXE # !
 # Create the plain-text documentation (I'm lazy...)
 sed 's/×/\\*/g' ../README.md | pandoc -f markdown-smart --eol=crlf --ascii=true -t plain -o VBESVGA.TXT || echo pandoc failed to convert README.md to plain text!
 
+# Create a floppy image
+/usr/sbin/mkfs.fat -C vbesvga.img 1440
+
 # Zip it all up
 zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM AUXCHECK.COM VIDMODES.COM SETUP.EXE OEMSETUP.INF
+mcopy -s -i vbesvga.img VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM AUXCHECK.COM VIDMODES.COM SETUP.EXE OEMSETUP.INF ::/
 if [ -e VBESVGA.TXT ]; then
 	zip -u -9 vbesvga-release.zip VBESVGA.TXT
+	mcopy -s -i vbesvga.img VBESVGA.TXT ::/
 fi
 
 # Make a debug ZIP too (for my own setup)
