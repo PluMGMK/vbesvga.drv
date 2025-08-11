@@ -717,20 +717,15 @@ ELSE	;VBE and 8514 detection are mutually exclusive from VDDDEF.INC
 ;==============================================================================
 BeginProc VDD_OEM_Set_Mode_Nested
 
-; When we call the BIOS to set the mode, it mucks around with a bunch of stuff
-; we don't actually want to change at all. An ugly "solution" is to back up
-; everything we can think of right here. I really don't like it because there's
-; probably some stuff I haven't thought of, and this may just keep growing.
-; But at least it's static so it won't be dynamically eating pages...
-; FIXME: use Instance Data defines for this instead of reinventing the wheel!
-VIDEO_BDA_SIZE	equ 96
-VIDEO_BDA_START	equ 449h
-
 VxD_DATA_SEG
 Backup_Font_Page0	db P_SIZE dup (?)
 Backup_State		db size Reg_State_struc dup (?)
 Backup_MemState		db size Mem_State_struc dup (?)
-Backup_Video_BDA	db VIDEO_BDA_SIZE dup (?)
+Backup_Inst1		db EGA_I_Len1 dup (?)
+Backup_Inst2		db EGA_I_Len2 dup (?)
+Backup_Inst3		db EGA_I_Len3 dup (?)
+Backup_Inst4		db EGA_I_Len4 dup (?)
+Backup_InstS		db SeaB_I_Len dup (?)
 Backup_Font_Saved	db 0
 VxD_DATA_ENDS
 
@@ -822,13 +817,31 @@ smn_regs_setup:
 .errnz (size Mem_State_struc) AND 3
 	rep	movsd
 
-	mov	esi,VIDEO_BDA_START
-	lea	edi,[Backup_Video_BDA]
-	mov	ecx,VIDEO_BDA_SIZE SHR 2
-.errnz VIDEO_BDA_SIZE AND 3
+	; backup the Video BDA instance data
 	Begin_Touch_1st_Meg
-	rep	movsd
-	End_Touch_1st_Meg
+	mov	esi,EGA_I_Addr1
+	lea	edi,[Backup_Inst1]
+	mov	ecx,EGA_I_Len1
+	rep	movsb
+	mov	esi,EGA_I_Addr2
+	lea	edi,[Backup_Inst2]
+	mov	ecx,EGA_I_Len2
+	rep	movsb
+	mov	esi,EGA_I_Addr3
+	lea	edi,[Backup_Inst3]
+	mov	ecx,EGA_I_Len3
+	rep	movsb
+	mov	esi,EGA_I_Addr4
+	lea	edi,[Backup_Inst4]
+	mov	ecx,EGA_I_Len4
+	rep	movsb
+	TestMem	[Vid_Flags],fVid_SeaBIOS
+	jz	short @F
+	mov	esi,SeaB_I_Addr
+	lea	edi,[Backup_InstS]
+	mov	ecx,SeaB_I_Len
+	rep	movsb
+@@:	End_Touch_1st_Meg
 
 	VMMcall Begin_Nest_V86_Exec 	; Get ready for software ints
 	; set the modeset flag so that nothing inside the V86 exec
@@ -879,13 +892,30 @@ smn_regs_setup:
 .errnz (size Mem_State_struc) AND 3
 	rep	movsd
 
-	mov	edi,VIDEO_BDA_START
-	lea	esi,[Backup_Video_BDA]
-	mov	ecx,VIDEO_BDA_SIZE SHR 2
-.errnz VIDEO_BDA_SIZE AND 3
+	; restore the Video BDA instance data
 	Begin_Touch_1st_Meg
-	rep	movsd
-	End_Touch_1st_Meg
+	mov	edi,EGA_I_Addr1
+	lea	esi,[Backup_Inst1]
+	mov	ecx,EGA_I_Len1
+	rep	movsb
+	mov	edi,EGA_I_Addr2
+	lea	esi,[Backup_Inst2]
+	mov	ecx,EGA_I_Len2
+	rep	movsb
+	mov	edi,EGA_I_Addr3
+	lea	esi,[Backup_Inst3]
+	mov	ecx,EGA_I_Len3
+	rep	movsb
+	mov	edi,EGA_I_Addr4
+	lea	esi,[Backup_Inst4]
+	mov	ecx,EGA_I_Len4
+	rep	movsb
+	jz	short @F
+	mov	edi,SeaB_I_Addr
+	lea	esi,[Backup_InstS]
+	mov	ecx,SeaB_I_Len
+	rep	movsb
+@@:	End_Touch_1st_Meg
 
 	pop	edi
 	pop	esi
