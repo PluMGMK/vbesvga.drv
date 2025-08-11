@@ -924,6 +924,7 @@ DefFlag Vid_SR_Section	    12	; Special save restore "critical" section
 DefFlag Vid_SR_Latch_res    13	; Restore latches at end of SR section
 DefFlag Vid_SR_regs_saved   14	; regs saved for CRTC owner while in SR section
 DefFlag	Vid_No_Bounce	    15	; don't do BG/FG bounce for focus VM on modeset
+DefFlag	Vid_SeaBIOS	    16	; SeaBIOS detected during init? Needs extra instdata
 EndFlagSet fVid, 32
 
 ;***************************************************************************
@@ -1126,6 +1127,8 @@ EGA_I_Addr3 EQU 4A8h
 EGA_I_Len3  EQU 4
 EGA_I_Addr4 EQU 410h
 EGA_I_Len4  EQU 2
+SeaB_I_Addr EQU 4B9h
+SeaB_I_Len  EQU 5
 
 
 BIOS_Col_Count	EQU 44Ah

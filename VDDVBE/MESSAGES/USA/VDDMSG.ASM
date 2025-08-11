@@ -70,6 +70,10 @@ VDD_Str_BadInst4    DB	"Mem range 40:10-11h couldn't be instanced by ",0Dh,0Ah
 		    DB  "VDDVBE.386, probably due to a conflict with ",0Dh,0Ah
 		    DB  "another VxD. You may need to run the Windows ",0Dh,0Ah
 		    DB	"Setup program again.",0
+PUBLIC VDD_Str_BadInstS
+VDD_Str_BadInstS    DB	"Mem range 40:B9-BDh (SeaBIOS VBE data) couldn't be instanced by ",0Dh,0Ah
+		    DB  "VDDVBE.386, probably due to a conflict with another VxD. You may ",0Dh,0Ah
+		    DB	"need to run the Windows Setup program again.",0
 
 ; The following is a message that results from incorrect initialization of
 ;   of the VDD, probably due to insufficient memory, incorrect display

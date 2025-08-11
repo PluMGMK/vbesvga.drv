@@ -207,6 +207,7 @@ Inst_1 InstDataStruc <,,EGA_I_Addr1,EGA_I_Len1,ALWAYS_Field> ; Video stuff
 Inst_2 InstDataStruc <,,EGA_I_Addr2,EGA_I_Len2,ALWAYS_Field> ; EGA variables
 Inst_3 InstDataStruc <,,EGA_I_Addr3,EGA_I_Len3,ALWAYS_Field> ; Video parms ptr
 Inst_4 InstDataStruc <,,EGA_I_Addr4,EGA_I_Len4,ALWAYS_Field>
+Inst_S InstDataStruc <,,SeaB_I_Addr,SeaB_I_Len,ALWAYS_Field> ; SeaBIOS stuff
 
 ;*******
 ; INI switch strings
@@ -224,6 +225,7 @@ ENDIF
 	EXTRN	VDD_Str_BadInst2:BYTE
 	EXTRN	VDD_Str_BadInst3:BYTE
 	EXTRN	VDD_Str_BadInst4:BYTE
+	EXTRN	VDD_Str_BadInstS:BYTE
 
 VxD_IDATA_ENDS
 
@@ -270,6 +272,15 @@ VxD_DATA_SEG
 EXTRN	fVT_NameTable:BYTE
 VxD_DATA_ENDS
 EXTRN	VDD_Debug_Dump_Flags:NEAR
+
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	; undo the hack we do below in VDD_Real_Init
+	xor	ecx, ecx
+	test	edx, fVT_VBESVGA
+	jz	short @F
+	xchg	cl, dh				; stash our 'S' in ECX if necessary
+@@:
+ENDIF
 
 	mov	eax, edx
 	xor	al, al
@@ -336,6 +347,13 @@ sci_set_vp:
 	xor	dl, dl
 	mov	[VT_Flags],edx			; Init flags
 	mov	[Vid_Flags],0
+
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	cmp	ecx,'S'				; SeaBIOS detected?
+	jne	short @F
+	SetFlag	[Vid_Flags],fVid_SeaBIOS
+@@:
+ENDIF
 
 ;*******
 ;Check if user disabled BG/FG bounce on windowed modeset
@@ -492,19 +510,19 @@ ENDIF
 ; Set up Virtual Video memory state
 ;
 	call	VDD_VM_Mem_Device_Init
-	jc	SHORT VDD_DI_Err	;   If error, quit
+	jc	VDD_DI_Err		;   If error, quit
 
 ;*******
 ; Initialize port trapping
 ;
 	call	VDD_TIO_Device_Init
-	jc	SHORT VDD_DI_Err	;   If error, quit
+	jc	VDD_DI_Err		;   If error, quit
 
 ;*******
 ; Set up VM controller state
 ;
 	call	VDD_State_Device_Init
-	jc	SHORT VDD_DI_Err	;   If error, quit
+	jc	VDD_DI_Err		;   If error, quit
 
 ;*******
 ; Set up VM windowed update interaction
@@ -531,7 +549,14 @@ ENDIF
 	test	eax,eax
 	jz	SHORT VDD_Inst_Err
 
-	clc
+	TestMem	[Vid_Flags],fVid_SeaBIOS
+	jz	SHORT @F
+	VMMCall _AddInstanceItem, <<OFFSET32 Inst_S>, 0>
+	mov	esi,OFFSET32 VDD_Str_BadInstS
+	test	eax,eax
+	jz	SHORT VDD_Inst_Err
+
+@@:	clc
 	popad
 	ret
 
@@ -1005,20 +1030,64 @@ ELSE
 ENDIF
 
 IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
-	; check if VBE modeset is supported
-	mov	ax,4F03h	; get current video mode
+	push	es
+	push	cs
+	pop	es
+	mov	ax,4F00h	; get VBE adapter info
+	lea	di,VESAInfoStruct
 	int	10h
+	pop	es
 	cmp	al,4Fh		; function supported?
-	jne	short @F
+	jne	@F
 
-	mov	edx,fVT_VBESVGA
-	; TODO: we should really detect the VRAM size here - it can be done by
-	; going through the mode list, calculating the framebuffer size of each
-	; one and multiplying by the reported total #pages, and then taking the
-	; largest value. It'd be quite a hassle since we'd need to allocate
-	; 256-byte buffers for both the VBE adapter info and the mode info,
-	; not to mention all the 64-bit arithmetic...
+	; we have VRAM in 64k blocks, convert to 256k blocks and stuff it into DL
+	movzx	edx,cs:[VESATotMem]
+	shr	dx,2		; convert from 64k to 256k
+	dec	dl		; need #blocks minus one
+	or	edx,fVT_VBESVGA
+
+	; detect SeaBIOS because we have to setup extra instance data for that...
+	push	es
+	les	di,cs:[VESAOEM]
+	lea	si,SeaBIOS_name
+	cld
+	mov	cx,SeaBIOS_len
+	repe	cmps byte ptr cs:[si],es:[di]
+	pop	es
+	jne	VRI_Exit	; not SeaBIOS, don't detect anything else
+	; This is a little unorthodox... Let's set the fVT_VBESVGA flag as normal,
+	; and then ALSO set DH to 'S' to indicate that it's specifically SeaBIOS
+	; VBE. As long as the PM code checks this before checking anything else,
+	; and normalizes the flags, we *should* be OK...
+	.errnz	0FF00h AND fVT_VBESVGA	; ensure fVT_VBESVGA is not part of DH
+	mov	dh,'S'
 	jmp	VRI_Exit	; don't detect anything else!
+
+VESAInfoStruct	label byte
+VESASig		db "VBE2"
+VESAVer		label word
+VESAMinVer	db ?
+VESAMajVer	db ?
+VESAOEM		dd ?
+VESACaps	dd ?
+VESAModes	dd ?
+VESATotMem	dw ?	; total video memory in 64k blocks
+VESAOEMVer	label word
+VESAOEMMinVer	db ?
+VESAOEMMajVer	db ?
+VESAVendor	dd ?
+VESAProduct	dd ?
+VESAProductRev	dd ?
+VESAAFVer	label word
+VESAAFMinVer	db ?
+VESAAFMajVer	db ?
+VESAAFModes	dd ?
+VESAScratch1	db 216 dup (?)
+VESAScratch2	db 100h dup (?)
+
+SeaBIOS_name	db "SeaBIOS"
+SeaBIOS_len	equ $-SeaBIOS_name
+
 @@:
 ENDIF
 
