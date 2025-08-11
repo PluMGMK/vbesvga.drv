@@ -12,6 +12,8 @@ echo builds of the three components of this project, i.e.
 echo VBESVGA.DRV, VDDVBE.386 and VBEVMDIB.3GR
 echo
 echo To do so, it requires the following:
+echo - A working mkfs.fat at /usr/sbin
+echo - A working mcopy in your PATH
 echo - A working dosbox in your PATH
 echo - The full Win16 DDK directory hierarchy at:
 echo   $(pwd)/WIN16DDK
