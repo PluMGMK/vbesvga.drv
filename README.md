@@ -27,11 +27,11 @@ This screenshot showcases the True Colour rendering capability, in the wallpaper
 
 ### Setup / Configuration Procedure
 
-There are a few different ways to setup and configure the driver, according to your tastes and requirements. In all cases, the first step is to extract the `vbesvga-release.zip` archive to a folder on your DOS/Win3.1 machine.
+There are a few different ways to setup and configure the driver, according to your tastes and requirements. In all cases, the first step is to extract the `vbesvga-release.zip` archive to a folder on your DOS/Win3.1 machine, or else mount the `vbesvga.img` as a floppy image (or put it on a real floppy).
 
 #### Generic `OEMSETUP.INF`
 
-The `OEMSETUP.INF` file provided in the release archives, which can be used with the Windows Setup tool, includes some basic profiles, typical of early SVGA hardware. You can choose a resolution of 640×480, 800×600, 1024×768, or "Automatic", meaning that your monitor's preferred resolution is auto-detected (which falls back to 1024×768 on failure). For each choice of resolution, you can pick 256 (8-bit), 32k (15-bit), 65k (16-bit) or 16M (24-bit) colours, and Large (120-dpi) or Small (96-dpi) fonts.
+The `OEMSETUP.INF` file provided in the release archives and images, which can be used with the Windows Setup tool, includes some basic profiles, typical of early SVGA hardware. You can choose a resolution of 640×480, 800×600, 1024×768, or "Automatic", meaning that your monitor's preferred resolution is auto-detected (which falls back to 1024×768 on failure). For each choice of resolution, you can pick 256 (8-bit), 32k (15-bit), 65k (16-bit) or 16M (24-bit) colours, and Large (120-dpi) or Small (96-dpi) fonts.
 
 There is no guarantee that your system will support all of these modes, so you may wish to use one of the other setup methods to get a more customized configuration.
 
@@ -39,7 +39,7 @@ Thanks to @jschwartzenberg, @corma16 and @albertus82 for their help with creatin
 
 #### Interactive `SETUP.EXE`
 
-Also included in the release archives is the `SETUP.EXE` tool, which is an interactive DOS program. Simply run it, and it will present a configuration interface and copy the required files into your Windows folder. You can use it to select any display mode supported by your hardware, and choose Large or Small fonts. Unlike the `OEMSETUP.INF`, you can also configure the `SwapBuffersInterval` and `BounceOnModeset` values documented below.
+Also included in the release archives and images is the `SETUP.EXE` tool, which is an interactive DOS program. Simply run it, and it will present a configuration interface and copy the required files into your Windows folder. You can use it to select any display mode supported by your hardware, and choose Large or Small fonts. Unlike the `OEMSETUP.INF`, you can also configure the `SwapBuffersInterval` and `BounceOnModeset` values documented below.
 
 Once it installs the driver, it also creates a `VBESVGA.EXE` DOS program in the Windows directory that you can use to reconfigure the driver without reinstalling.
 
@@ -94,7 +94,7 @@ fontsize=large
 
 #### Using debug builds
 
-To use the debug builds, you can place the `VDDVBE.386`, `VBEVMDIB.3GR` and/or `VBESVGA.DRV` files from the `vbesvga-debug.zip` archive in your `SYSTEM` directory, replacing the ones installed from `vbesvga-release.zip`. The corresponding `SYM` files can be used with `WDEB386` (supplied with the [Win16 DDK](http://www.win3x.org/win3board/viewtopic.php?t=2776)) or the Open Watcom debugger (only if the `SYM`s are placed in the `SYSTEM` directory).
+To use the debug builds, you can place the `VDDVBE.386`, `VBEVMDIB.3GR` and/or `VBESVGA.DRV` files from the `vbesvga-debug.zip` archive (or the `debug` folder in the `vbesvga.img` floppy image) in your `SYSTEM` directory, replacing the ones installed from `vbesvga-release.zip` (or the root directory of `vbesvga.img`). The corresponding `SYM` files can be used with `WDEB386` (supplied with the [Win16 DDK](http://www.win3x.org/win3board/viewtopic.php?t=2776)) or the Open Watcom debugger (only if the `SYM`s are placed in the `SYSTEM` directory).
 
 To make the aforementioned debugger `WDEB386.EXE` work on anything newer than a 486, you need to change some bytes:
 
