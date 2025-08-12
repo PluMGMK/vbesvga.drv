@@ -11,3 +11,5 @@
 *.LIB
 MAKEREL
 *.zip
+*.img
+*.img.bak
