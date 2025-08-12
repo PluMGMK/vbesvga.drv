@@ -145,24 +145,16 @@ VDD_Int_10_Stub PROC NEAR    ;don't use BeginProc/EndProc to avoid any
 				;preamble stuff!
 	push	di			    ; really EDI
 	or	ah, ah			    ;Q: Mode setting?
-	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
+	je	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	eax,4F02h		    ; Q: Mode setting (VBE)?
 	;This kinda sucks: we had to use EAX in the above instruction since it's
 	; being assembled in a 32-bit segment but will be run in a 16-bit one.
 	; That means we've two bytes gone begging, so we have to move the
 	; pointer back by two to overwrite them...
 	org	$-2
-	je	SHORT VIS_mode		    ;	Y: notify VDD and reflect
+	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	ah,05h			    ;Q: Page changeing?
-	je	SHORT VIS_mode		    ;	Y: notify VDD and reflect
-	cmp	ah,02h			    ;Q: Set cursor?
-	je	SHORT VIS_secondchance	    ;   Y: try to emulate
-	cmp	ah,03h			    ;Q: Get cursor?
-	je	SHORT VIS_secondchance	    ;   Y: try to emulate
-	cmp	ah,09h			    ;Q: Write char with attr?
-	je	SHORT VIS_secondchance	    ;   Y: try to emulate
-	cmp	ah,0Eh			    ;Q: Write TTY?
-	je	SHORT VIS_secondchance	    ;   Y: try to emulate
+	jz	SHORT VIS_mode		    ;	Y: notify VDD and reflect
 	cmp	ah, 11h 		    ;Q: Mode setting(via char set chg)?
 	jne	SHORT VIS_reflect	    ;	N: reflect
 	cmp	al, 3			    ;Q: Set char map
@@ -188,16 +180,9 @@ VIS_end_bp equ $ - VDD_Int_10_Stub
 	pop	di			    ; really EDI
 	iretd				    ; in 16 bit segment this is an iret
 
-VIS_secondchance:
-	; do the pop first to allow a Simulate_IRET on the breakpoint
-	pop	di			    ; really EDI
-VIS_second_bp equ $ - VDD_Int_10_Stub
-	nop				    ; a V86 brkpt will be installed here
-	jmp	SHORT @F
-
 VIS_reflect:
 	pop	di			    ; really EDI
-@@:	;jmp to old handler
+	;jmp to old handler
 	db	0EAh
 VIS_jmp equ $ - VDD_Int_10_Stub
 	dd	?
@@ -268,9 +253,6 @@ alloc_ok:
 	VMMCall Install_V86_Break_Point
 	add	eax, VIS_end_bp - VIS_start_bp
 	mov	esi, OFFSET32 VDD_Int_10_Mode_Sw_Done
-	VMMCall Install_V86_Break_Point
-	add	eax, VIS_second_bp - VIS_end_bp
-	mov	esi, OFFSET32 VDD_Int_10_TTY_Retrap
 	VMMCall Install_V86_Break_Point
 	pop	edi
 	mov	esi,OFFSET32 VDD_Int_10     ; ESI = address of handler
@@ -592,13 +574,11 @@ EndProc VDD_Int_Sys_Critical_Exit
 ;
 ;   DESCRIPTION:    Return Z-flag set, if we can emulate an INT 10.
 ;		    The VidTxtEmulate flag must be set, the INT 10 vector
-;		    must be the same as when we started (OR we must have
-;		    re-entered from our own stub), and the BIOS mode
-;		    40:49 must state mode 3 (OR 7 if mono supported).
+;		    must be the same as when we started, and the BIOS mode
+;		    40:49 must state mode 3.
 ;
 ;   ENTRY:  EBX = VM_Handle of System VM
 ;	    EDI -> VDD control block data
-;	    EBP = client register pointer
 ;
 ;   EXIT:	    Z-flag set, if emulation is possible
 ;		    ESI = start of video memory
@@ -609,22 +589,17 @@ EndProc VDD_Int_Sys_Critical_Exit
 BeginProc VDD_Int_Can_Emulate
 
 	TestMem [edi.VDD_PIF],fVidTxtEmulate; Q: INT 10 Emulate ON?
-	jz	ce_cant			    ;	N: Don't emulate
+	jz	short ce_cant		    ;	N: Don't emulate
 	BEGIN_Touch_1st_Meg
-	mov	esi,[Vid_Stub_I10_Vector]
-	ror	esi,10h
-	cmp	si,[ebp.Client_CS]	    ; Q: Are we re-entering from our stub?
-	je	short @F		    ;   Y: bypass hook check
-	ror	esi,10h
 	mov	eax,DWORD PTR ds:[10h*4]
-	cmp	eax,esi			    ; Q: Has anybody hooked INT 10?
+	cmp	eax,[Vid_Stub_I10_Vector]   ; Q: Has anybody hooked INT 10?
 	jne	short ce_exit		    ;	Y: not emulated
-@@:	cmp	WORD PTR ds:[44Ah],80	    ; Q: 80 columns ?
+	cmp	WORD PTR ds:[44Ah],80	    ; Q: 80 columns ?
 	jne	short ce_exit		    ;   N: No, don't emulate
 	mov	esi,0B8000h
 	cmp	BYTE PTR ds:[449h], 3	    ; Q: Really mode 3?
 	je	short ce_exit		    ;	N: not emulated
-	TestMem [edi.VDD_TFlags],fVT_Mono   ; Q: mono supported
+	TestMem [edi.VDD_TFlags],fVT_Mono	; Q: mono supported
 	jz	SHORT ce_cant		    ;	N: not emulated
 	cmp	BYTE PTR ds:[449h], 7	    ; Q: Really mode 7?
 	jne	short ce_exit		    ;	N: not emulated
@@ -1564,53 +1539,6 @@ VIR_exit:
 	ret
 
 EndProc VDD_Int_10_Mode_Sw_Done
-
-;******************************************************************************
-;
-;   VDD_Int_10_TTY_Retrap
-;
-;   DESCRIPTION:    V86 Breakpoint handler that gets called in this scenario:
-;		    A call to VDD_Int_Can_Emulate has failed, causing the
-;		    interrupt (for function 2, 3, 9 or 0Eh) to be reflected.
-;		    The reflected call has come back to our stub, so we want
-;		    to double-check if we can emulate it. Specifically, the
-;		    "Can_Emulate" call may have failed if we detected that
-;		    someone hooked int 10h, but if the call comes back to us,
-;		    then that hook doesn't matter!
-;
-;   ENTRY:	    EBX = VM Handle
-;		    Client_AH = function
-;		    Client_AL = sub-function
-;
-;   EXIT:	    Client_IP incremented if call still not emulated
-;		    IRET simulated if call emulated
-;
-;   USES:
-;
-;==============================================================================
-BeginProc VDD_Int_10_TTY_Retrap
-	Assert_Client_Ptr ebp
-
-	inc	[ebp.Client_IP] 		; inc past the brkpt
-
-	; Firstly, has anyone actually hooked int 10h?
-	mov	eax,DWORD PTR ds:[10h*4]
-	cmp	eax,[Vid_Stub_I10_Vector]
-	jne	short @F
-
-	; if not, then Can_Emulate definitely isn't gonna give a different
-	; answer this time, so forget about it!
-	ret
-
-@@:	; try and emulate the call again
-	call	VDD_Int_10
-	jc	short @F
-	VMMjmp	Simulate_Iret
-
-@@:	; still didn't emulate, so go back and chain to the next handler
-	ret
-
-EndProc VDD_Int_10_TTY_Retrap
 
 
 ;******************************************************************************
