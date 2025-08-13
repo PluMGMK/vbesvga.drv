@@ -31,7 +31,7 @@ In theory, this suite of drivers should support _any_ graphics card that properl
 
 * Intel 810 chipset integrated graphics [crashes back to DOS during boot](https://github.com/PluMGMK/vbesvga.drv/issues/99) leaving you with a blank screen. It turns out there is an official driver for this chipset, please use that instead: https://archive.org/details/w-810-r-209
 * The NVIDIA GeForce 1050 GTX triple-faults when attempting to boot Windows in Enhanced Mode, and presumably newer NVIDIA hardware has the same problem. See [issue #94](https://github.com/PluMGMK/vbesvga.drv/issues/94) for more details.
-* The AMD Radeon RX 7800 XT (and presumably newer Radeons) likewise [https://github.com/PluMGMK/vbesvga.drv/issues/95](fails to boot in Enhanced Mode). The RX 5000 series is OK (that's what I develop on), and I don't know what the story is with the RX 6000 series.
+* The AMD Radeon RX 7800 XT (and presumably newer Radeons) likewise [fails to boot in Enhanced Mode](https://github.com/PluMGMK/vbesvga.drv/issues/95). The RX 5000 series is OK (that's what I develop on), and I don't know what the story is with the RX 6000 series.
 
 In general, if your hardware is old enough, it probably has an official driver for Windows 3.1 (like the i810). Official drivers should be preferred where available because they generally use hardware acceleration and don't use inefficient Real-Mode BIOS calls. On processors from that era (especially early on), the CPU-bound routines of `VBESVGA.DRV` tend to give **really** poor performance!
 
