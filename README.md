@@ -25,6 +25,16 @@ This screenshot showcases the True Colour rendering capability, in the wallpaper
 
 ## Usage Notes
 
+### Hardware Support
+
+In theory, this suite of drivers should support _any_ graphics card that properly supports the VESA BIOS Extensions and doesn't do anything funky with the window size. So basically, any hardware made in the last thirty years. Unfortunately, real life is rarely as simple as one would like, so there is some hardware that just doesn't work:
+
+* Intel 810 chipset integrated graphics [crashes back to DOS during boot](https://github.com/PluMGMK/vbesvga.drv/issues/99) leaving you with a blank screen. It turns out there is an official driver for this chipset, please use that instead: https://archive.org/details/w-810-r-209
+* The NVIDIA GeForce 1050 GTX triple-faults when attempting to boot Windows in Enhanced Mode, and presumably newer NVIDIA hardware has the same problem. See [issue #94](https://github.com/PluMGMK/vbesvga.drv/issues/94) for more details.
+* The AMD Radeon RX 7800 XT (and presumably newer Radeons) likewise [https://github.com/PluMGMK/vbesvga.drv/issues/95](fails to boot in Enhanced Mode). The RX 5000 series is OK (that's what I develop on), and I don't know what the story is with the RX 6000 series.
+
+In general, if your hardware is old enough, it probably has an official driver for Windows 3.1 (like the i810). Official drivers should be preferred where available because they generally use hardware acceleration and don't use inefficient Real-Mode BIOS calls. On processors from that era (especially early on), the CPU-bound routines of `VBESVGA.DRV` tend to give **really** poor performance!
+
 ### Setup / Configuration Procedure
 
 There are a few different ways to setup and configure the driver, according to your tastes and requirements. In all cases, the first step is to extract the `vbesvga-release.zip` archive to a folder on your DOS/Win3.1 machine, or else mount the `vbesvga.img` as a floppy image (or put it on a real floppy).
