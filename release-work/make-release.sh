@@ -107,7 +107,7 @@ sed 's/×/\\*/g' ../README.md | pandoc -f markdown-smart --eol=crlf --ascii=true
 
 # Create a floppy image
 test -e vbesvga.img && mv -v vbesvga.img{,.bak} # don't complain about file already existing
-/usr/sbin/mkfs.fat -n VBESVGA -C vbesvga.img 1440
+/usr/sbin/mkfs.fat -n VBESVGA -C vbesvga.img 720
 
 # Zip it all up
 zip -u -9 vbesvga-release.zip VBESVGA.DRV VDDVBE.386 VBEVMDIB.3GR AUXSTACK.COM AUXCHECK.COM VIDMODES.COM SETUP.EXE OEMSETUP.INF
