@@ -30,6 +30,7 @@ include blt18.inc
 include blt81.inc
 include blt88.inc
 include bltstos.inc
+include bltspec.inc
 include int3.inc
 
 externFP PrestoChangeoSelector	; CS <--> DS conversion (hopefully CS <-> SS)
@@ -50,6 +51,7 @@ EXTRN	PaletteIndexTable:byte
 EXTRN	adPalette:byte
 EXTRN	bank_select:byte
 EXTRN	ScreenSelector:word
+EXTRN	special_blits:byte
 sEnd    Data
 
 .286
@@ -253,8 +255,11 @@ bitblt_prep_rop_etal	PROC	NEAR
 	jne	@F
 	or	al,DEVFLAG_PALETTE_MODIFIED
 
-@@:
-	lds	si,lpSrcDev
+@@:	cmp	special_blits,0
+	jz	@F
+	or	ah,high DEVFLAG_SPECIAL_ALLOWED
+
+@@:	lds	si,lpSrcDev
         les     di,lpDestDev
 	test	rop_flags,SOURCE_PRESENT
 	je	bitblt_prep_rop_src_done
@@ -643,9 +648,19 @@ dispatch_dst_memory:
 	jnz	short	dispatch_blt81		; which is faster code than
 	jmp	short	dispatch_blt11
 
-dispatch_dst_color_memory:
 dispatch_memory_to_screen:
+	; check for special case patblt...
+	cmp	word ptr Rop[2],0F0h		;PATCOPY
+	jne	dispatch_dst_color_memory
+	test	device_flags,DEVFLAG_SPECIAL_ALLOWED
+	jz	dispatch_dst_color_memory
+	call	GetLinBufPtr			;can we access the FB directly?
+	jc	dispatch_dst_color_memory
+	; at this point, ES:EDI points directly at the linear framebuffer
+	call	blt_spec_patcopy
+	jmp	short	bitblt_hardcode_done
 
+dispatch_dst_color_memory:
         test    rop_flags,SOURCE_PRESENT        ;if src is not used in the blt
         jz      short   dispatch_blt88          ; or the blt has a color src
         test    word ptr device_flags,DEVFLAG_SRC_COLOR  ;use blt_color_to_xxxx

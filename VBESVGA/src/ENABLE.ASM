@@ -84,9 +84,11 @@ EXTRN	windowsVersion:WORD	;Windows version number
 
 dpi_size	dw	96
 Profile_read	dw	0
+prefer_bank     dw      0
 aszSystemIni	db	"system.ini",0
 aszCurDrvFName	db	MAXFNAMELEN DUP(0)
-prefer_bank     dw      0
+public	special_blits
+special_blits   db      1
 
 SYSINI	STRUC
     SYSINI_CMPSTR	DW	0
@@ -157,6 +159,13 @@ PreferBank_off		db	"0",0
 sysini_bankstruc       LABEL   BYTE
 SYSINI	<PreferBank_on,1,1>
 SYSINI	<PreferBank_off,1,0>
+
+SpecialBlit_member	db	"EnableSpecialCaseLinearBlits",0
+SpecialBlit_on		db	"1",0
+SpecialBlit_off		db	"0",0
+sysini_sblitstruc      LABEL   BYTE
+SYSINI	<SpecialBlit_on,1,1>
+SYSINI	<SpecialBlit_off,1,0>
 
 	externW ScreenSelector		; screen selector
         externW ScratchSel              ; the free selector
@@ -387,6 +396,30 @@ enable_read_profile	PROC	NEAR
 	lea	bp,sysini_bankstruc
         call    enable_find_substring
 	mov	prefer_bank,ax
+
+	lea	ax,boot_category
+        push    ds
+        push    ax
+	lea	ax,SpecialBlit_member
+        push    ds
+        push    ax
+	push	ds				;this is the default as well
+        push    ax
+        lea     ax,aszCurDrvFName
+        push    ds
+        push    ax
+        push    MAXFNAMELEN
+	lea	ax,aszSystemIni 		;ptr to "system.ini" string
+        push    ds                              ;long ptr
+        push    ax
+	call	GetPrivateProfileString
+
+	mov	ax,1			       ;default return value (allow)
+	mov	bx,2				;number different modes
+        lea     si,aszCurDrvFName
+	lea	bp,sysini_bankstruc
+        call    enable_find_substring
+	mov	special_blits,ax
 
 	lea	ax,boot_category
         push    ds

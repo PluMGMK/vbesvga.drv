@@ -382,6 +382,27 @@ green_shr	db 0FFh	; how far right to shift green byte (8-GFieldSize)
 public	blue_shr
 blue_shr	db 0FFh	; how far right to shift blue byte (8-BFieldSize)
 
+; flat selector to enable linear framebuffer to be accessed with normal
+; 32-bit addressing on a 386 or newer
+flat_selector	dw 0
+
+; Function to get a 48-bit huge pointer into ES:SI:DI for the linear
+; framebuffer. Intended to be used for DCI and special-case BitBlt.
+; Destroys AX, indicates status in CF.
+public	GetLinBufPtr
+GetLinBufPtr	proc far
+	mov	ax,[flat_selector]
+	test	ax,ax
+	jnz	@F
+	stc
+	ret
+
+@@:	mov	es,ax
+	mov	di,[VESALinearBuf.lo]
+	mov	si,[VESALinearBuf.hi]
+	; CF already clear after TEST instruction above
+	ret
+GetLinBufPtr	endp
 
 ; Functions to switch bank if the mode doesn't include a pointer
 ; (for whatever reason...)
@@ -1283,9 +1304,10 @@ FindMode_done:
 	; back out to ENABLE and get it to display some details...
 	call	vesa_win_sanity_check
 	test	di,di
-	jnz	@@donewithsel
+	jz	@F
+	jmp	@@donewithsel
 
-	; Set ScreenSelector based on what has taken place above
+@@:	; Set ScreenSelector based on what has taken place above
 	mov	ax,[VESAWinASeg]
 	mov	[ScreenSelector],ax
 
@@ -1300,6 +1322,27 @@ FindMode_done:
 ; change our code segment based variable to reflect the mode
 ;
 	mov	byte ptr es:[??BigFontFlags],-1
+;
+; if using a linear mode, then also create a flat selector that
+; can be used to access the framebuffer using 32-bit addressing
+;
+	test	[Vmode],VESA_FLAG_LINEAR
+	jz	@@bffisset
+
+	; use int 31h for this because Windows KERNEL doesn't
+	; know how to deal with page-granularity segment limits
+	xor	ax,ax			; allocate LDT descriptor(s)
+	mov	cx,1			; just the one, please!
+	int	31h
+	jc	@@bffisset
+	mov	bx,ax
+	mov	ax,8			; set segment limit
+	xor	cx,cx
+	dec	cx
+	mov	dx,cx			; limit = FFFF:FFFF
+	int	31h
+	jc	@@bffisset
+	mov	[flat_selector],bx
 
 @@bffisset:
 	mov	dh,[VESAMemModel]

@@ -5,6 +5,7 @@ blt18.obj +
 blt81.obj + 
 blt88.obj + 
 bltstos.obj + 
+bltspec.obj + 
 bltutil.obj + 
 compblt.obj + 
 bmc_eti.obj + 
