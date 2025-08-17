@@ -1,6 +1,6 @@
 /MSVC
 /WIN16DDK
-/EXE2BIN.EXE
+/*.EXE
 /relsyms
 /debug
 /make-debug.sh
