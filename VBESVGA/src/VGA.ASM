@@ -245,6 +245,7 @@ externD	setramdac
 externB bank_select
 externD	VDDEntry
 externD	MemSize				; in VESAFNS.ASM
+externB garish_palette			; in ENABLE.ASM
 
 globalW ScreenSelector,0                ;the screen selector
 globalW ScratchSel,0			;have a scratch selector
@@ -660,14 +661,27 @@ physical_enable proc near
         call    set_dacsize
 
 	test	[info_table_base.dpRaster],RC_PALETTE
-	jz	@F
+	jz	@@no_palette
 
+	cmp	[garish_palette],0
+	jz	@@normal_palette
+	; change 80hs in colours 01-06 to BFhs to match old behaviour
+	mov	si,DataOFFSET adPalette[4]
+	mov	cx,6*4
+@@scan_80_loop:
+	lodsb
+	cmp	al,80h
+	jne	@F
+	mov	byte ptr [si-1],0BFh
+@@:	loop	@@scan_80_loop
+
+@@normal_palette:
 	mov	si,DataOFFSET adPalette ;load pointer to color table
 	xor	ax,ax			;starting index
 	mov	cx,NUM_PALETTES
         call    setramdac
 
-@@:
+@@no_palette:
         call    init_hw_regs
 
 	pop	si

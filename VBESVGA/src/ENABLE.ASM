@@ -87,6 +87,8 @@ Profile_read	dw	0
 prefer_bank     dw      0
 aszSystemIni	db	"system.ini",0
 aszCurDrvFName	db	MAXFNAMELEN DUP(0)
+public	garish_palette
+garish_palette	db	0
 public	special_blits
 special_blits   db      1
 
@@ -159,6 +161,13 @@ PreferBank_off		db	"0",0
 sysini_bankstruc       LABEL   BYTE
 SYSINI	<PreferBank_on,1,1>
 SYSINI	<PreferBank_off,1,0>
+
+GarishPalette_member	db	"GarishSystemPalette",0
+GarishPalette_on	db	"1",0
+GarishPalette_off	db	"0",0
+sysini_garishstruc     LABEL   BYTE
+SYSINI	<GarishPalette_on,1,1>
+SYSINI	<GarishPalette_off,1,0>
 
 SpecialBlit_member	db	"EnableSpecialCaseLinearBlits",0
 SpecialBlit_on		db	"1",0
@@ -396,6 +405,30 @@ enable_read_profile	PROC	NEAR
 	lea	bp,sysini_bankstruc
         call    enable_find_substring
 	mov	prefer_bank,ax
+
+	lea	ax,boot_category
+        push    ds
+        push    ax
+	lea	ax,GarishPalette_member
+        push    ds
+        push    ax
+	push	ds				;this is the default as well
+        push    ax
+        lea     ax,aszCurDrvFName
+        push    ds
+        push    ax
+        push    MAXFNAMELEN
+	lea	ax,aszSystemIni 		;ptr to "system.ini" string
+        push    ds                              ;long ptr
+        push    ax
+	call	GetPrivateProfileString
+
+	mov	ax,0			       ;default return value
+	mov	bx,2				;number different modes
+        lea     si,aszCurDrvFName
+	lea	bp,sysini_bankstruc
+        call    enable_find_substring
+	mov	garish_palette,al
 
 	lea	ax,boot_category
         push    ds
