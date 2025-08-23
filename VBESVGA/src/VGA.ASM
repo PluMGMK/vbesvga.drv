@@ -300,12 +300,12 @@ PHY_COLOR_BYTE_15	equ	0011b	    ; white
 
 
 PHY_COLOR_DATA_00       equ     00000000h       ; black
-PHY_COLOR_DATA_01       equ     000000BFh       ; dark red
-PHY_COLOR_DATA_02       equ     0000BF00h       ; dark green
-PHY_COLOR_DATA_03       equ     0000BFBFh       ; mustard
-PHY_COLOR_DATA_04       equ     00BF0000h       ; dark blue
-PHY_COLOR_DATA_05       equ     00BF00BFh       ; purple
-PHY_COLOR_DATA_06       equ     00BFBF00h       ; dark turquoise
+PHY_COLOR_DATA_01       equ     00000080h       ; dark red
+PHY_COLOR_DATA_02       equ     00008000h       ; dark green
+PHY_COLOR_DATA_03       equ     00008080h       ; mustard
+PHY_COLOR_DATA_04       equ     00800000h       ; dark blue
+PHY_COLOR_DATA_05       equ     00800080h       ; purple
+PHY_COLOR_DATA_06       equ     00808000h       ; dark turquoise
 PHY_COLOR_DATA_07       equ     00C0C0C0h       ; gray
 
 PHY_COLOR_DATA_07a      equ     00C0DCC0h       ; money green
