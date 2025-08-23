@@ -178,9 +178,43 @@ havesystemini_vbesvga:
 	call	silly_char
 	sub	al, '0'
 	mov	[bounce], al
+@@:	lea	di, [pgarishlwr]
+	call	assign_recognizer
+	jne	@F
+	call	silly_char
+	sub	al, '0'
+	mov	[garish], al
 @@:	jmp	havesystemini_vbesvga
 
 havesystemini_eof:
+	; get the correct memory model for user's chosen mode
+	mov	ax,[_width]
+	mov	bx,[height]
+	mov	cx,[depth]
+	; if default, assume default model
+	test	ax,ax
+	jz	drawscreenanew
+	test	bx,bx
+	jz	drawscreenanew
+	test	cx,cx
+	jz	drawscreenanew
+	; scan through the modes
+	lea	si,[modes]
+modescan_memmodel:
+	cmp	byte ptr [si+4],0	; end of the line?
+	jz	drawscreenanew
+	cmp	[si],ax
+	jne	@F
+	cmp	[si+2],bx
+	jne	@F
+	cmp	[si+4],cl
+	jne	@F
+	; mem model is last byte of six-byte structure
+	mov	ch,[si+5]
+	mov	[memmod],ch
+	jmp	short drawscreenanew
+@@:	lea	si,[si+6]
+	jmp	short modescan_memmodel
 
 	;*** Begin Configuration UI ***
 drawscreenanew:
@@ -197,10 +231,10 @@ drawscreenanew:
 	lea	si, [configvbe]
 	mov	dx, 1Ah
 	call	drawstringat
-	mov	dx, 090Fh
+	mov	dx, 0A0Fh
 	lea	si, [enterbase]
 	call	drawstringat
-	mov	dx, 0A0Fh
+	mov	dx, 0B0Fh
 	lea	si, [escbase]
 	call	drawstringat
 	mov	dx, 20Fh
@@ -217,6 +251,9 @@ drawscreenanew:
 	call	drawstringat
 	lea	si, [bouncebase]
 	mov	dx, 60Fh
+	call	drawstringat
+	lea	si, [garishbase]
+	mov	dx, 70Fh
 	call	drawstringat
 
 drawscreen:
@@ -266,6 +303,10 @@ drawscreen2:
 	mov	dx, 62Dh
 	call	blankfield
 	call	drawstringat
+	call	decodegarishdisplay
+	mov	dx, 72Dh
+	call	blankfield
+	call	drawstringat
 	
 basecfgstate:
 	mov	ah, 0
@@ -282,6 +323,10 @@ basecfgstate:
 	je	setmode
 	cmp	al, "m"
 	je	setmode
+	cmp	al, 'G'
+	je	toggleg
+	cmp	al, 'g'
+	je	toggleg
 	cmp	al, 'B'
 	je	toggleb
 	cmp	al, 'b'
@@ -320,6 +365,18 @@ toggleflarge:
 togglefsmall:
 	mov	al, 's'
 	jmp	toggleffinal
+
+toggleg:
+	cmp	[memmod], 6
+	je	drawscreen	; don't care if direct colour
+	mov	al, [garish]
+	dec	al
+	cmp	al, 1
+	jbe	toggleg_done
+	mov	al, 2
+toggleg_done:
+	mov	[garish], al
+	jmp	drawscreen
 
 toggleb:
 	mov	al, [bounce]
@@ -516,6 +573,8 @@ setmode_this:
 	mov	ax, [si]
 	mov	bx, [si + 2]
 	mov	cx, [si + 4]
+	mov	[memmod], ch
+	xor	ch, ch
 	mov	[_width], ax
 	mov	[height], bx
 	mov	[depth], cx
@@ -548,6 +607,7 @@ mode2text:
 	mov	al, "x"
 	stosb
 	mov	ax, word ptr [si + 4]
+	xor	ah, ah
 	call	itoa
 	mov	al, "$"
 	stosb
@@ -722,6 +782,25 @@ decodefontsizesmall:
 	ret
 decodefontsizelarge:
 	lea	si, [large]
+	ret
+
+decodegarishdisplay:
+	lea	si, [dontcare]
+	cmp	[memmod], 6	; don't care if direct colour
+	jne	@F
+	ret
+@@:	mov	al, [garish]
+	cmp	al, 0
+	je	decodegarishoff
+	cmp	al, 1
+	je	decodegarishon
+	lea	si, [default]
+	ret
+decodegarishon:
+	lea	si, [on]
+	ret
+decodegarishoff:
+	lea	si, [off]
 	ret
 
 decodebouncedisplay:
@@ -908,6 +987,9 @@ save_vbesvga_nextline2:
 	lea	di, [pbouncelwr]
 	call	assign_recognizer
 	je	save_vbesvga_remove
+	lea	di, [pgarishlwr]
+	call	assign_recognizer
+	je	save_vbesvga_remove
 	jmp	save_vbesvga_nextline
 save_vbesvga_remove:
 	call	remove_line
@@ -946,6 +1028,12 @@ save_vbesvga_insert:
 	jae	@F
 	mov	ah, 0
 	lea	di, [pbounce]
+	call	insertpropnumeric
+@@:	mov	al, [garish]	; GarishSystemPalette=
+	cmp	al, 2
+	jae	@F
+	mov	ah, 0
+	lea	di, [pgarish]
 	call	insertpropnumeric
 @@:
 
@@ -1192,7 +1280,7 @@ popvidmode_good:
 	cmp	cl, 24
 	jbe	@F
 	mov	cl, 24
-@@:	mov	ch, 0
+@@:	;mov	ch, 0
 	push	bx
 	mov	bl, cl
 	mov	bh, 0
@@ -1311,7 +1399,7 @@ section_recognizer:
 @@:	pop	si
 	ret
 
-	; Verifies if si points to properter pointed to in di; destroys ax, di
+	; Verifies if si points to property pointed to in di; destroys ax, di
 assign_recognizer:
 	push	si
 @@:	lodsb
@@ -1534,6 +1622,7 @@ dblbuffbase	db	"D  Double Buffer Refresh(ms)$"
 fontsizebase	db	"F  Font Size$"
 updatewndbase	db	"U  Update DOS Window Tm (ms)$"
 bouncebase	db	"B  Bounce on Mode Set$"
+garishbase	db	"G  Garish System Palette$"
 enterbase	db	"ENTER  Save & Exit$"
 escbase		db	"ESC    Exit$"
 
@@ -1555,6 +1644,8 @@ pheightlower	db	"height="
 pheight		db	"Height=$"
 pdepthlower	db	"depth="
 pdepth		db	"Depth=$"
+pgarishlwr	db	"garishsystempalette="
+pgarish		db	"GarishSystemPalette=$"
 pfontsz		db	"fontsize=$"
 pswapbufferlwr	db	"swapbuffersinterval="
 pswapbuffer	db	"SwapBuffersInterval=$"
@@ -1571,6 +1662,7 @@ more		db	"PG/DN More$"
 less		db	"PG/UP Prev$"
 default0	db	"0) "
 default		db	"default$"
+dontcare	db	"(don't care)$"	; for garish palette in non-palette modes
 bitcolor	db	" bit color$"
 
 	ALIGN 2
@@ -1578,9 +1670,10 @@ bitcolor	db	" bit color$"
 _width	dw	0	; Initialized to not found ...
 height	dw	0
 depth	dw	0
-pmid	db	0
+memmod	db	6	; memory model of selected mode (assume direct)
 fontsz	db	0
 refresh	dw	16
+garish	db	2
 bounce	db	2
 updatel	db	255
 update	dw	0
