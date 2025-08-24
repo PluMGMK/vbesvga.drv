@@ -150,7 +150,8 @@ $(OBJ)\colorinf.obj:    $(SRC)\colorinf.asm
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
-$(OBJ)\control.obj:     $(SRC)\control.asm
+$(OBJ)\control.obj:     $(SRC)\control.asm  \
+			$(SRC)\inc\dci.inc
 			echo $(ASMFLAGS) $(INC) $(SRC)\$* > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak

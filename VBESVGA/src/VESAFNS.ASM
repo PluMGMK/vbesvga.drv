@@ -182,10 +182,6 @@ incDevice = 1				;Include control for gdidefs.inc
 	externFP AllocCSToDSAlias
 	externFP GlobalDosAlloc
 	externFP GlobalDosFree
-	externFP GlobalAlloc
-	externFP GlobalFree
-	externFP GlobalLock
-	externFP GlobalUnlock
 
 ; Taken from ..\..\8514\source\genconst.blt
 GMEM_FIXED      =   0000h

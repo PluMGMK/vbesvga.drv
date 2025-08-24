@@ -281,6 +281,24 @@ exclude PROC	NEAR
 exclude ENDP
 
 
+; helper function for DCI
+cProc   exclude_rect,<FAR,PUBLIC,PASCAL,NODATA>,<ds,si,di>
+	parmD	lpSurface
+	parmD	lpRect
+cBegin
+	assumes	ds,nothing
+	lds	si,[lpRect]
+	mov	cx,[si.left]
+	mov	dx,[si.top]
+	mov	di,[si.bottom]
+	mov	si,[si.right]
+	call	exclude
+	; return zero status
+	xor	ax,ax
+	cwd
+cEnd
+
+
 
 
 ;	unexclude
@@ -304,6 +322,7 @@ unexclude	PROC	NEAR
 	push	dx
 	mov	ax,_cstods
 	mov	ds,ax
+	assumes	ds,Data
 
 	mov	screen_busy,0			;lock the screen
         mov     exclude_rect_valid,0
@@ -318,6 +337,15 @@ unexclude	PROC	NEAR
 	ret
 
 unexclude	ENDP
+
+
+; helper function for DCI
+cProc   unexclude_rect,<FAR,PUBLIC,PASCAL,NODATA>
+	parmD	lpSurface
+cBegin
+	assumes	ds,nothing
+	call	unexclude
+cEnd
 
 
 
@@ -391,6 +419,7 @@ Get_Cursor_Width_Mask	ENDP
 
 PUBLIC  cursor_save_state
 cursor_save_state	PROC	NEAR
+	assumes	ds,Data
 
 	cmp	cursor_state_lock,0
 	je	@F

@@ -38,15 +38,31 @@
 ;-----------------------------------------------------------------------;
 
 incControl	=	1		;Include control for gdidefs.inc
+incDevice	=	1		;Include control for gdidefs.inc
 	.xlist
 	include cmacros.inc
 	include gdidefs.inc
+	include dci.inc
+	include display.inc
 	include macros.mac
 	.list
 
 sBegin	Data
 	EXTRN	adPalette:BYTE
+	EXTRN	MemWidth:WORD		;in VESAFNS.ASM
+	EXTRN	ColourFormat:WORD	;in VGA.ASM
+	EXTRN	raster_flags:WORD
 sEnd    Data
+
+	externFP GlobalAlloc
+	externFP GlobalLock
+	externFP GlobalUnlock
+	externFP GlobalFree
+
+	externFP sum_RGB_alt_far	;in ROBJECT.ASM
+	externFP GetLinBufPtr		;in VESAFNS.ASM
+	externFP exclude_rect		;in CURSOR.ASM
+	externFP unexclude_rect		;in CURSOR.ASM
 
 	??_out	Control
 
@@ -128,10 +144,12 @@ cProc   Control,<FAR,PUBLIC,WIN,PASCAL>,<si,di,ds>
 cBegin
 WriteAux <'Ctrl'>
 	xor	ax,ax			;Assume error
-	assumes ds,nothing
 	mov	si,function
 
         les     bx,lp_in_data           ;Get pointer to the data
+
+	cmp	si,DCICOMMAND
+	je	dci_command
 
 	cmp	si,GETCOLORTABLE
 	je	get_color_table
@@ -144,8 +162,26 @@ WriteAux <'Ctrl'>
 	je	exit_control_inc_ax
         cmp     si,GETCOLORTABLE
 	je	exit_control_inc_ax
+        cmp     si,DCICOMMAND
+	je	exit_control_inc_ax
 
         jmp     short exit_control      ;We don't support it
+
+dci_command:
+	mov	ax,DCI_FAIL_UNSUPPORTED	;assume failure until we know otherwise
+	cwd
+	cmp	es:[bx.dwVersion.lo],100h
+	jne	exit_control
+	cmp	es:[bx.dwVersion.hi],0
+	jne	exit_control
+	cmp	es:[bx.dwCommand.lo],DCICREATEPRIMARYSURFACE
+	jne	exit_control		;minimal implementation
+
+	; break it out into a separate function to avoid cluttering this
+	; too much...
+	les	bx,lp_out_data
+	call	DCICreatePrimarySurface
+	jmp	short exit_control
 
 get_color_table:
         mov     si, es:[bx]             ;color table index
@@ -198,6 +234,141 @@ WriteAux <'Ctrl:SetAttr'>
 	ret	12
 
 cEnd	<nogen>
+
+
+
+; DCICreatePrimarySurface()
+;
+; Parameters:     ES:BX
+;                     FAR pointer at which to place pointer to output structure
+;
+; Description:    Function to acquire on-screen display surface in the current 
+;                 video mode. 
+;
+; Returns:        DCI_OK on success, or an error code on failure.
+;
+; Side Effects:   Allocates space for a DCISURFACEINFO + all instance data and 
+;                 returns the structure off at ES:BX.  All fields of 
+;                 DCISURFACEINFO structure set to on screen "Primary" surface
+DCICreatePrimarySurface	proc near
+	push	bp	; use BP as a GP register here...
+	push	es
+	call	GetLinBufPtr
+	mov	dx,es
+	jnc	@F
+
+	; no direct linear framebuffer access --> no DCI
+	mov	ax,DCI_FAIL_UNSUPPORTED
+	cwd
+	pop	es
+	pop	bp
+	ret
+
+@@:	push	bx
+	push	dx	; save segment of linear framebuffer
+	mov	ax,size DCISURFACEINFO
+	; 42h == GHND, 2000h == GMEM_SHARE
+	cCall	GlobalAlloc,<2042h, 0, ax>
+	test	ax,ax
+	jnz	@F
+
+	pop	dx
+	pop	bx
+	pop	es
+	pop	bp
+	mov	ax,DCI_ERR_OUTOFMEMORY
+	cwd
+	ret
+
+@@:	push	ax	; save handle
+	cCall	GlobalLock,<ax>
+	pop	cx	; becomes our handle
+	pop	bp	; becomes segment of linear framebuffer
+	pop	bx
+	pop	es
+	; return our new pointer to the place it was requested
+	mov	es:[bx.off],ax
+	mov	es:[bx.sel],dx
+	; and now look at it ourselves
+	mov	es,dx
+	mov	bx,ax
+	; use "reserved for provider" field to store our handle
+	mov	es:[bx.dwReserved1.lo],cx
+
+	; fill out all the surface info
+	; at this point, BP:SI:DI is the linear framebuffer ptr
+	mov	es:[bx.dwSize.lo],size DCISURFACEINFO
+	mov	es:[bx.dwSIDCICaps.lo],DCI_PRIMARY+DCI_VISIBLE
+
+	; dwCompression and dwMask depend on whether or not we're using a palette
+	test	[raster_flags],RC_PALETTE
+	; "RGB" can also mean using a palette, apparently...
+	mov	es:[bx.dwSICompression.lo],BI_RGB
+	jnz	@F
+	; OK, not using a palette, so specify the bitfields explicitly
+	mov	es:[bx.dwSICompression.lo],BI_BITFIELDS
+	; mask for RED:
+	mov	ax,00FFh
+	cwd
+	call	sum_RGB_alt_far
+	mov	es:[bx.dwSIMask.lo][0*4],ax
+	mov	es:[bx.dwSIMask.hi][0*4],dx
+	; mask for GREEN:
+	mov	ax,0FF00h
+	xor	dx,dx
+	call	sum_RGB_alt_far
+	mov	es:[bx.dwSIMask.lo][1*4],ax
+	mov	es:[bx.dwSIMask.hi][1*4],dx
+	; mask for BLUE:
+	xor	ax,ax
+	mov	dx,00FFh
+	call	sum_RGB_alt_far
+	mov	es:[bx.dwSIMask.lo][2*4],ax
+	mov	es:[bx.dwSIMask.hi][2*4],dx
+
+@@:	mov	ax,[VScreen_Width]
+	mov	dx,[VScreen_Height]
+	mov	cx,[MemWidth]
+	mov	es:[bx.dwSIWidth.lo],ax
+	mov	es:[bx.dwSIHeight.lo],dx
+	mov	es:[bx.lStride.lo],cx
+	mov	ax,[ColourFormat]
+	mov	byte ptr es:[bx.dwSIBitCount],ah
+	mov	es:[bx.dwOffSurface.lo],di
+	mov	es:[bx.dwOffSurface.hi],si
+	mov	es:[bx.wSelSurface],bp
+
+	; lastly, the callbacks - these two are in CURSOR.ASM...
+	mov	es:[bx.BeginAccess.off],offset exclude_rect
+	mov	es:[bx.BeginAccess.sel],seg exclude_rect
+	mov	es:[bx.EndAccess.off],offset unexclude_rect
+	mov	es:[bx.EndAccess.sel],seg unexclude_rect
+	; ... and this one is straight below!
+	mov	es:[bx.DestroySurface.off],offset DCIDestroySurface
+	mov	es:[bx.DestroySurface.sel],seg DCIDestroySurface
+
+	; success!
+	mov	ax,DCI_OK
+	cwd
+	pop	bp
+	ret
+DCICreatePrimarySurface	endp
+
+cProc   DCIDestroySurface,<FAR,PUBLIC,PASCAL,NODATA>,<ds,si>
+	parmD	lpSurfaceInfo
+cBegin
+	assumes	ds,nothing
+	lds	si,[lpSurfaceInfo]
+	mov	ax,ds
+	; don't free NULL pointer
+	test	ax,ax
+	jz	@F
+
+	mov	si,es:[bx.dwReserved1.lo]
+	cCall	GlobalUnlock,<si>
+	cCall	GlobalFree,<si>
+@@:
+cEnd
 
 
 
