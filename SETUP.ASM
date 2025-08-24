@@ -1662,7 +1662,7 @@ more		db	"PG/DN More$"
 less		db	"PG/UP Prev$"
 default0	db	"0) "
 default		db	"default$"
-dontcare	db	"(don't care)$"	; for garish palette in non-palette modes
+dontcare	db	"(N/A in non-palette mode)$"	; for garish palette in non-palette modes
 bitcolor	db	" bit color$"
 
 	ALIGN 2
