@@ -59,6 +59,12 @@ Thanks to @joshudson for creating this tool!
 
 You can also use [@albertus82's BASIC script](https://github.com/albertus82/vbesvga-oemsetup/) to generate a bespoke `OEMSETUP.INF` for your machine, and then install the driver using Windows Setup.
 
+#### Using the DCI implementation with Video for Windows
+
+None of the automatic setup tools currently do this, but you can add the line `DCI=display` to the `[drivers]` section of your `SYSTEM.INI` to use the driver's built-in DCI Provider with Video for Windows. This is a [minimum implementation](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM), and I'm not sure how well it works, but it's there if you want to try it.
+
+Note that the DCI Provider only works in [linear modes](#linear-modes-and-double-buffering). The VxD `DVA.386` (or `VFLATD` on Win9x) does provide a mechanism to make a bank-switched framebuffer look like a linear one for DCI, but this only works when the driver provides a snippet of 32-bit code to switch the bank. `VBESVGA.DRV` is not in a position to do this, since it does bank switching by calling out to a 16-bit function provided by the Video BIOS.
+
 #### Using the driver with DBCS versions of Windows / DOS (e.g. Japanese)
 
 Currently, `VDDVBE.386` only supports standard text mode for "message mode" (better known as BSoDs). To boot it on a DBCS version of DOS, you will need to use the shim driver `VDDD.386`, found in the Japanese version of Windows 3.1. This problem probably only arises with DBCS versions of Win9x, which normally support graphical-mode BSoDs, but (for now) cannot do so with this driver.
@@ -94,6 +100,10 @@ display.drv=vbesvga.drv
 [386Enh]
 display=vddvbe.386
 WindowUpdateTime=15
+<... more stuff ...>
+
+[drivers]
+DCI=display
 <... more stuff ...>
 
 [vbesvga.drv]
@@ -325,7 +335,6 @@ Note that the only step below which requires Windows is the initial installation
 ### Things that should probably done before v1.0.0
 
 * Figure out some kind of versioning scheme within the code, ideally integrated with Git (because I'm forgetful!), so user can easily figure out which version of the driver they're installing / running
-* Add a [minimum implementation of DCI](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM) to `VBESVGA.DRV`
 * Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
 * See if `VDDVBE.386` can work [on newer NVIDIA hardware](https://github.com/PluMGMK/vbesvga.drv/issues/94) (I have an affected card but need to swap it in for testing, which is manual-labour-intensive)
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
