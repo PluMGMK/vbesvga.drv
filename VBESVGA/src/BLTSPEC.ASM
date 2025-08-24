@@ -28,11 +28,12 @@ assumes ss,Nothing
 
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 externNP blt_ctoc_prep		; in BLT88.ASM
+externNP bltstos_prep		; in BLTSTOS.ASM
 
 ;
 ;	blt_spec_pattern
 ;
-;	ROP pattern on stack directly to linear framebuffer at ES:SI:DI
+;	load pattern on stack and ROP it directly to linear framebuffer at ES:SI:DI
 ;
 
 PUBLIC	blt_spec_pattern
@@ -135,6 +136,81 @@ blt_spec_pattern	PROC	NEAR
 	ret
 
 blt_spec_pattern	ENDP		;
+
+;
+;	blt_spec_stoscopy
+;
+;	copy directly from one location in linear framebuffer at ES:SI:DI
+;	to another location in the same framebuffer - no patterns or ROPs
+;
+
+PUBLIC	blt_spec_stoscopy
+blt_spec_stoscopy	PROC	NEAR
+
+	; setup the 32-bit offsets within the framebuffer
+	call	bltstos_prep
+	mov	ax,[src_blt_offset]
+	mov	dx,[src_page]
+	add	ax,di
+	adc	dx,si
+	mov	cx,[dst_blt_offset]
+	mov	bx,[dst_page]
+	add	cx,di
+	adc	bx,si
+
+	; if all the conditions were met to call this function, we know
+	; that ES is a 32-bit flat selector, and hence that we are on a
+	; 386 or newer
+	.386
+	push	edi
+	push	esi
+	push	ecx
+	push	eax
+
+	; get full 32-bit offsets into one register each
+	mov	si,ax
+	ror	esi,10h
+	mov	si,dx
+	ror	esi,10h
+	mov	di,cx
+	ror	edi,10h
+	mov	di,bx
+	ror	edi,10h
+
+	; get the X and Y extents into registers so we minimize stack use...
+	mov	bx,[src_xExt_bytes]	; should be same as dst_xExt_bytes
+	test	bx,bx
+	jns	@F
+	std				; this is an X- blit!
+	neg	bx
+@@:	mov	dx,[yExt]
+
+	; stick the swing byte counts in the two halves of EAX
+	; FIXME: aren't they always the same??
+	mov	ax,[src_swing_bytes]
+	shl	eax,10h
+	mov	ax,[dst_swing_bytes]
+
+	; and off we go!
+@@:	movzx	ecx,bx			; xExt bytes
+	rep	movs byte ptr es:[edi],byte ptr es:[esi]
+	ror	eax,10h
+	movsx	ecx,ax			; src swing bytes
+	add	esi,ecx
+	ror	eax,10h
+	movsx	ecx,ax			; dst swing bytes
+	add	edi,ecx
+	dec	dx			; yExt
+	jnz	@B
+
+	pop	eax
+	pop	ecx
+	pop	esi
+	pop	edi
+	.286
+	ret
+
+blt_spec_stoscopy	ENDP		;
 
 	.386
 ;---------------------------------------------------------------------------;

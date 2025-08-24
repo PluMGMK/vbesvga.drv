@@ -639,7 +639,17 @@ dispatch_src_to_screen:
 	test	word ptr device_flags,DEVFLAG_SRC_SCREEN
 	je	dispatch_memory_to_screen
 
-	call	bltstos 			;compiling screen_to_screen blt
+	cmp	byte ptr Rop[2],0CCh		;SRCCOPY?
+	jne	short	@F
+	test	device_flags,DEVFLAG_SPECIAL_ALLOWED
+	jz	short	@F
+	call	GetLinBufPtr			;can we access the FB directly?
+	jc	short	@F
+	; at this point, ES:SI:DI points directly at the linear framebuffer
+	call	blt_spec_stoscopy
+	jmp	short	bitblt_hardcode_done
+
+@@:	call	bltstos 			;compiling screen_to_screen blt
 	jmp	short	bitblt_dispatch_done	;code which is still quite fast
 
 dispatch_dst_memory:
