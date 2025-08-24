@@ -257,6 +257,10 @@ bitblt_prep_rop_etal	PROC	NEAR
 
 @@:	cmp	special_blits,0
 	jz	@F
+	; masking is not supported by the special-case code either
+	mov	bx,[colour_mask.lo]
+	or	bx,[colour_mask.hi]
+	jnz	@F
 	or	ah,high DEVFLAG_SPECIAL_ALLOWED
 
 @@:	lds	si,lpSrcDev
@@ -650,20 +654,20 @@ dispatch_dst_memory:
 
 dispatch_memory_to_screen:
 	; check for special case patblt...
-	cmp	word ptr Rop[2],0F0h		;PATCOPY
-	jne	dispatch_dst_color_memory
+	test	rop_flags,SOURCE_PRESENT	;if source present then
+	jnz	short	@F			; go check if colour
 	test	device_flags,DEVFLAG_SPECIAL_ALLOWED
-	jz	dispatch_dst_color_memory
+	jz	short	dispatch_blt88
 	call	GetLinBufPtr			;can we access the FB directly?
-	jc	dispatch_dst_color_memory
-	; at this point, ES:EDI points directly at the linear framebuffer
-	call	blt_spec_patcopy
+	jc	short	dispatch_blt88
+	; at this point, ES:SI:DI points directly at the linear framebuffer
+	call	blt_spec_pattern
 	jmp	short	bitblt_hardcode_done
 
 dispatch_dst_color_memory:
         test    rop_flags,SOURCE_PRESENT        ;if src is not used in the blt
         jz      short   dispatch_blt88          ; or the blt has a color src
-        test    word ptr device_flags,DEVFLAG_SRC_COLOR  ;use blt_color_to_xxxx
+@@:     test    word ptr device_flags,DEVFLAG_SRC_COLOR  ;use blt_color_to_xxxx
         jnz     short   dispatch_blt88          ; which is faster code than
         jmp     short   dispatch_blt18          ; than blt_mono_to_xxxx
 

@@ -8,7 +8,7 @@
 ;
 
 IFNDEF	SRCFILE_BLTSPEC
-EXTRN	blt_spec_patcopy:NEAR
+EXTRN	blt_spec_pattern:NEAR
 ENDIF
 
 EXTRN	GetLinBufPtr:FAR	; in VESAFNS.ASM
