@@ -1932,7 +1932,7 @@ ENDIF
 	; This is required for NVIDIA GeForces which expose some weird APIs via
 	; extended CRTC registers. The approach here mirrors the one used in
 	; Win9x's VDD.VXD.
-	Debug_Out "Output to unknown CRTC register #CL before MsgMode inited"
+	Debug_Out "Output value #AL to unknown CRTC register #CL before MsgMode inited"
 	dec	dl
 	mov	ah,al
 	mov	al,cl
