@@ -52,6 +52,7 @@ sBegin	Data
 	EXTRN	MemWidth:WORD		;in VESAFNS.ASM
 	EXTRN	ColourFormat:WORD	;in VGA.ASM
 	EXTRN	raster_flags:WORD
+	EXTRN	LinBufSel:WORD		;in DBLBUF.ASM
 sEnd    Data
 
 	externFP GlobalAlloc
@@ -60,7 +61,6 @@ sEnd    Data
 	externFP GlobalFree
 
 	externFP sum_RGB_alt_far	;in ROBJECT.ASM
-	externFP GetLinBufPtr		;in VESAFNS.ASM
 	externFP exclude_rect		;in CURSOR.ASM
 	externFP unexclude_rect		;in CURSOR.ASM
 
@@ -251,31 +251,27 @@ cEnd	<nogen>
 ;                 returns the structure off at ES:BX.  All fields of 
 ;                 DCISURFACEINFO structure set to on screen "Primary" surface
 DCICreatePrimarySurface	proc near
-	push	bp	; use BP as a GP register here...
-	push	es
-	call	GetLinBufPtr
-	mov	dx,es
-	jnc	@F
+	mov	dx,[LinBufSel]
+	test	dx,dx
+	jnz	@F
 
 	; no direct linear framebuffer access --> no DCI
 	mov	ax,DCI_FAIL_UNSUPPORTED
 	cwd
-	pop	es
-	pop	bp
 	ret
 
 @@:	push	bx
 	push	dx	; save segment of linear framebuffer
+	push	es
 	mov	ax,size DCISURFACEINFO
 	; 42h == GHND, 2000h == GMEM_SHARE
 	cCall	GlobalAlloc,<2042h, 0, ax>
 	test	ax,ax
 	jnz	@F
 
+	pop	es
 	pop	dx
 	pop	bx
-	pop	es
-	pop	bp
 	mov	ax,DCI_ERR_OUTOFMEMORY
 	cwd
 	ret
@@ -283,9 +279,9 @@ DCICreatePrimarySurface	proc near
 @@:	push	ax	; save handle
 	cCall	GlobalLock,<ax>
 	pop	cx	; becomes our handle
-	pop	bp	; becomes segment of linear framebuffer
-	pop	bx
 	pop	es
+	pop	di	; becomes segment of linear framebuffer
+	pop	bx
 	; return our new pointer to the place it was requested
 	mov	es:[bx.off],ax
 	mov	es:[bx.sel],dx
@@ -334,9 +330,12 @@ DCICreatePrimarySurface	proc near
 	mov	es:[bx.lStride.lo],cx
 	mov	ax,[ColourFormat]
 	mov	byte ptr es:[bx.dwSIBitCount],ah
-	mov	es:[bx.dwOffSurface.lo],di
-	mov	es:[bx.dwOffSurface.hi],si
-	mov	es:[bx.wSelSurface],bp
+	; ALWAYS set offset to zero because some DCI Clients ignore it anyway
+	; and assume it's zero (lookin' at you, Ecco the Dolphin...)
+	xor	ax,ax
+	mov	es:[bx.dwOffSurface.lo],ax
+	mov	es:[bx.dwOffSurface.hi],ax
+	mov	es:[bx.wSelSurface],di
 
 	; lastly, the callbacks - these two are in CURSOR.ASM...
 	mov	es:[bx.BeginAccess.off],offset exclude_rect
@@ -350,7 +349,6 @@ DCICreatePrimarySurface	proc near
 	; success!
 	mov	ax,DCI_OK
 	cwd
-	pop	bp
 	ret
 DCICreatePrimarySurface	endp
 

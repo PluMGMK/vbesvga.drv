@@ -20,6 +20,10 @@ include bltutil.inc
 include bitblt.var
 
 .286
+sBegin	Data
+EXTRN	LinBufSel:word			;in DBLBUF.ASM
+sEnd    Data
+
 sBegin	Code
 assumes cs,Code
 assumes ds,Nothing
@@ -33,7 +37,7 @@ externNP bltstos_prep		; in BLTSTOS.ASM
 ;
 ;	blt_spec_pattern
 ;
-;	load pattern on stack and ROP it directly to linear framebuffer at ES:SI:DI
+;	load pattern on stack and ROP it directly to linear framebuffer
 ;
 
 PUBLIC	blt_spec_pattern
@@ -56,10 +60,16 @@ blt_spec_pattern	PROC	NEAR
 	mov	ax,cs:repbyte_table[bx]
 	mov	Rop[2],ax
 
+	; get the framebuffer into ES
+	mov	es,[my_data_seg]
+	assumes	es,Data
+	mov	es,[LinBufSel]
+	assumes	es,nothing
+
 	; setup the 32-bit offset within the framebuffer
 	call	blt_ctoc_prep
-	add	di,[dst_blt_offset]
-	adc	si,[dst_page]
+	mov	di,[dst_blt_offset]
+	mov	si,[dst_page]
 
 	; if all the conditions were met to call this function, we know
 	; that ES is a 32-bit flat selector, and hence that we are on a
@@ -140,23 +150,25 @@ blt_spec_pattern	ENDP		;
 ;
 ;	blt_spec_stoscopy
 ;
-;	copy directly from one location in linear framebuffer at ES:SI:DI
-;	to another location in the same framebuffer - no patterns or ROPs
+;	copy directly from one location in linear framebuffer to another
+;	location in the same framebuffer - no patterns or ROPs
 ;
 
 PUBLIC	blt_spec_stoscopy
 blt_spec_stoscopy	PROC	NEAR
 
+	; get the framebuffer into ES
+	mov	es,[my_data_seg]
+	assumes	es,Data
+	mov	es,[LinBufSel]
+	assumes	es,nothing
+
 	; setup the 32-bit offsets within the framebuffer
 	call	bltstos_prep
 	mov	ax,[src_blt_offset]
 	mov	dx,[src_page]
-	add	ax,di
-	adc	dx,si
 	mov	cx,[dst_blt_offset]
 	mov	bx,[dst_page]
-	add	cx,di
-	adc	bx,si
 
 	; if all the conditions were met to call this function, we know
 	; that ES is a 32-bit flat selector, and hence that we are on a

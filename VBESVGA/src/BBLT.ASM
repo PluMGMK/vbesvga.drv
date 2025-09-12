@@ -52,6 +52,7 @@ EXTRN	adPalette:byte
 EXTRN	bank_select:byte
 EXTRN	ScreenSelector:word
 EXTRN	special_blits:byte
+EXTRN	LinBufSel:word			;in DBLBUF.ASM
 sEnd    Data
 
 .286
@@ -256,6 +257,10 @@ bitblt_prep_rop_etal	PROC	NEAR
 	or	al,DEVFLAG_PALETTE_MODIFIED
 
 @@:	cmp	special_blits,0
+	jz	@F
+	; if there is no linear buffer selector, we obviously can't use
+	; any of the special code
+	cmp	LinBufSel,0
 	jz	@F
 	; masking is not supported by the special-case code either
 	mov	bx,[colour_mask.lo]
@@ -643,9 +648,6 @@ dispatch_src_to_screen:
 	jne	short	@F
 	test	device_flags,DEVFLAG_SPECIAL_ALLOWED
 	jz	short	@F
-	call	GetLinBufPtr			;can we access the FB directly?
-	jc	short	@F
-	; at this point, ES:SI:DI points directly at the linear framebuffer
 	call	blt_spec_stoscopy
 	jmp	short	bitblt_hardcode_done
 
@@ -668,9 +670,6 @@ dispatch_memory_to_screen:
 	jnz	short	@F			; go check if colour
 	test	device_flags,DEVFLAG_SPECIAL_ALLOWED
 	jz	short	dispatch_blt88
-	call	GetLinBufPtr			;can we access the FB directly?
-	jc	short	dispatch_blt88
-	; at this point, ES:SI:DI points directly at the linear framebuffer
 	call	blt_spec_pattern
 	jmp	short	bitblt_hardcode_done
 

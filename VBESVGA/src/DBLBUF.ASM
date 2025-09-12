@@ -42,6 +42,12 @@ BackBufSel	dw ?
 FrontBufSel	dw ?
 VramSel		dw ?
 VDDCursorSel	dw ?
+; this one should always point at what is currently being
+; drawn on the screen (either the back buffer or VRAM), or
+; else be NULL to indicate that no linear framebuffer is
+; available.
+public	LinBufSel
+LinBufSel	dw 0
 
 ; Handle to back-buffer memory block
 BackBufDPMIHdl	dd ?
@@ -605,7 +611,7 @@ cBegin
 	or	ecx,ebx
 	; set pxbytes and period
 	mov	bx,[pxbytes]
-	mov	bh,[sb_period_ms]
+	mov	bh,byte ptr [sb_period_ms]
 	; set scanline width
 	mov	dx,[MemoryWidth]
 	; get the 32-bit size from SI:DI into EDI
@@ -628,9 +634,22 @@ cBegin
 
 	.286
 	jz	setup_no_vddapi
-	jmp	setup_done
+
+	; OK, now we have the VDD doing the hard work for us, but we still
+	; need a selector to point to the linear framebuffer (for DCI and
+	; special-case blits)!
+make_dci_sel:
+	call	make_large_seg
+	test	ax,ax
+	jz	@F
+
+	mov	[LinBufSel],ax
+	cCall	SetSelectorBase,<ax,[VESALinearBuf.hi],[VESALinearBuf.lo]>
+	assumes	es,nothing			; C function stomps it
+@@:	jmp	setup_done
 
 setup_no_vddapi:
+	assumes	es,Code
 	; Call DPMI:
 	mov	ax,800h		; PHYSICAL ADDRESS MAPPING
 	int	31h
@@ -641,18 +660,18 @@ setup_no_vddapi:
 	mov	[VESALinearBuf.lo],cx
 	mov	[VESALinearBuf.hi],bx
 
-	; has user force-disabled double buffering?
-	cmp	[sb_period_ms],0
-	jnz	@F
-	jmp	setup_done
-
-@@:	; Double-buffering requires at least a 386
+	; Double-buffering and DCI require at least a 386
 	mov	ax,__WinFlags
 	test	ax,WF_CPU286
 	jz	@F
 	jmp	setup_done
 
-@@:	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
+@@:	; has user force-disabled double buffering?
+	cmp	[sb_period_ms],0
+	; even if they have, we still need a selector for DCI...
+	jz	make_dci_sel
+
+	; First try to get the VTDAPI entry point - in 386 Enhanced Mode,
 	; this will allow us to schedule fast timer events in a way that's
 	; completely independent of USER.EXE, so it's a lot cleaner.
 	mov	ax,1684h	; get VxD entry point
@@ -777,7 +796,7 @@ fnptrs_setup_done:
 @@:	; Allocate selectors for front and back buffer
 	mov	di,cx
 	mov	si,bx
-	cCall	AllocSelector,<[ScreenSelector]>
+	call	make_large_seg
 	test	ax,ax
 	jnz	@F
 	jmp	setup_done
@@ -785,22 +804,6 @@ fnptrs_setup_done:
 
 	; Set the selector to the base of the back buffer.
 	cCall	SetSelectorBase,<ax,si,di>
-
-	; And set its limit - SetSelectorBase should have returned the same
-	; value in AX again
-	mov	dx,[MemSize.lo]
-	mov	cx,[MemSize.hi]
-	; Limit == size-1
-	sub	dx,1
-	sbb	cx,0
-	; Page-align the limit
-	or	dx,0FFFh
-	; Stash the selector before calling the function
-	mov	bx,ax
-	; Have to use DPMI instead of Windows KERNEL since the latter doesn't
-	; know how to set page-granular limits...
-	mov	ax,8	;set segment limit
-	int	31h
 
 	; Now copy the selector, to make one for the write-through front buffer
 	cCall	AllocSelector,<bx>
@@ -820,6 +823,8 @@ fnptrs_setup_done:
 	test	ax,ax
 	jz	setup_done
 	mov	[VramSel],ax
+	; for now, the linear framebuffer is the VRAM itself.
+	mov	[LinBufSel],ax
 
 	; Set the selector to the base of the VRAM buffer.
 	mov	dx,seg VESALinearBuf
@@ -877,20 +882,24 @@ cBegin
 	; make sure it's not already started
 	lea	ax,dbcursor_set
 	cmp	[cursor_funcs],ax
-	je	start_done
+	jne	@F
+	jmp	start_done
 
-	; check if the VDD API is in use
+@@:	; check if the VDD API is in use
 	cmp	[VDDCursorSel],0
 	jz	start_no_vddapi
 
 	mov	ax,seg VESALinearBuf
 	mov	es,ax
+	assumes	es,Code
 	lea	di,[VESALinearBuf]
 	mov	ax,1	; 1 = start double buffering
 	call	[VDDDBEntry]
 
 	test	ax,ax
 	jnz	start_no_vddapi
+	; update DCI pointer
+	cCall	SetSelectorBase,<[LinBufSel],[VESALinearBuf.hi],[VESALinearBuf.lo]>
 	; Now force the bank to be reset since our buffer pointer is changed
 	mov	dl,-1
 	xchg	dl,[bank_select_byte]
@@ -899,6 +908,7 @@ cBegin
 	jmp	short start_successful
 
 start_no_vddapi:
+	assumes	es,nothing
 	; first of all check if double-buffering is actually set up
 	cmp	[VramSel],0
 	jz	start_done
@@ -977,10 +987,13 @@ cBegin
 
 	mov	ax,seg VESALinearBuf
 	mov	es,ax
+	assumes	es,Code
 	lea	di,[VESALinearBuf]
 	mov	ax,2	; 2 = stop double buffering
 	call	[VDDDBEntry]
 
+	; update DCI pointer
+	cCall	SetSelectorBase,<[LinBufSel],[VESALinearBuf.hi],[VESALinearBuf.lo]>
 	; Now force the bank to be reset since our buffer pointer is changed
 	mov	dl,-1
 	xchg	dl,[bank_select_byte]
@@ -989,6 +1002,7 @@ cBegin
 	jmp	short stop_done
 
 stop_no_vddapi:
+	assumes	es,nothing
 	; disable the timer event too
 	mov	ax,[VTDAPIEntry.sel]
 	test	ax,ax
@@ -1026,9 +1040,42 @@ far_stop_dblbuf	proc far
 	ret
 far_stop_dblbuf	endp
 
+; Setup a selector with the limit set to the size of the framebuffer.
+; To use as a template for other selectors that need to be set up.
+; Requires DS == Data, returns selector in AX (or zero if failed).
+make_large_seg	proc near
+	cCall	AllocSelector,<[ScreenSelector]>
+	test	ax,ax
+	jnz	@F
+	ret
+
+@@:	; set its limit
+	mov	dx,[MemSize.lo]
+	mov	cx,[MemSize.hi]
+	; Limit == size-1
+	sub	dx,1
+	sbb	cx,0
+	; Page-align the limit
+	or	dx,0FFFh
+	; Stash the selector before calling the function
+	mov	bx,ax
+	; Have to use DPMI instead of Windows KERNEL since the latter doesn't
+	; know how to set page-granular limits...
+	mov	ax,8	;set segment limit
+	int	31h
+
+	; return the selector in AX
+	mov	ax,bx
+	ret
+make_large_seg	endp
+
 ; Change VESALinearBuf to point at the base of the selector pointed to by DI,
 ; and reset the bank pointer to ensure reads/writes go to the right place
 change_lin_buf	proc near
+	; first, ensure the DCI selector is pointing at the right buffer
+	; (this is easy!)
+	mov	[LinBufSel],di
+
 	push	bp
 	push	si
 
