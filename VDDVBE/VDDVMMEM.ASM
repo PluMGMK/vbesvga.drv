@@ -2411,6 +2411,9 @@ ENDIF
 	push	eax
 	SetFlag [edi.VDD_Flags],<fVDD_PageFault OR fVDD_InPFault>
 
+	TestMem	[Vid_Flags], fVid_NestedModeSet	;Q: nested modeset ongoing?
+	jnz	pf_map_null			;   Y: no access to memory!
+
 	cmp	ebx, [Vid_CRTC_VM]		;Q: CRTC owner?
 	jne	short @F			;   N: trapping is enabled
 	cmp	ebx, [Vid_MemC_VM]		;Q: MemC owner also?

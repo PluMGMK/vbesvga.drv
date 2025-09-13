@@ -540,6 +540,9 @@ BeginProc VDD_TIO_Set_Trap,PUBLIC
 
 Assert_VDD_ptrs ebx,edi
 
+	TestMem	[Vid_Flags], fVid_NestedModeSet	;Q: nested modeset ongoing?
+	jnz	VIOST_Disable_Local		;   Y: no trappy trappy!
+
 IFDEF DEBUG
 	cmp	[VDD_Force_Trapping], 1 	;Q: force trapping for debugging?
 	jz	VIOST_Enable_Local		;   Y: trap all ports
