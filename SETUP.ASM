@@ -1066,10 +1066,44 @@ save_bootdesc_nextline:
 save_bootdesc_insert:
 	lea	di, [pbootdesc]
 	call	insert_line
-	jmp	save_buffer
+	jmp	save_fdrivers
 save_bootdesc_nodisplay:
 	mov	si, bp
 	jmp	save_bootdesc_insert
+
+	;Step 5: set DCI Provider
+save_fdrivers:
+	call	readfirstlineagain
+@@:	test	si, si
+	jz	save_buffer
+	lea	di, [sdrivers]
+	call	section_recognizer
+	je	save_drivers
+	call	readnextline
+	jmp	@B
+save_drivers:
+	call	readnextline
+	test	si, si
+	jnz	@F
+	mov	si, [inend]
+@@:	mov	bp, si
+save_drivers_nextline:
+	call	readnextline
+	call	any_section_recognizer
+	je	save_drivers_nodci
+	lea	di, [pdci]
+	call	assign_recognizer
+	jne	save_drivers_nextline
+	push	si
+	call	remove_line
+	pop	si
+save_drivers_insert:
+	lea	di, [pdci]
+	call	insert_line
+	jmp	save_buffer
+save_drivers_nodci:
+	mov	si, bp
+	jmp	save_drivers_insert
 
 save_buffer:
 	lea	si, [pname1]	; Now save buffer
@@ -1634,10 +1668,12 @@ senhlower	db	"[386enh]"
 senh		db	"[386Enh]$"
 sboot		db	"[boot]$"
 sbootdesc	db	"[boot.description]$"
+sdrivers	db	"[drivers]$"
 
 pdisplay	db	"display=vddvbe.386$"
 pdisplaydrv	db	"display.drv=vbesvga.drv$"
 pgrabber	db	"386grabber=vbevmdib.3gr$"
+pdci		db	"dci=display$"
 pwidthlower	db	"width="
 pwidth		db	"Width=$"
 pheightlower	db	"height="

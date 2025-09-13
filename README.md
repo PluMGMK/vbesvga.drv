@@ -59,12 +59,6 @@ Thanks to @joshudson for creating this tool!
 
 You can also use [@albertus82's BASIC script](https://github.com/albertus82/vbesvga-oemsetup/) to generate a bespoke `OEMSETUP.INF` for your machine, and then install the driver using Windows Setup.
 
-#### Using the DCI implementation with Video for Windows
-
-None of the automatic setup tools currently do this, but you can add the line `DCI=display` to the `[drivers]` section of your `SYSTEM.INI` to use the driver's built-in DCI Provider with Video for Windows. This is a [minimum implementation](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM), and I'm not sure how well it works, but it's there if you want to try it.
-
-Note that the DCI Provider only works in [linear modes](#linear-modes-and-double-buffering). The VxD `DVA.386` (or `VFLATD` on Win9x) does provide a mechanism to make a bank-switched framebuffer look like a linear one for DCI, but this only works when the driver provides a snippet of 32-bit code to switch the bank. `VBESVGA.DRV` is not in a position to do this, since it does bank switching by calling out to a 16-bit function provided by the Video BIOS.
-
 #### Using the driver with DBCS versions of Windows / DOS (e.g. Japanese)
 
 Currently, `VDDVBE.386` only supports standard text mode for "message mode" (better known as BSoDs). To boot it on a DBCS version of DOS, you will need to use the shim driver `VDDD.386`, found in the Japanese version of Windows 3.1. This problem probably only arises with DBCS versions of Win9x, which normally support graphical-mode BSoDs, but (for now) cannot do so with this driver.
@@ -103,7 +97,7 @@ WindowUpdateTime=15
 <... more stuff ...>
 
 [drivers]
-DCI=display
+dci=display
 <... more stuff ...>
 
 [vbesvga.drv]
@@ -256,6 +250,8 @@ When using a linear framebuffer, on a 386 or newer, the driver also attempts to 
 Basically, if you're using 386 Enhanced Mode (or Standard Mode without `EMM386`), with a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust how often the screen is redrawn using the `SwapBuffersInterval=` setting in `SYSTEM.INI`. The default is 16 ms, which means that the screen is redrawn just over sixty times a second. Unfortunately I haven't found a way to synchronize it to your monitor's blanking interval, meaning that "sixty times a second" and "60fps" won't necessarily line up as well as one might hope (see discussion [here](https://github.com/PluMGMK/vbesvga.drv/issues/55)). Shorter intervals lead to smoother drawing - as long as your CPU can keep up!
 
 If you suspect there are problems with Double Buffering, you can force-disable it by setting `SwapBuffersInterval=0`. This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
+
+Note that the DCI Provider (which is a [minimum implementation](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM)), used by Video for Windows and certain games, only works in linear modes. The VxD `DVA.386` (or `VFLATD` on Win9x) does provide a mechanism to make a bank-switched framebuffer look like a linear one for DCI, but this only works when the driver provides a snippet of 32-bit code to switch the bank. `VBESVGA.DRV` is not in a position to do this, since it does bank switching by calling out to a 16-bit function provided by the Video BIOS.
 
 ### Running DOS programs / games in windowed mode
 
