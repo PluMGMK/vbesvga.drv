@@ -256,6 +256,15 @@ BeginProc VDD_Sys_Critical_Init,PUBLIC
 ;*******
 ; Set initial value of flags from real mode INIT
 ;
+IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
+	; undo the hack we do below in VDD_Real_Init
+	xor	ecx, ecx
+	test	edx, fVT_VBESVGA
+	jz	short @F
+	xchg	cl, dh				; stash our 'S' in ECX if necessary
+@@:
+ENDIF
+
 IFDEF DEBUG
 mVT_trident	equ fVT_TVGA+fVT_TVGA9100
 mVT_ATI 	equ fVT_ATIVGA+fVT_ATIVGA3
@@ -272,15 +281,6 @@ VxD_DATA_SEG
 EXTRN	fVT_NameTable:BYTE
 VxD_DATA_ENDS
 EXTRN	VDD_Debug_Dump_Flags:NEAR
-
-IFNDEF	VGA8514	; VBE and 8514 detection are mutually exclusive from VDDDEF.INC
-	; undo the hack we do below in VDD_Real_Init
-	xor	ecx, ecx
-	test	edx, fVT_VBESVGA
-	jz	short @F
-	xchg	cl, dh				; stash our 'S' in ECX if necessary
-@@:
-ENDIF
 
 	mov	eax, edx
 	xor	al, al
