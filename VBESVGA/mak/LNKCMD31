@@ -48,6 +48,7 @@ vesafns.obj +
 vgastate.obj + 
 vgavram.obj + 
 mtrr.obj + 
+dosxbfix.obj + 
 dblbuf.obj + 
 3xswitch.obj
 display.drv 

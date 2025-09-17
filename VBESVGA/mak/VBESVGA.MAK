@@ -338,6 +338,11 @@ $(OBJ)\mtrr.obj:      $(SRC)\mtrr.asm
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
+$(OBJ)\dosxbfix.obj:    $(SRC)\dosxbfix.asm
+			echo $(ASMFLAGS) $(INC) $(SRC)\dosxbfix  > vrammak
+			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
+			$(ASM) < vrammak
+
 $(OBJ)\vgavram.obj:     $(SRC)\vga.asm
 			echo $(ASMFLAGS) $(INC) $(SRC)\vga      > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
@@ -540,6 +545,7 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\vesafns.obj      \
 		$(OBJ)\dblbuf.obj       \
 		$(OBJ)\mtrr.obj         \
+		$(OBJ)\dosxbfix.obj     \
 		$(OBJ)\vgastate.obj     \
 		$(OBJ)\vgavram.obj      \
 		$(OBJ)\3xswitch.obj     \

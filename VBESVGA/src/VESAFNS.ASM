@@ -541,6 +541,7 @@ sBegin	InitSeg
 
 externNP	init_modal_realizations	; in ROBJECT.ASM
 externNP	setup_double_buf	; in DBLBUF.ASM
+externNP	setup_dosx_bugfix	; in DOSXBFIX.ASM
 
 assumes	cs,InitSeg
 assumes	ds,Data
@@ -912,6 +913,8 @@ LinStdModePaging:
 	int	3
 endif
 	WriteAux <'Linear framebuffer not usable in Standard Mode with Paging.'>
+	call	setup_dosx_bugfix
+	jnc	@F
 	jmp	FindMode_reterr
 
 LinRealMode:
