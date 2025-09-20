@@ -143,6 +143,8 @@ Note that this limitation doesn't apply in Windows 9x when using Paint, because 
 
 The largest bitmap that can be allocated in Windows 3.1 is `0FF0000h`, i.e. about 16.7 million bytes, which is a limitation of `KRNL386.EXE`. This means that the largest photographs that can be viewed are 16.6 MP in 8-bit mode, 8.3 MP in 16-bit mode, ~5 MP in 24-bit mode and ~4 MP in 32-bit mode, or possibly slightly less depending on how the scanlines line up with segment boundaries. I guess this isn't a very common usecase anyway, but I felt I should point it out since there's nothing that can be done about it in this driver. (Despite the fact that ACDSee claims that the "display driver" couldn't create the bitmap in such situations!)
 
+On a somewhat related note, it is also possible to get General Protection Faults when trying to open large-ish bitmaps, e.g. for wallpapers over 1024×768, if you have `PageOverCommit=1` set in the `[386Enh]` section of `SYSTEM.INI`. Apparently QEMM setup for Windows can quietly add this setting, resulting in these kinds of problems. Removing this directive will allow you to view larger bitmaps up to the 16.7-million-byte limit without problems.
+
 ### Mode selection
 
 When Windows boots, the driver queries the BIOS for available modes, and automatically selects the first one which fulfills the following criteria:
