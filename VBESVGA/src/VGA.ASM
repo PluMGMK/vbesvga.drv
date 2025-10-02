@@ -76,7 +76,6 @@ FILE_VGA	EQU	1
 
 	.list
 
-	externA	 __NEXTSEG		; an import from the kernel
 	externA  __WinFlags		; LSB set in protected mode
 	externA	 __A000			; selector for linear range A0000h-AFFFFh
         externFP AllocSelector          ; create a new selector

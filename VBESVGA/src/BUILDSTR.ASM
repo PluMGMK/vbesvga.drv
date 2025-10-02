@@ -188,7 +188,6 @@ ENDIF
 	externNP output_o_rect
  	externNP preset_pro_text
 	externA  stack_top		; Stack probe location
-        externA  __NEXTSEG              ; absolute value for segment calcs
 
 	public	 process_stack_data
 ;

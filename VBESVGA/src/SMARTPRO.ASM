@@ -104,9 +104,6 @@
 ;
 	.list
 ;
-	externA __NEXTSEG
-;	externNP set_ega_opaque_mode
-;
 ;
 ; Special cases
 ;

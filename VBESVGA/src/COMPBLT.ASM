@@ -21,7 +21,6 @@ include bblt.inc
 include bitblt.var
 include compblt.inc
 
-externA __NEXTSEG
 externFP far_set_bank_select	; in BANK.INC
 externB bank_select_byte	; in BANK.INC
 
@@ -714,8 +713,8 @@ smypt1: jb	@F
 	cmp	si,01234H	;01234H becomes -src_fill_bytes
 smypt2: jb	smypt3
 @@:	mov	ax,ds
-	add	ax,__NEXTSEG
-	mov	ds,ax
+	add	ax,01234H	;01234H becomes src_seg_index
+smypti:	mov	ds,ax
 	add	si,01234H	;01234H becomes src_fill_bytes
 smypt3:
 
@@ -723,6 +722,7 @@ SMYPT_SIZE = $ - src_memory_yplus_template
 SMYPT0 = $ - smypt0 + 2
 SMYPT1 = $ - smypt1 + 2
 SMYPT2 = $ - smypt2
+SMYPTI = $ - smypti + 2
 SMYPT3 = $ - smypt3 + 2
 
 
@@ -732,14 +732,15 @@ smymt0: cmp	si,01234H   ;01234H becomes -(src_width_bytes + src_fill_bytes)
 smymt1: jc	@F
 	sub	si,01234H   ;01234H will become src_fill_bytes
 smymt2: mov	ax,ds
-	sub	ax,__NEXTSEG
-	mov	ds,ax
+	sub	ax,01234H   ;01234H becomes src_seg_index
+smymti:	mov	ds,ax
 @@:
 
 SMYMT_SIZE = $ - src_memory_yminus_template
 SMYMT0 = $ - smymt0 + 2
 SMYMT1 = $ - smymt1 + 2
 SMYMT2 = $ - smymt2 + 2
+SMYMTI = $ - smymti + 2
 
 
 PUBLIC	compile_src_memory_yupdate
@@ -754,6 +755,8 @@ compile_src_memory_yupdate   PROC    NEAR
         mov     es:[di - SMYPT0],ax
         mov     ax,src_width_bytes
         mov     es:[di - SMYPT1],ax
+	mov	ax,src_seg_index
+	mov	es:[di - SMYPTI],ax
 	mov	ax,src_fill_bytes
 	mov	es:[di - SMYPT3],ax
 	neg	ax
@@ -773,6 +776,8 @@ smy_negative:
 	neg	ax
 	sub	ax,src_width_bytes
 	mov	es:[di - SMYMT1],ax
+	mov	ax,src_seg_index
+	mov	es:[di - SMYMTI],ax
         ret
 
 compile_src_memory_yupdate   ENDP		;
@@ -906,8 +911,8 @@ dmypt1: jb	@F
 	cmp	di,01234H	;01234H becomes -dst_fill_bytes
 dmypt2: jb	dmypt3
 @@:	mov	ax,es
-	add	ax,__NEXTSEG
-	mov	es,ax
+	add	ax,01234H	;01234H becomes dst_seg_index
+dmypti:	mov	es,ax
 	add	di,01234H     ;01234H becomes dst_fill_bytes
 dmypt3:
 
@@ -915,6 +920,7 @@ DMYPT_SIZE = $ - dst_memory_yplus_template
 DMYPT0 = $ - dmypt0 + 2
 DMYPT1 = $ - dmypt1 + 2
 DMYPT2 = $ - dmypt2
+DMYPTI = $ - dmypti + 2
 DMYPT3 = $ - dmypt3 + 2
 
 
@@ -924,14 +930,15 @@ dmymt0: cmp	di,01234H   ;01234H becomes -(dst_width_bytes + dst_fill_bytes)
 dmymt1: jc	@F
 	sub	di,01234H   ;01234H will become dst_fill_bytes
 dmymt2: mov	ax,es
-	sub	ax,__NEXTSEG
-	mov	es,ax
+	sub	ax,01234H   ;01234H becomes dst_seg_index
+dmymti:	mov	es,ax
 @@:
 
 DMYMT_SIZE = $ - dst_memory_yminus_template
 DMYMT0 = $ - dmymt0 + 2
 DMYMT1 = $ - dmymt1 + 2
 DMYMT2 = $ - dmymt2 + 2
+DMYMTI = $ - dmymti + 2
 
 
 PUBLIC	compile_dst_memory_yupdate
@@ -946,6 +953,8 @@ compile_dst_memory_yupdate   PROC    NEAR
         mov     es:[di - DMYPT0],ax
         mov     ax,dst_width_bytes
         mov     es:[di - DMYPT1],ax
+	mov	ax,dst_seg_index
+	mov	es:[di - DMYPTI],ax
 	mov	ax,dst_fill_bytes
 	mov	es:[di - DMYPT3],ax
 	neg	ax
@@ -965,6 +974,8 @@ dmy_negative:
 	neg	ax
 	sub	ax,dst_width_bytes
 	mov	es:[di - DMYMT1],ax
+	mov	ax,dst_seg_index
+	mov	es:[di - DMYMTI],ax
         ret
 
 compile_dst_memory_yupdate   ENDP		;

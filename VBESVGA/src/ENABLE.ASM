@@ -187,8 +187,6 @@ SYSINI	<SpecialBlit_off,1,0>
 sEnd	Data
 
 
-	externA __NEXTSEG		;WINDOWS runtime segment selector
-
 createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
 assumes cs,InitSeg

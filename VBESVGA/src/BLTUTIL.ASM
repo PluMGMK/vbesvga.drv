@@ -18,7 +18,6 @@ include bblt.inc
 include bitblt.var
 
 EXTRN	abPaletteAccl:BYTE
-externA __NEXTSEG
 
 .286
 sBegin	Code
@@ -205,7 +204,7 @@ set_memory_address      PROC    NEAR
 	je	sma2
 	jmp	short sma1
 
-@@:     add     cx,__NEXTSEG                    ;find the correct segment
+@@:     add     cx,[si].bmSegmentIndex          ;find the correct segment
 	sub	ax,[si].bmScanSegment		; for a huge bitmap
 sma1:	cmp	ax,[si].bmScanSegment
         jnc     @B
@@ -214,7 +213,7 @@ sma2:	mul	[si].bmWidthBytes		;compute offset into bitmap
         add     ax,bx
         add     ax,word ptr [si].bmBits         ;add start of bitmap
         jnc     @F                              ;if there was a carry from this
-        add     cx,__NEXTSEG                    ; add, go into next segment
+        add     cx,[si].bmSegmentIndex          ; add, go into next segment
 @@:     mov     dx,cx
         ret
 

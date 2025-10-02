@@ -398,8 +398,10 @@ bitblt_prep_src PROC	NEAR
 	call	blt_clip
 	jc	bitblt_prep_src_done
 
-	mov	bx,[si].bmFillBytes		;copy a few things to the stack
+	mov	ax,[si].bmSegmentIndex		;copy a few things to the stack
+	mov	bx,[si].bmFillBytes
 	mov	cx,[si].bmWidthBytes
+	mov	src_seg_index,ax
 	mov	src_fill_bytes,bx
 	mov	src_width_bytes,cx
 
@@ -468,8 +470,10 @@ bitblt_prep_src ENDP				;
 PUBLIC	bitblt_prep_dst
 bitblt_prep_dst PROC	NEAR
 
-	mov	bx,es:[di].bmFillBytes		;copy a few things to the stack
+	mov	ax,es:[di].bmSegmentIndex	;copy a few things to the stack
+	mov	bx,es:[di].bmFillBytes
 	mov	cx,es:[di].bmWidthBytes
+	mov	dst_seg_index,ax
 	mov	dst_fill_bytes,bx
 	mov	dst_width_bytes,cx
 

@@ -21,8 +21,6 @@ include bblt.inc
 include bitblt.var
 include compblt.inc
 
-externA __NEXTSEG
-
 .286
 sBegin	Code
 assumes cs,Code

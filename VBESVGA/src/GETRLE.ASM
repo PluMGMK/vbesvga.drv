@@ -174,17 +174,18 @@ scanline_encode_bitmap1:
 
 scanline_encode_color0:
 
+	mov	bx	,es:[si].bmSegmentIndex    ;segment step
 	lds	si	,es:[si].bmBits 	   ;set the start address
 	mov	ax	,init_scan
 	add	ax	,num_scans
 	mov	dx	,ds
 
 scanline_encode_color1:
-	add	dx	,__NEXTSEG
+	add	dx	,bx
 	sub	ax	,scans_per_seg
 	ja	scanline_encode_color1
 
-	sub	dx	,__NEXTSEG
+	sub	dx	,bx
 	mov	ds	,dx
         add     ax      ,scans_per_seg
 	dec	ax

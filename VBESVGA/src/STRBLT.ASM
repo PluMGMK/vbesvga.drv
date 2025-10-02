@@ -189,9 +189,6 @@ endif
 ; Link time constants describing the size and color format
 ; that the EGA will be running in.
 ;
-	externA __NEXTSEG		; Selector to the screen
-;	externA COLOR_FORMAT		; Color format (0103h or 0104h)
-;
 ifdef  PALETTES
 	externB PaletteModified		; set when palette is modified
 endif

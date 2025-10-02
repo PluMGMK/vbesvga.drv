@@ -81,9 +81,12 @@ old_worksel_base	EQU	<[bp - 540H]>
 
 colour_mask		EQU	<[bp - 544H]> ;mask to prevent setting padding bits
 
+dst_seg_index		EQU	<[bp - 546H]> ;step between segments in dest bitmap
+src_seg_index		EQU	<[bp - 548H]> ;step between segments in src bitmap
 
 
-BLT_STACK_SIZE		EQU	05D4H
+
+BLT_STACK_SIZE		EQU	05D8H
 SOURCE_PRESENT	equ	0010000000000000b
 PATTERN_PRESENT	equ	0100000000000000b
 NEGATE_NEEDED	equ	1000000000000000b

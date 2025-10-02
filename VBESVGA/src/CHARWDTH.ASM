@@ -32,8 +32,6 @@
 	include rt.mac
         .list
 
-	externA __NEXTSEG		; adds to selector/segment
-
 
 sBegin Code
 assumes	cs,Code
