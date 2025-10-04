@@ -44,7 +44,6 @@
         .list
 
         externA         __AHINCR            ; in KERNEL
-        externA         __AHSHIFT           ; in KERNEL
 	externA  	__WinFlags          ; in KERNEL
 
         externFP        OutputDebugString   ; in KERNEL
@@ -208,6 +207,7 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
 
         localW  WidthBytes              ; width of a scanline
         localW  FillBytes               ; segment fill bytes
+        localW  SegIndex                ; segment step (usually == __AHINCR)
 
         localW  fn_decode_abs           ; function to output a abs scan
         localW  fn_decode_rle           ; function to output a solid scan
@@ -507,6 +507,8 @@ rle_init_huge:
         mov     WidthBytes,ax
         mov     ax,[si].bmFillBytes
         mov     FillBytes,ax
+        mov     ax,[si].bmSegmentIndex
+        mov     SegIndex,ax
 
         mov     ax,word ptr [si].bmPlanes
         cmp     ah,1
@@ -633,7 +635,7 @@ rle_init_bitmap:
         mov     di,[si].bmBits.off
         mov     ax,DstY
         mov     bx,[si].bmBits.sel
-        mov     cx,[si].bmSegmentIndex
+        mov     cx,SegIndex
         mov     dx,[si].bmScanSegment
         jcxz    bmp_ptr_small
 
@@ -877,7 +879,7 @@ next_scan_bitmap:
 next_scan_bitmap_wrap:
         sub     di,FillBytes
         mov     dx,es
-        sub     dx,__AHINCR
+        sub     dx,SegIndex
         mov     es,dx
         ret
 
