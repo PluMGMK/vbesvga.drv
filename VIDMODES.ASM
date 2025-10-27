@@ -321,6 +321,22 @@ getvendor:
 	loop	@@find_next_switch
 	jmp	@@cmdtail_done	; if loop terminates, we're done
 
+@@:	; so we're querying a user-specified mode, rather than
+	; the default - adjust our output to reflect this!
+	cmp	byte ptr [fault],'f'
+	jne	@F
+
+	push	si
+	push	di
+	push	cx
+	lea	si,sired
+	lea	di,fault
+	mov	cx,SIRED_FAULT_LEN
+	rep	movsb
+	pop	cx
+	pop	di
+	pop	si
+
 @@:	; next thing to do is parse a number
 	xor	bp,bp		; accumulate the number in BP
 @@:	lodsb
@@ -652,10 +668,15 @@ nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
 vbesvga	db 0Dh,0Ah,"VBESVGA.DRV ","$"
 should	db "should","$"
 wont	db "will NOT","$"
-boot	db " boot with default / desired mode ","$"
+boot	db " boot with de"
+fault	db "fault mode ","$"
 check	db 0Dh,0Ah,"To check another mode, use /w, /h and /d switches",0Dh,0Ah
 	db "to specify desired width / height / depth - e.g.:",0Dh,0Ah
 	db 9,"vidmodes/w800/h600/d16",0Dh,0Ah,"$"
+
+; five characters to change "default" to "desired" above
+sired	db "sired"
+SIRED_FAULT_LEN	equ $-sired
 
 ; EDID failure messages
 ef_call	db "[VBIOS failed to return EDID data]",0Dh,0Ah,"$"
