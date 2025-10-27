@@ -255,6 +255,9 @@ IFDEF DEBUG
 PUBLIC VDD_Force_Trapping
 VDD_Force_Trapping  db 0
 VDD_Forced_Trap     db 0
+
+LastUnkOutput	    db 0
+LastUnkInput	    db 0
 ENDIF
 
 	ALIGN 4
@@ -1937,7 +1940,15 @@ ENDIF
 	; This is required for NVIDIA GeForces which expose some weird APIs via
 	; extended CRTC registers. The approach here mirrors the one used in
 	; Win9x's VDD.VXD.
-	Debug_Out "Output value #AL to unknown CRTC register #CL before MsgMode inited"
+IFDEF	DEBUG
+	; only do debug output if to a different register, otherwise GeForce
+	; takes ages to boot with all the outputs to A0!
+	cmp	cl,[LastUnkOutput]
+	je	short @F
+	Debug_Out "OEM_CR#CL<-#AL"
+	mov	[LastUnkOutput],cl
+@@:
+ENDIF	;DEBUG
 	; since MsgMode is not inited, output to the misc register has also been
 	; trapped, so the VM may think the CRTCs are at 3B4h, while they are
 	; actually at 3D4h, or possibly even vice versa!
@@ -2033,7 +2044,15 @@ VIOT_VI_CRT:
 	; This is required for NVIDIA GeForces which expose some weird APIs via
 	; extended CRTC registers. The approach here mirrors the one used in
 	; Win9x's VDD.VXD.
-	Debug_Out "Input from unknown CRTC register #CL"
+IFDEF	DEBUG
+	; only do debug output if from a different register, otherwise GeForce
+	; takes ages to boot with all the inputs from A1!
+	cmp	cl,[LastUnkInput]
+	je	short @F
+	Debug_Out "OEM_CR#CL->inp"
+	mov	[LastUnkInput],cl
+@@:
+ENDIF	;DEBUG
 	; since MsgMode is not inited, output to the misc register has also been
 	; trapped, so the VM may think the CRTCs are at 3B4h, while they are
 	; actually at 3D4h, or possibly even vice versa!
