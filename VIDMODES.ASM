@@ -125,6 +125,13 @@ getvendor:
 	lea	dx,newline
 	int	21h
 
+	; first make sure VBE DDC functions are supported
+	mov	ax,4F15h
+	xor	bl,bl		; installation check
+	int	10h
+	cmp	ax,4Fh		; successful call?
+	jne	@@EDID_call_fail
+
 	mov	ax,4F15h	; get EDID info
 	mov	bl,1
 	xor	cx,cx
@@ -738,6 +745,8 @@ pFBuf	dd ?
 dOSoff	dd ?
 wOSsize	dw ?
 	db 206 dup (?)
+
+align	16
 
 ; Monitor info
 edid_hdr	db 8 dup (?)
