@@ -1929,10 +1929,10 @@ ELSE
 	jnz	SHORT VIOT_Out_Exit		    ;	Y: Don't do output
 ENDIF
 	cmp	ebx,[Vid_CRTC_VM]		    ;	N: Q: CRTC owner?
-	jnz	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
+	jnz	SHORT @F			    ;	    N: Check OEM reg
 	TestMem [Vid_Flags], fVid_MsgInit	    ; Q: Message mode init'd?
 	jnz	short VIOT_Out_Standard		    ;	Y: go ahead
-	cmp	cl,C_IMaxIBM			    ;	N: Q: unknown OEM reg?
+@@:	cmp	cl,C_IMaxIBM			    ;	N: Q: unknown OEM reg?
 	jna	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
 	; If the OEM routine didn't handle this unknown register, then just do
 	; the physical output of both the index and the data, which is valid
