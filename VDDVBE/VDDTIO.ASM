@@ -2060,9 +2060,7 @@ ENDIF	;DEBUG
 	in	al,dx
 	mov	dx,pCRTCIndxMono		    ; assume mono
 	test	al,1				    ; Q: mapped to colour?
-	jnz	short @F
-	int	3
-@@:	jz	short @F			    ;   N: go ahead
+	jz	short @F			    ;   N: go ahead
 	mov	dl,low pCRTCIndxColr		    ;   Y: use colour port
 @@:	mov	al,cl
 	out	dx,al
