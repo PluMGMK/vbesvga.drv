@@ -27,11 +27,11 @@ This screenshot showcases the True Colour rendering capability, in the wallpaper
 
 ### Hardware Support
 
-In theory, this suite of drivers should support _any_ graphics card that properly supports the VESA BIOS Extensions and doesn't do anything funky with the window size. So basically, any hardware made in the last thirty years. Unfortunately, real life is rarely as simple as one would like, so there is some hardware that just doesn't work:
+In theory, this suite of drivers should support _any_ graphics card that properly supports the VESA BIOS Extensions, and doesn't do anything funky with the memory window size. So basically, any hardware made in the last thirty years. Unfortunately, real life is rarely as simple as one would like, so there is some hardware that has some issues:
 
-* Intel 810 chipset integrated graphics [crashes back to DOS during boot](https://github.com/PluMGMK/vbesvga.drv/issues/99) leaving you with a blank screen. It turns out there is an official driver for this chipset, please use that instead: https://archive.org/details/w-810-r-209
-* The NVIDIA GeForce 1050 GTX triple-faults when attempting to boot Windows in Enhanced Mode, and presumably newer NVIDIA hardware has the same problem. See [issue #94](https://github.com/PluMGMK/vbesvga.drv/issues/94) for more details.
-* The AMD Radeon RX 7800 XT (and presumably newer Radeons) likewise [fails to boot in Enhanced Mode](https://github.com/PluMGMK/vbesvga.drv/issues/95). The RX 5000 series is OK (that's what I develop on), and I don't know what the story is with the RX 6000 series.
+* The NVIDIA GeForce 1050 GTX has some issues with windowed DOS prompts, and presumably newer NVIDIA hardware has the same problem. The issues include potential freezes when using the `mode` command to change the size of the prompt, and font corruption when switching to full screen (which also affects blue screens).
+* Intel 810 chipset integrated graphics [crashes back to DOS during boot](https://github.com/PluMGMK/vbesvga.drv/issues/99) leaving you with a blank screen. It turns out there is an official driver for this chipset, so please use that instead: https://archive.org/details/w-810-r-209
+* The AMD Radeon RX 7800 XT (and presumably newer Radeons) [fails to boot in Enhanced Mode](https://github.com/PluMGMK/vbesvga.drv/issues/95). The RX 5000 series is OK (that's what I develop on), and I don't know what the story is with the RX 6000 series.
 
 In general, if your hardware is old enough, it probably has an official driver for Windows 3.1 (like the i810). Official drivers should be preferred where available because they generally use hardware acceleration and don't use inefficient Real-Mode BIOS calls. On processors from that era (especially early on), the CPU-bound routines of `VBESVGA.DRV` tend to give **really** poor performance!
 
@@ -336,7 +336,6 @@ Note that the only step below which requires Windows is the initial installation
 
 * Figure out some kind of versioning scheme within the code, ideally integrated with Git (because I'm forgetful!), so user can easily figure out which version of the driver they're installing / running
 * Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
-* See if `VDDVBE.386` can work [on newer NVIDIA hardware](https://github.com/PluMGMK/vbesvga.drv/issues/94) (I have an affected card but need to swap it in for testing, which is manual-labour-intensive)
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
 * Investigate adding support for colour / animated cursors, for Win9x
 * Investigate adding proper support for graphical-mode BSoDs, for DBCS versions of Win9x
