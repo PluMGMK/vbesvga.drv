@@ -1928,7 +1928,7 @@ ENDIF
 	cmp	ebx,[Vid_CRTC_VM]		    ;	N: Q: CRTC owner?
 	jnz	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
 	TestMem [Vid_Flags], fVid_MsgInit	    ; Q: Message mode init'd?
-	jnz	short @F			    ;	Y: go ahead
+	jnz	short VIOT_Out_Standard		    ;	Y: go ahead
 	cmp	cl,C_IMaxIBM			    ;	N: Q: unknown OEM reg?
 	jna	SHORT VIOT_Out_CRTC_NoOut	    ;	    N: Don't do output
 	; If the OEM routine didn't handle this unknown register, then just do
@@ -1938,12 +1938,21 @@ ENDIF
 	; extended CRTC registers. The approach here mirrors the one used in
 	; Win9x's VDD.VXD.
 	Debug_Out "Output value #AL to unknown CRTC register #CL before MsgMode inited"
-	dec	dl
+	; since MsgMode is not inited, output to the misc register has also been
+	; trapped, so the VM may think the CRTCs are at 3B4h, while they are
+	; actually at 3D4h, or possibly even vice versa!
 	mov	ah,al
-	mov	al,cl
+	mov	dx,pMiscIn
+	in	al,dx
+	mov	dx,pCRTCIndxMono		    ; assume mono
+	test	al,1				    ; Q: mapped to colour?
+	jz	short @F			    ;   N: go ahead
+	mov	dl,low pCRTCIndxColr		    ;   Y: use colour port
+@@:	mov	al,cl
 	out	dx,ax
 	jmp	short VIOT_Out_Exit
-@@:	cmp	cl,C_AddrH-C_HTotal		    ; Q: CRTC start address chg?
+VIOT_Out_Standard:
+	cmp	cl,C_AddrH-C_HTotal		    ; Q: CRTC start address chg?
 	jb	SHORT VIOT_Out_CRTC_DoOut	    ;	N: continue
 	cmp	cl,C_AddrL-C_HTotal
 	ja	SHORT VIOT_Out_CRTC_DoOut	    ;	N: continue
@@ -2018,21 +2027,31 @@ VIOT_VI_CRT:
 	call	VDD_OEM_In_CRTC
 	jnz	short VIOT_VI_CRT_End
 	cmp	cl,C_IMaxIBM
-	jna	short @F
+	jna	short VIOT_VI_Standard
 	; If the OEM routine didn't handle this unknown register, then just do
 	; the physical output of the index and input of the data.
 	; This is required for NVIDIA GeForces which expose some weird APIs via
 	; extended CRTC registers. The approach here mirrors the one used in
 	; Win9x's VDD.VXD.
 	Debug_Out "Input from unknown CRTC register #CL"
-	dec	dl
-	mov	al,cl
+	; since MsgMode is not inited, output to the misc register has also been
+	; trapped, so the VM may think the CRTCs are at 3B4h, while they are
+	; actually at 3D4h, or possibly even vice versa!
+	mov	dx,pMiscIn
+	in	al,dx
+	mov	dx,pCRTCIndxMono		    ; assume mono
+	test	al,1				    ; Q: mapped to colour?
+	jnz	short @F
+	int	3
+@@:	jz	short @F			    ;   N: go ahead
+	mov	dl,low pCRTCIndxColr		    ;   Y: use colour port
+@@:	mov	al,cl
 	out	dx,al
 	inc	dl
 	in	al,dx
 	jmp	short VIOT_VI_CRT_End
-
-@@:	mov	al, [edi.VDD_Stt.CRTC][ecx]	    ; get virtual value
+VIOT_VI_Standard:
+	mov	al, [edi.VDD_Stt.CRTC][ecx]	    ; get virtual value
 VIOT_VI_CRT_End:
 IFDEF DEBUG_virtualization
 	mov	ah, al
