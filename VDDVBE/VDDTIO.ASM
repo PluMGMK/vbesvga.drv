@@ -672,6 +672,8 @@ VIOST_CRTC_Chk:
 	jnz	VIOST_EnablePortTrap		;   N: enable trapping
 	TestMem [edi.VDD_Flags],<fVDD_ModeSet+fVDD_PageChg>; Q: Doing mode set?
 	jnz	VIOST_EnablePortTrap		;   Y: trap all ports
+	TestMem [Vid_Flags], fVid_MsgInit	; Q: Message mode init'ed?
+	jz	VIOST_EnablePortTrap		;   N: trap all ports
 	TestMem [Vid_Flags], fVid_DOff		; Q: Display off?
 	jnz	VIOST_EnablePortTrap		;   Y: trap all ports
 VIOST_SkipPort:
