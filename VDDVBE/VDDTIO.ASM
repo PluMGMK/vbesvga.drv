@@ -1956,7 +1956,7 @@ ENDIF	;DEBUG
 	mov	dx,pMiscIn
 	in	al,dx
 	mov	dx,pCRTCIndxMono		    ; assume mono
-	test	al,1				    ; Q: mapped to colour?
+	test	al,fMiscPNum			    ; Q: mapped to colour?
 	jz	short @F			    ;   N: go ahead
 	mov	dl,low pCRTCIndxColr		    ;   Y: use colour port
 @@:	mov	al,cl
@@ -2059,7 +2059,7 @@ ENDIF	;DEBUG
 	mov	dx,pMiscIn
 	in	al,dx
 	mov	dx,pCRTCIndxMono		    ; assume mono
-	test	al,1				    ; Q: mapped to colour?
+	test	al,fMiscPNum			    ; Q: mapped to colour?
 	jz	short @F			    ;   N: go ahead
 	mov	dl,low pCRTCIndxColr		    ;   Y: use colour port
 @@:	mov	al,cl
