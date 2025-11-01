@@ -58,6 +58,12 @@ VESA_MEM_SEQ256	= 5
 VESA_MEM_DIRECT	= 6	; no palette switching
 VESA_MEM_YUV	= 7	; no... :(
 
+; Use MCGA256 mode as a last resort
+LASTRESORT_MODE	= 13h
+LASTRESORT_WDTH	= 320
+LASTRESORT_HGHT	= 200
+LASTRESORT_DPTH	= 8
+
 ; Detailed Timing Description
 DTD	struc
 pixclock_10kHz	dw ?	; pixel clock in 10-kHz units
@@ -297,6 +303,7 @@ OFF_VESA_GRAN	equ $-VESAModeStruct
 VESAGranularity	dw ?	; in kiB, hopefully == 64
 OFF_VESA_WSIZE	equ $-VESAModeStruct
 VESAWinSize	dw ?	; in kiB, hopefully == 64
+OFF_VESA_WSEG	equ $-VESAModeStruct
 VESAWinASeg	dw ?	; copy of ScreenSelector in CS, for bank switching!
 VESAWinBSeg	dw ?
 public	VESABankSwitch
@@ -313,6 +320,7 @@ VESACharCellW	db ?	; in pixels
 VESACharCellH	db ?	; in pixels
 public	ColourFormat_CS
 ColourFormat_CS	label word	; Colour Format in "Code" segment
+OFF_VESA_PLANES	equ $-VESAModeStruct
 VESAMemPlanes	db ?
 OFF_VESA_DEPTH	equ $-VESAModeStruct
 VESABPP		db ?	; bits per pixel, must be at least 8
@@ -883,9 +891,12 @@ cProc	FindMode,<NEAR,PUBLIC>,<es,ds,di,bx,si,cx>
 	localW	CodeSel	; RW selector to Code segment
 	localW	BestScore
 	localB	GranFac	; granularity factor for current mode
+	localB	LastResortChecked
 cBegin
 	; initialize "best score" to worst possible value
 	or	[BestScore],-1
+	; we have not checked the last-resort mode yet
+	mov	[LastResortChecked],0
 
 	; do a few checks before agreeing to search for a linear mode
 	mov	ax,__WinFlags
@@ -1005,13 +1016,33 @@ FindMode_loop:
 	assumes	ds,Data
 
 	mov	cx,ax
-	jne	@F
-	jmp	ModeFound	; go to end of loop
+	jne	getmodeinfo
 
-@@:	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
+	; if we're at the end of the line, we may still need
+	; to check the last-resort mode...
+	cmp	[LastResortChecked],0
+	jz	@F
+	; if it's already been checked, go to end of loop
+	jmp	ModeFound
+
+@@:	; ensure next round of loop will turn up -1 again
+	sub	si,2
+	call	check_last_resort
+	jmp	short gotmodeinfo
+
+getmodeinfo:
+	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
 	call	DoInt10h
 
-	mov	bx,es:[di.OFF_VESA_ATTRS]
+gotmodeinfo:
+	; is this the last-resort mode we're checking?
+	; (some BIOSes, like SeaBIOS, include it in the list,
+	; so this case may come up naturally!)
+	cmp	cx,LASTRESORT_MODE
+	jne	@F
+	mov	[LastResortChecked],1
+
+@@:	mov	bx,es:[di.OFF_VESA_ATTRS]
 	mov	al,bl
 	and	al,low (VESA_ATTR_HWSUPPORT OR VESA_ATTR_GRAPHICS OR VESA_ATTR_COLOUR)
 	; Is it supported by the current hardware, AND graphical (not text),
@@ -1084,9 +1115,10 @@ jnelp:	jne	FindMode_loop	; NEXT!
 	mov	al,bl
 	and	al,low (VESA_ATTR_LINEAR OR VESA_ATTR_NOBANKSWITCH)
 	cmp	al,low VESA_ATTR_NOBANKSWITCH
-	je	FindMode_loop	; NEXT!
+	jne	@F
+	jmp	FindMode_loop	; NEXT!
 
-	mov	al,[bLinear]
+@@:	mov	al,[bLinear]
 	cbw
 	; Now bLinear (in AX) is tri-state, and there are two relevant binary
 	; attrs (in BX), so the truth table is theoretically quite complex...
@@ -1506,149 +1538,47 @@ FindMode_reterr:
 cEnd
 
 ;--------------------------------------------------------------------------;
-; print_bank_info
-;	takes a function pointer to WSPRINTF and uses it to print out a
-;	diagnostic message explaining all the properties of the window(s)
-;	associated with the selected mode.
+; check_last_resort
+;	fills in a pseudo-mode-descriptor at ES:DI, corresponding to
+;	MCGA256 mode, which is our mode of last resort
 ; Entry:
-;	DS	= Data
-;	
+;	ES:DI	= destination buffer
 ; Returns:
-;	outbuf is filled with a message, and it gets printed
+;	ES:DI filled
+;	CX	= mode number (13h)
+;
 ; Registers Destroyed:
-;	AX,BX,CX,DX,FLAGS
+;	None
 ; Registers Preserved:
-;	SI,DI,DS,ES,BP
+;	AX,BX,DX,SI,DI,DS,ES,BP,FLAGS
 ; Calls:
-;	WSPRINTF
-;	GetSelectorBase
+;	Nothing
 ; History:
 ;	see Git
 ;--------------------------------------------------------------------------;
-bankinfo_format	db 13,10
-		db "Selected mode %04lX has the correct resolution and depth, but has the",13,10
-		db "above-mentioned problem with the window attributes.",13,10
-		db "It is unlikely that any other mode supported by your device would have the",13,10
-		db "correct resolution / depth but also have the correct window attributes!",13,10
-		db "Generally, only really old cards seem to do this kind of interesting thing",13,10
-		db "with the windows, so maybe yours has its own proprietary Windows 3.1 driver?",13,10
-		db "If not, please raise an issue on GitHub and I'll see what I can do...",13,10
-		db 13,10
-		db "Window A Attributes: %c%c%c",13,10
-		db "Window B Attributes: %c%c%c",13,10
-		db "Window Granularity:  %u kiB",13,10
-		db "Window Size:         %u kiB",13,10
-		db "Window A Base:       %lX",13,10
-		db "Window B Base:       %lX",13,10
-		db "Scanline Size:       %u bytes",13,10,0
-
-cProc	print_bank_info,<NEAR,PUBLIC,NODATA>,<es,si,di>
-	parmD	wsprintf
-	parmD	outbuf
-cBegin
-	mov	ax,seg VESAWinAAttrs
-	mov	es,ax
-	assumes	es,Code
-
-	; format bank information
-	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
-	; arguments follow, pushed right-to-left...
-
-	; Scanline Size (single word)
-	push	[VESAScanLineLen]
-
-	; Window B Base (dword)
-	xor	ax,ax
-	cwd
-	test	[VESAWinBAttrs],VESA_WINATTR_EXISTS
-	jz	@F
-	push	es
-	cCall	GetSelectorBase,<[VESAWinBSeg]>
-	pop	es
-@@:	push	dx
-	push	ax
-	; Window A Base (dword)
-	xor	ax,ax
-	cwd
-	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
-	jz	@F
-	push	es
-	cCall	GetSelectorBase,<[VESAWinASeg]>
-	pop	es
-@@:	push	dx
-	push	ax
-
-	; Window Size (single word)
-	push	[VESAWinSize]
-	; Window Granularity (single word)
-	push	[VESAGranularity]
-
-	; Window B "Exists" (char)
-	mov	ah,[VESAWinBAttrs]
-	mov	al,'-'
-	test	ah,VESA_WINATTR_EXISTS
-	jz	@F
-	mov	al,'E'
-@@:	push	ax
-	; Window B "Readable" (char)
-	mov	al,'-'
-	test	ah,VESA_WINATTR_READ
-	jz	@F
-	mov	al,'R'
-@@:	push	ax
-	; Window B "Writable" (char)
-	mov	al,'-'
-	test	ah,VESA_WINATTR_WRITE
-	jz	@F
-	mov	al,'W'
-@@:	push	ax
-
-	; Window A "Exists" (char)
-	mov	ah,[VESAWinAAttrs]
-	mov	al,'-'
-	test	ah,VESA_WINATTR_EXISTS
-	jz	@F
-	mov	al,'E'
-@@:	push	ax
-	; Window A "Readable" (char)
-	mov	al,'-'
-	test	ah,VESA_WINATTR_READ
-	jz	@F
-	mov	al,'R'
-@@:	push	ax
-	; Window A "Writable" (char)
-	mov	al,'-'
-	test	ah,VESA_WINATTR_WRITE
-	jz	@F
-	mov	al,'W'
-@@:	push	ax
-
-	; Video Mode (dword)
-	xor	ax,ax
-	push	ax
-	push	[Vmode]
-
-	; format and output buffer
-	lea	ax,bankinfo_format
-	push	cs
-	push	ax
-	push	[outbuf.sel]
-	push	[outbuf.off]
-
-	call	[wsprintf]
-	mov	sp,si	; restore stack pointer
-
-	; then print it
-	push	ds
-	lds	di,[outbuf]
-	mov	dx,di
-	add	di,ax	; get length of output string
-	; replace null terminator with dollar terminator
-	mov	byte ptr [di],'$'
-	mov	ah,9	; write string to stdout
-	int	21h
-	pop	ds
-cEnd
+check_last_resort	proc near
+	; the following attributes apply to MCGA256 mode:
+	mov	word ptr es:[di.OFF_VESA_ATTRS],VESA_ATTR_HWSUPPORT OR VESA_ATTR_BIOS_OP OR VESA_ATTR_COLOUR OR VESA_ATTR_GRAPHICS OR VESA_ATTR_DBLSCAN
+	; the window is a normal one, at A000h
+	mov	byte ptr es:[di.OFF_VESA_WATTRS],VESA_WINATTR_NORMAL
+	mov	word ptr es:[di.OFF_VESA_WSEG],0A000h
+	; pretend we've a granularity and window size of 64 kiB
+	; (in fact it's a size of 64 kB, not kiB, and no granularity
+	; since there's no bank switching)
+	mov	word ptr es:[di.OFF_VESA_GRAN],64
+	mov	word ptr es:[di.OFF_VESA_WSIZE],64
+	; set the actual attributes
+	mov	word ptr es:[di.OFF_VESA_SLL],LASTRESORT_WDTH
+	mov	word ptr es:[di.OFF_VESA_WIDTH],LASTRESORT_WDTH
+	mov	word ptr es:[di.OFF_VESA_HEIGHT],LASTRESORT_HGHT
+	mov	byte ptr es:[di.OFF_VESA_DEPTH],LASTRESORT_DPTH
+	; single plane, packed pixel
+	mov	byte ptr es:[di.OFF_VESA_PLANES],1
+	mov	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_PACKED
+	; finally, set the mode number
+	mov	cx,LASTRESORT_MODE
+	ret
+check_last_resort	endp
 
 ;--------------------------------------------------------------------------;
 ; vesa_gdi_fixup
@@ -1973,6 +1903,21 @@ ifdef	INT3
 endif
 	mov	ax,(VBE_INT10_FN SHL 8) + VBE_SETMODE
 	mov	bx,[Vmode]
+	cmp	bx,LASTRESORT_MODE
+	jne	common_vesafun
+
+	; if we're setting the last resort mode, then use the traditional
+	; BIOS function instead, since we may not have learned about it
+	; from the VBE API!
+	cmp	[VScreen_Width],LASTRESORT_WDTH
+	jne	common_vesafun
+	cmp	[VScreen_Height],LASTRESORT_HGHT
+	jne	common_vesafun
+	; use traditional BIOS function, AH=0, AL=mode
+	mov	ax,bx
+
+	; DAC probably needs to be 6-bit in this situation
+	mov	[dac_size],2
 
 common_vesafun:
 	; there's no point in messing around with VM86 redirects or PMIDs here

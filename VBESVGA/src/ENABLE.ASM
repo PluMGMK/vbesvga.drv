@@ -192,7 +192,6 @@ assumes cs,InitSeg
 
 	externNP FindMode		;from vesafns.asm
 	externNP QueryGeometry		;from vesafns.asm
-	externNP print_bank_info	;from vesafns.asm
 	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
 	externB  physical_device	;Device physical data
@@ -698,17 +697,7 @@ cBegin
 @@:	mov	[wsprintf.off],ax
 	mov	[wsprintf.sel],dx
 
-	; Since the error messages are in order, the fail_reason will
-	; point at or beyond the first bank-related one only if we're
-	; failing for a bank-related reason! In that case, print bank
-	; info instead of generic info...
-	cmp	[fail_reason],offset bad_win_attr
-	jb	@F
-	lea	ax,outbuf
-	cCall	print_bank_info,<[wsprintf.sel],[wsprintf.off],ss,ax>
-	jmp	print_info_done
-
-@@:	; format configuration information
+	; format configuration information
 	mov	si,sp	; save stack pointer since wsprintf is _cdecl!
 	xor	ax,ax
 	mov	al,[VScreen_Depth]
