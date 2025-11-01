@@ -181,8 +181,6 @@ SYSINI	<SpecialBlit_off,1,0>
 
 	externW	sb_period_ms		; in DBLBUF.ASM
 	externB	ThreeByte		; in VESAFNS.ASM
-	externB	DepthList		; in VESAFNS.ASM
-	externB	EndDepthList		; in VESAFNS.ASM
 
 sEnd	Data
 
@@ -675,10 +673,7 @@ enable_read_profile	ENDP
 user_exe	db "USER.EXE",0
 wsprintf_name	db "_WSPRINTF",0
 info_format	db "Selected resolution: %u*%u",13,10
-		db "Selected bit depth:  %u bits",13,10
-		db "Usable bit depths at this resolution: ",0
-next_format	db ", " ; fallthrough
-first_format	db "%u bits",0
+		db "Selected bit depth:  %u bits",13,10,0
 
 cProc	enable_print_info,<NEAR,PUBLIC,NODATA>
 	localD	wsprintf
@@ -741,60 +736,7 @@ cBegin
 	int	21h
 	pop	ds
 
-	; now print the usable depths
-	lea	si,DepthList
-	lea	cx,EndDepthList
-	sub	cx,si
-	lodsb
-	test	al,al
-	jz	print_info_none
-
-	lea	bx,first_format
-@@:	; format depth info
-	push	cx
-	mov	di,sp	; save stack pointer since wsprintf is _cdecl!
-	xor	ah,ah
-	push	ax
-	push	cs
-	push	bx
-	lea	bx,outbuf
-	push	ss
-	push	bx
-	call	[wsprintf]
-	mov	sp,di	; restore stack pointer
-	pop	cx
-
-	; then print it
-	mov	di,ax	; get length of output string
-	; replace null terminator with dollar terminator
-	mov	byte ptr outbuf[di],'$'
-	push	ds
-	mov	bx,ss
-	mov	ds,bx
-	lea	dx,outbuf
-	mov	ah,9	; write string to stdout
-	int	21h
-	pop	ds
-
-	; get the next depth from the list
-	lodsb
-	test	al,al
-	lea	bx,next_format
-	loopnz	@B
-	jmp	@F
-
-print_info_none:
-	; print the word "None" to indicate no depths supported for this resolution
-	mov	ah,2	; write character to stdout
-	mov	dl,'N'
-	int	21h
-	mov	dl,'o'
-	int	21h
-	mov	dl,'n'
-	int	21h
-	mov	dl,'e'
-	int	21h
-@@:	; finish the whole thing off with a newline
+	; finish the whole thing off with a newline
 	mov	ah,2
 	mov	dl,0Dh
 	int	21h

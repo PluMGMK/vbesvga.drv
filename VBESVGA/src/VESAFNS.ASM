@@ -258,12 +258,6 @@ MemWidth	dw ?
 public	MemSize
 MemSize		dd ?
 
-; Keep track of available depths so we can give the user some more helpful info
-; if we can't find the exact depth they requested...
-public	DepthList,EndDepthList
-DepthList	db 15 dup (0)
-EndDepthList	label byte
-
 ; Are we using a 3-byte-per-pixel video mode, or allowed to search for one?
 public	ThreeByte
 ThreeByte	db 0
@@ -296,9 +290,12 @@ VESAModeStruct	label byte
 
 OFF_VESA_ATTRS	equ $-VESAModeStruct
 VESAModeAttrs	dw ?
+OFF_VESA_WATTRS	equ $-VESAModeStruct
 VESAWinAAttrs	db ?
 VESAWinBAttrs	db ?
+OFF_VESA_GRAN	equ $-VESAModeStruct
 VESAGranularity	dw ?	; in kiB, hopefully == 64
+OFF_VESA_WSIZE	equ $-VESAModeStruct
 VESAWinSize	dw ?	; in kiB, hopefully == 64
 VESAWinASeg	dw ?	; copy of ScreenSelector in CS, for bank switching!
 VESAWinBSeg	dw ?
@@ -849,9 +846,12 @@ cEnd
 
 ;--------------------------------------------------------------------------;
 ; FindMode
-;	runs through the list of available SVGA modes, finds one that
-;	matches the desired criteria, and fills its info (including the
-;	bank-switch function pointer) into the VESAModeStruct
+;	runs through the list of available SVGA modes, scoring each one
+;	by the 1-norm of its distance from the desired criteria in config
+;	space (coords are width and height in pixels, depth in bits, and
+;	binary banked/linear) - it then fills the info (including the
+;	bank-switch function pointer) for the lowest-scoring mode into
+;	the VESAModeStruct
 ; Entry:
 ;	profile should have been read
 ; Returns:
@@ -882,6 +882,7 @@ cProc	FindMode,<NEAR,PUBLIC>,<es,ds,di,bx,si,cx>
 	; locals:
 	localW	CodeSel	; RW selector to Code segment
 	localW	BestScore
+	localB	GranFac	; granularity factor for current mode
 cBegin
 	; initialize "best score" to worst possible value
 	or	[BestScore],-1
@@ -1005,40 +1006,90 @@ FindMode_loop:
 
 	mov	cx,ax
 	jne	@F
-	jmp	ModeFound	; return -1 to say "no mode found"
+	jmp	ModeFound	; go to end of loop
 
 @@:	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
 	call	DoInt10h
 
-	mov	ax,es:[di.OFF_VESA_ATTRS]
-	; Is it supported by the current hardware?
-	test	al,low VESA_ATTR_HWSUPPORT
-	jz	FindMode_loop	; NEXT!
-	; Is it graphical (not text)?
-	test	al,low VESA_ATTR_GRAPHICS
-	jz	FindMode_loop	; NEXT!
-	; Is it colour (not BW)?
-	test	al,low VESA_ATTR_COLOUR
-	jz	FindMode_loop	; NEXT!
+	mov	bx,es:[di.OFF_VESA_ATTRS]
+	mov	al,bl
+	and	al,low (VESA_ATTR_HWSUPPORT OR VESA_ATTR_GRAPHICS OR VESA_ATTR_COLOUR)
+	; Is it supported by the current hardware, AND graphical (not text),
+	; AND colour (not BW)?
+	cmp	al,low (VESA_ATTR_HWSUPPORT OR VESA_ATTR_GRAPHICS OR VESA_ATTR_COLOUR)
+; extra label to allow short JNE instruction further down
+jnelp:	jne	FindMode_loop	; NEXT!
 
-	; we will be using AX for bLinear for the next few pieces of
-	; logic, so stick the attrs in DX...
+	; if this mode can be bank-switched, then sanity-check the window
+	test	bl,low VESA_ATTR_NOBANKSWITCH
+	jnz	@F
+
+	; Check 1: is Window A read-write? If not, then it's probably something
+	; like Window A to read and Window B to write, or vice versa, which is
+	; cool, don't get me wrong, but not something we support here...
+	cmp	byte ptr es:[di.OFF_VESA_WATTRS],VESA_WINATTR_NORMAL
+	jne	@@winbad
+
+	; Check 2: is the window size 64k or smaller? We can't address more
+	; than one segment of memory at a time.
+	mov	ax,es:[di.OFF_VESA_WSIZE]
+	cmp	ax,64
+	ja	@@winbad
+	; we will reuse the results of this comparison in a minute
+	lahf
 	mov	dx,ax
 
-	; If we're on a 286, we can't handle an address with over 24 bits
+	; Check 3: is the window size an integer multiple of the granularity?
+	cbw
+	div	byte ptr es:[di.OFF_VESA_GRAN]
+	test	ah,ah
+	jnz	@@winbad
+	; while we're at it, record the multiplication factor
+	mov	[GranFac],al
+	
+	; Check 4: is the window size either 64k or an integer multiple of
+	; the memory width? All the code that handles scanlines crossing
+	; a window boundary assumes those boundaries are at the end of a
+	; segment, i.e. 64k intervals, so don't mess with that assumption!
+	; get back window size and results of comparison
+	mov	ax,dx
+	sahf
+	je	@F		; if equal, then WinSize == 64k, so we're good
+	; here we know we have WinSize < 64k, since we already discounted 
+	; > 64k in Check 2
+	cbw
+	shl	ax,10		; convert kiB to bytes
+	cwd
+	; FIXME: we do this exact same calculation later on in vesa_gdi_fixup,
+	; but there, unlike here, it's unconditional - even so, a bit wasteful?
+	div	word ptr es:[di.OFF_VESA_SLL]
+	test	dx,dx		; check remainder
+	jz	@F
+@@winbad:
+	; right, we can't bank-switch this mode, so don't try
+	or	bl,low VESA_ATTR_NOBANKSWITCH
+
+@@:	; If we're on a 286, we can't handle an address with over 24 bits
 	mov	ax,__WinFlags
 	test	ax,WF_CPU286
 	jz	@F
 	cmp	byte ptr es:[di.OFF_VESA_LINBUF+3],0
 	jz	@F
 	; clear linear attribute since we can't use it as a linear mode
-	and	dl,NOT (low VESA_ATTR_LINEAR)
+	and	bl,NOT (low VESA_ATTR_LINEAR)
 
-@@:	mov	al,[bLinear]
+@@:	; at this point, the sanity checks may have left us with a mode that
+	; can be neither bank-switched nor linear, which isn't a whole lot of
+	; use to anyone!
+	mov	al,bl
+	and	al,low (VESA_ATTR_LINEAR OR VESA_ATTR_NOBANKSWITCH)
+	cmp	al,low VESA_ATTR_NOBANKSWITCH
+	je	FindMode_loop	; NEXT!
+
+	mov	al,[bLinear]
 	cbw
-
 	; Now bLinear (in AX) is tri-state, and there are two relevant binary
-	; attrs (in DX), so the truth table is theoretically quite complex...
+	; attrs (in BX), so the truth table is theoretically quite complex...
 	; Abbreviations:
 	; * "NBS" = state of VESA_ATTR_NOBANKSWITCH bit
 	; * "LIN" = state of VESA_ATTR_LINEAR bit
@@ -1054,9 +1105,9 @@ FindMode_loop:
 	; | 1	| 0	|| ============ this can't happen! ============ |
 	; | 1	| 1	|| SKIP		| ULM, PEN	| ULM		|
 	; +-----+-------++--------------+---------------+---------------+
-	and	ah,dl	; AH & NBS := 1 if bLinear == -1, 0 otherwise
+	and	ah,bl	; AH & NBS := 1 if bLinear == -1, 0 otherwise
 	test	ah,low VESA_ATTR_NOBANKSWITCH
-	jnz	FindMode_loop	; NEXT!
+	jnz	jnelp	; NEXT!
 
 	; Now that we've dealt with the SKIP case, the truth table can
 	; be simplified to the following:
@@ -1076,12 +1127,12 @@ FindMode_loop:
 	; now set AH := PEN == (bLinear & !LIN) | (NBS & !bLinear)
 	; (note that "NBS" and "!LIN" are mutually exclusive, so
 	;  the two sides of the "|" can be checked independently)
-	test	dl,low VESA_ATTR_LINEAR
+	test	bl,low VESA_ATTR_LINEAR
 	jnz	@F
 	; !LIN => AH := PEN == bLinear
 	mov	ah,al
 
-@@:	test	dl,low VESA_ATTR_NOBANKSWITCH
+@@:	test	bl,low VESA_ATTR_NOBANKSWITCH
 	jz	@F
 	; NBS => AH := PEN == !bLinear
 	mov	ah,al
@@ -1107,6 +1158,7 @@ FindMode_loop:
 
 	; Set the "linear" flag in the mode number
 	or	ch,high VESA_FLAG_LINEAR
+	mov	[GranFac],1
 	; And make sure vesa_gdi_fixup gets the right data!
 	cmp	[VESAMajVer],3
 	; VBE 2.0 and lower didn't specify separate bitnesses for linear and
@@ -1191,23 +1243,6 @@ baddepth:
 	; any other logic later on...
 	mov	es:[di.OFF_VESA_DEPTH],al
 
-; 	; At this point, we know the mode is usable, so find a slot and
-; 	; put its depth on the list
-; 	lea	bx,[DepthList]
-; @@:	cmp	bx,offset EndDepthList
-; 	jnb	@F		; no more slots available
-; 
-; 	mov	al,[bx]
-; 	cmp	al,ah
-; 	je	@F		; already on the list
-; 
-; 	inc	bx
-; 	test	al,al		; free slot?
-; 	jnz	@B		; not free, try next slot
-; 
-; 	mov	[bx-1],ah	; fill the slot
-; 
-; @@:	; Is it the right significant depth?
 	; Calculate score contribution for the significant depth...
 	sub	ah,[VScreen_Depth]
 	jns	@F
@@ -1228,6 +1263,9 @@ baddepth:
 
 	; then set the parameters for the driver...
 	mov	[Vmode],cx
+	mov	al,[GranFac]
+	dec	al
+	mov	[bank_granfac_m1],al
 
 	push	ds
 	push	si
@@ -1387,19 +1425,6 @@ FindMode_done:
 	jz	@F
 	jmp	@@donewithsel
 
-@@:	; Before fully committing to the mode, do some sanity checks on the
-	; window. These are guaranteed to pass for a linear mode (since we've
-	; just set all the window attributes ourselves) but should stop us
-	; from making fools of ourselves with banked modes. I reckon that if
-	; one otherwise-suitable mode on a user's system fails these checks,
-	; there's no point in looking for any other modes, so we just crash
-	; back out to ENABLE and get it to display some details...
-	; *** FIXME: move this up into the mode scoring loop! ***
-	call	vesa_win_sanity_check
-	test	di,di
-	jz	@F
-	jmp	@@donewithsel
-
 @@:	; Set ScreenSelector based on what has taken place above
 	mov	ax,[VESAWinASeg]
 	mov	[ScreenSelector],ax
@@ -1479,85 +1504,6 @@ FindMode_done:
 FindMode_reterr:
 	mov	ax,di		; get error code
 cEnd
-
-;--------------------------------------------------------------------------;
-; vesa_win_sanity_check
-;	Once the mode structure in _TEXT has been populated, this ensures
-;	that we can use Window A to read/write VRAM in a way that is
-;	compatible with all our code.
-; Entry:
-;	DS	= Data
-;	ES	= Code
-;	
-; Returns:
-;	Error code in DI
-; Registers Destroyed:
-;	AX,DX,DI,FLAGS
-; Registers Preserved:
-;	BX,CX,SI,DS,ES,BP
-; Calls:
-;	Nothing
-; History:
-;	see Git
-;--------------------------------------------------------------------------;
-vesa_win_sanity_check	proc near
-	assumes	es,Code
-
-	; Check 1: is Window A read-write? If not, then it's probably something
-	; like Window A to read and Window B to write, or vice versa, which is
-	; cool, don't get me wrong, but not something we support here...
-	mov	di,ERR_WIN_BADATTR
-	cmp	[VESAWinAAttrs],VESA_WINATTR_NORMAL
-	jne	@F
-
-	; Check 2: is the window size 64k or smaller? We can't address more
-	; than one segment of memory at a time.
-	inc	di
-	.errnz	ERR_WIN_TOOBIG-ERR_WIN_BADATTR-1
-	mov	ax,[VESAWinSize]
-	cmp	ax,64
-	ja	@F
-	; we will reuse the results of this comparison in a minute
-	sahf
-	mov	dx,ax
-
-	; Check 3: is the window size an integer multiple of the granularity?
-	inc	di
-	.errnz	ERR_WIN_BADGRAN-ERR_WIN_TOOBIG-1
-	cbw
-	div	byte ptr [VESAGranularity]
-	test	ah,ah
-	jnz	@F
-	; while we're at it, record the multiplication factor (minus one)
-	dec	al
-	mov	[bank_granfac_m1],al
-	
-	; Check 4: is the window size either 64k or an integer multiple of
-	; the memory width? All the code that handles scanlines crossing
-	; a window boundary assumes those boundaries are at the end of a
-	; segment, i.e. 64k intervals, so don't mess with that assumption!
-	inc	di
-	.errnz	ERR_WIN_BADSIZE-ERR_WIN_BADGRAN-1
-	; get back window size and results of comparison
-	mov	ax,dx
-	lahf
-	je	@@wingood	; if equal, then WinSize == 64k, so we're good
-	; here we know we have WinSize < 64k, since we already discounted 
-	; > 64k in Check 2
-	cbw
-	shl	ax,10		; convert kiB to bytes
-	cwd
-	; FIXME: we do this exact same calculation later on in vesa_gdi_fixup,
-	; but there, unlike here, it's unconditional - even so, a bit wasteful?
-	div	[VESAScanLineLen]
-	test	dx,dx		; check remainder
-	jnz	@F
-@@wingood:
-	xor	di,di		; no error after all!
-
-@@:	ret
-	assumes	es,nothing
-vesa_win_sanity_check	endp
 
 ;--------------------------------------------------------------------------;
 ; print_bank_info
