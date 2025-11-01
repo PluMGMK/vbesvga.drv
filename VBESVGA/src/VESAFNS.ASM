@@ -572,7 +572,19 @@ assumes	ds,Data
 ;--------------------------------------------------------------------------;
 cProc	QueryGeometry,<NEAR,PUBLIC>,<es,di,bx,si,cx>
 cBegin
-	mov	ax,size EDIDblk
+	; start with an installation check
+	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETEDID
+	xor	bl,bl
+	int	10h
+	cmp	ax,VBE_INT10_FN	; success?
+	je	@F
+	; ensure we don't try to free a DOS memory block
+	; that hasn't even been allocated yet!
+	xor	ax,ax
+	mov	es,ax
+	jmp	EDIDInfo_fail
+
+@@:	mov	ax,size EDIDblk
 	cCall	GlobalDosAlloc,<0,ax>	; zero-pad to dword
 	mov	es,ax
 	test	ax,ax
