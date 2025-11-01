@@ -260,7 +260,6 @@ int31_pam:
 	shl	ecx,10		; convert PT offset to linear address offset from PT base
 	or	ebx,ecx		; OR in the offset
 	or	ebx,PHYS_MAP_BASE;and the base itself
-	int	3
 
 	; fill in the addresses of the pages, one by one
 	mov	ecx,esi
