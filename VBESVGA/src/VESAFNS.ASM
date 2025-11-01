@@ -873,15 +873,21 @@ cEnd
 ;	see Git
 ;--------------------------------------------------------------------------;
 cProc	FindMode,<NEAR,PUBLIC>,<es,ds,di,bx,si,cx>
-	parmB	bLinear	; zero if bank-switched mode is desired
+	; bLinear states:
+	; 1 = linear mode is desired - score penalty for banked-only modes
+	; 0 = linear mode NOT desired - score penalty for linear-only modes
+	; -1 = linear mode _impossible_ - skip linear-only modes
+	parmB	bLinear
+
+	; locals:
 	localW	CodeSel	; RW selector to Code segment
+	localW	BestScore
 cBegin
-	cmp	[bLinear],0
-	jz	@F
+	; initialize "best score" to worst possible value
+	or	[BestScore],-1
 
 	; do a few checks before agreeing to search for a linear mode
 	mov	ax,__WinFlags
-	mov	di,-1		; in case we return with error
 	test	ax,WF_ENHANCED
 	jnz	@F		; linear modes will work in enhanced mode
 
@@ -926,8 +932,10 @@ LinStdModePaging:
 endif
 	WriteAux <'Linear framebuffer not usable in Standard Mode with Paging.'>
 	call	setup_dosx_bugfix
-	jnc	@F
-	jmp	FindMode_reterr
+	; if CF set, then set bLinear to -1 to indicate linear impossible
+	sbb	al,al
+	or	[bLinear],al
+	jmp	short @F
 
 LinRealMode:
 ifdef	INT3
@@ -935,7 +943,8 @@ public	LinRealMode
 	int	3
 endif
 	WriteAux <'Linear framebuffer not usable in Real Mode.'>
-	jmp	FindMode_reterr
+	; set bLinear to -1 to indicate linear impossible
+	mov	[bLinear],-1
 
 @@:	; ensure that VBE Info is populated before we use it!
 	call	GetVBEInfo
@@ -998,8 +1007,7 @@ FindMode_loop:
 	jne	@F
 	jmp	ModeFound	; return -1 to say "no mode found"
 
-@@:
-	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
+@@:	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETMODEINFO
 	call	DoInt10h
 
 	mov	ax,es:[di.OFF_VESA_ATTRS]
@@ -1013,27 +1021,94 @@ FindMode_loop:
 	test	al,low VESA_ATTR_COLOUR
 	jz	FindMode_loop	; NEXT!
 
-	cmp	[bLinear],0
-	jnz	@F
-	; Does it support bank switching?
-	test	al,low VESA_ATTR_NOBANKSWITCH
-jnelp:	; extra label to allow for short JNE instructions
-	jne	FindMode_loop	; NEXT!
-	jmp	FindMode_attrsOK
-@@:
-	; Does it support linear operation?
-	test	al,low VESA_ATTR_LINEAR
-	jz	FindMode_loop	; NEXT!
-	; Set the "linear" flag in the mode number
-	or	ch,high VESA_FLAG_LINEAR
+	; we will be using AX for bLinear for the next few pieces of
+	; logic, so stick the attrs in DX...
+	mov	dx,ax
+
 	; If we're on a 286, we can't handle an address with over 24 bits
 	mov	ax,__WinFlags
 	test	ax,WF_CPU286
 	jz	@F
 	cmp	byte ptr es:[di.OFF_VESA_LINBUF+3],0
-	jnz	jnelp
+	jz	@F
+	; clear linear attribute since we can't use it as a linear mode
+	and	dl,NOT (low VESA_ATTR_LINEAR)
+
+@@:	mov	al,[bLinear]
+	cbw
+
+	; Now bLinear (in AX) is tri-state, and there are two relevant binary
+	; attrs (in DX), so the truth table is theoretically quite complex...
+	; Abbreviations:
+	; * "NBS" = state of VESA_ATTR_NOBANKSWITCH bit
+	; * "LIN" = state of VESA_ATTR_LINEAR bit
+	; * "UBM" = use banked mode for score calculation
+	; * "ULM" = use linear mode for score calculation
+	; * "PEN" = score += 1 ("penalty")
+	; * "SKIP" = skip mode without calculating score
+	; +-----+-------++--------------+---------------+---------------+
+	; | NBS	| LIN	|| bLinear -1	| bLinear 0	| bLinear 1	|
+	; +-----+-------++--------------+---------------+---------------+
+	; | 0	| 0	|| UBM		| UBM		| UBM, PEN	|
+	; | 0	| 1	|| UBM		| UBM		| ULM		|
+	; | 1	| 0	|| ============ this can't happen! ============ |
+	; | 1	| 1	|| SKIP		| ULM, PEN	| ULM		|
+	; +-----+-------++--------------+---------------+---------------+
+	and	ah,dl	; AH & NBS := 1 if bLinear == -1, 0 otherwise
+	test	ah,low VESA_ATTR_NOBANKSWITCH
+	jnz	FindMode_loop	; NEXT!
+
+	; Now that we've dealt with the SKIP case, the truth table can
+	; be simplified to the following:
+	; +-----+-------++--------------+---------------+
+	; | NBS	| LIN	|| bLinear -1/0	| bLinear 1	|
+	; +-----+-------++--------------+---------------+
+	; | 0	| 0	|| UBM		| UBM, PEN	|
+	; | 0	| 1	|| UBM		| ULM		|
+	; | 1	| 1	|| ULM, PEN	| ULM		|
+	; +-----+-------++--------------+---------------+
+
+	; we can condense the -1 and 0 cases into a single 0 case like so:
+	inc	al
+	shr	al,1
+	cbw	; zero AH
+
+	; now set AH := PEN == (bLinear & !LIN) | (NBS & !bLinear)
+	; (note that "NBS" and "!LIN" are mutually exclusive, so
+	;  the two sides of the "|" can be checked independently)
+	test	dl,low VESA_ATTR_LINEAR
+	jnz	@F
+	; !LIN => AH := PEN == bLinear
+	mov	ah,al
+
+@@:	test	dl,low VESA_ATTR_NOBANKSWITCH
+	jz	@F
+	; NBS => AH := PEN == !bLinear
+	mov	ah,al
+	xor	ah,1
+
+@@:	; start accumulating the score in DX
+	mov	dh,ah
+	shr	dx,8		; DX := zero-extended DH
+
+	; now that PEN is calculated in AH, and the binary bLinear
+	; is in AL, the truth table is further simplified as follows:
+	; +-------------++--------------+---------------+
+	; | AH (PEN)	|| AL == 0	| AL == 1	|
+	; +-------------++--------------+---------------+
+	; | 0		|| UBM		| ULM		|
+	; | 1		|| ULM		| UBM		|
+	; +-------------++--------------+---------------+
+	; since PEN just means we're using a mode that's the opposite
+	; of what we want. So it's just a XOR now!
+	xor	ah,al
+	; Zero <=> UBM
+	jz	FindMode_attrsOK
+
+	; Set the "linear" flag in the mode number
+	or	ch,high VESA_FLAG_LINEAR
 	; And make sure vesa_gdi_fixup gets the right data!
-@@:	cmp	[VESAMajVer],3
+	cmp	[VESAMajVer],3
 	; VBE 2.0 and lower didn't specify separate bitnesses for linear and
 	; banked versions of the same mode
 	jb	FindMode_attrsOK
@@ -1051,14 +1126,21 @@ jnelp:	; extra label to allow for short JNE instructions
 
 FindMode_attrsOK:
 	; TODO: fill these in if needed for "standard" modes on VBE < 2.0...
-	; Is it the right width?
+	; Calculate score contribution for the width...
 	mov	ax,es:[di.OFF_VESA_WIDTH]
-	cmp	ax,[VScreen_Width]
-	jne	jnelp		; NEXT!
-	; Is it the right height?
+	sub	ax,[VScreen_Width]
+	jns	@F
+	; ensure positive
+	neg	ax
+@@:	add	dx,ax
+
+	; Calculate score contribution for the height...
 	mov	ax,es:[di.OFF_VESA_HEIGHT]
-	cmp	ax,[VScreen_Height]
-	jne	jnelp		; NEXT!
+	sub	ax,[VScreen_Height]
+	jns	@F
+	; ensure positive
+	neg	ax
+@@:	add	dx,ax
 
 	mov	al,es:[di.OFF_VESA_DEPTH]
 	mov	ah,al
@@ -1069,7 +1151,7 @@ FindMode_attrsOK:
 	; Direct colour?
 	cmp	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_DIRECT
 	; We don't support other models
-	jne	jnelp		; NEXT!
+	jne	baddepth	; NEXT!
 
 	; save the advertised depth in BL since we'll check it again
 	mov	bl,al
@@ -1109,38 +1191,50 @@ baddepth:
 	; any other logic later on...
 	mov	es:[di.OFF_VESA_DEPTH],al
 
-	; At this point, we know the mode is usable, so find a slot and
-	; put its depth on the list
-	lea	bx,[DepthList]
-@@:	cmp	bx,offset EndDepthList
-	jnb	@F		; no more slots available
+; 	; At this point, we know the mode is usable, so find a slot and
+; 	; put its depth on the list
+; 	lea	bx,[DepthList]
+; @@:	cmp	bx,offset EndDepthList
+; 	jnb	@F		; no more slots available
+; 
+; 	mov	al,[bx]
+; 	cmp	al,ah
+; 	je	@F		; already on the list
+; 
+; 	inc	bx
+; 	test	al,al		; free slot?
+; 	jnz	@B		; not free, try next slot
+; 
+; 	mov	[bx-1],ah	; fill the slot
+; 
+; @@:	; Is it the right significant depth?
+	; Calculate score contribution for the significant depth...
+	sub	ah,[VScreen_Depth]
+	jns	@F
+	; ensure positive
+	neg	ah
+@@:	shr	ax,8		; AX := zero-extended AH
+	add	dx,ax
 
-	mov	al,[bx]
-	cmp	al,ah
-	je	@F		; already on the list
+	; check the score...
+	cmp	dx,[BestScore]
+	jb	@F
+	; if it's no better than anything else we've checked,
+	; forget about this mode
+	jmp	FindMode_loop
 
-	inc	bx
-	test	al,al		; free slot?
-	jnz	@B		; not free, try next slot
+@@:	; if this is a good candidate, then update the best score!
+	mov	[BestScore],dx
 
-	mov	[bx-1],ah	; fill the slot
-
-@@:	; Is it the right significant depth?
-	cmp	ah,[VScreen_Depth]
-	jne	baddepth	; NEXT!
-
-	; OK, we've found the mode!
+	; then set the parameters for the driver...
 	mov	[Vmode],cx
-	xor	ax,ax		; return success
 
-ModeFound:
-	test	ax,ax		; returning success?
-	mov	si,es		; if not, put the DOS buffer in SI
-	jnz	@F
+	push	ds
+	push	si
+	push	es
+	push	di
 
 	; we have to do a load of segment translation...
-	push	ds
-	; Copy the buffer back out...
 	push	es
 	pop	ds
 	assumes	ds,nothing
@@ -1152,24 +1246,34 @@ ModeFound:
 	; ES:DI = Protected Mode buffer
 	lea	di,VESAModeStruct
 
+	; Copy the buffer back out...
 	mov	cx,VESA_MODE_LEN SHR 1
 	cld
 	rep	movsw
 
-	; Done with the Real-Mode buffer
-	mov	si,ds
+	; Put back the segments...
+	pop	di
+	pop	es
+	assumes	es,nothing
+	pop	si
 	pop	ds
 	assumes	ds,Data
-@@:
-	assumes	es,nothing	; ES may not be set; GlobalDosFree will unset it
-	mov	di,ax		; save our return code
-	cCall	GlobalDosFree,<si>
+
+	; perfect score?
+	test	dx,dx
+	jz	ModeFound	; if so, we're done
+	jmp	FindMode_loop	; otherwise, go check next mode...
+
+ModeFound:
+	; done with the Real Mode buffer, so free it
+	cCall	GlobalDosFree,<es>
 
 	mov	es,[CodeSel]
 	assumes	es,Code
 
-	test	di,di		; returning success?
-	jnz	@@segfix_done
+	mov	di,VBE_ERR_FAIL	; error code to return if no mode found
+	cmp	[Vmode],0
+	jz	@@segfix_done
 
 	; set pxbytes now because we may need it for setup_double_buf
 	mov	al,[VESABPP]
@@ -1279,7 +1383,6 @@ endif
 
 	xor	di,di
 FindMode_done:
-	.286
 	test	di,di
 	jz	@F
 	jmp	@@donewithsel
@@ -1291,6 +1394,7 @@ FindMode_done:
 	; one otherwise-suitable mode on a user's system fails these checks,
 	; there's no point in looking for any other modes, so we just crash
 	; back out to ENABLE and get it to display some details...
+	; *** FIXME: move this up into the mode scoring loop! ***
 	call	vesa_win_sanity_check
 	test	di,di
 	jz	@F
@@ -1300,6 +1404,13 @@ FindMode_done:
 	mov	ax,[VESAWinASeg]
 	mov	[ScreenSelector],ax
 
+	; and feed back into VScreen_*, since they may not exactly match
+	; what was requested!
+	mov	ax,[VESAWidth]
+	mov	dx,[VESAHeight]
+	mov	[VScreen_Width],ax
+	mov	[VScreen_Height],dx
+
 	; while we're here with a code segment alias,
 	; setup modal functions / data for brush realization
 	mov	ax,__WinFlags			; setup for 3.0 fonts
@@ -1308,7 +1419,7 @@ FindMode_done:
         test    ax,WF_CPU386+WF_CPU486          ; 386/486 protected mode?
         jz      @F
 ;
-; change our code segment based variable to reflect the mode
+; change our code-segment-based variable to reflect the mode
 ;
 	mov	byte ptr es:[??BigFontFlags],-1
 @@:	mov	dh,[VESAMemModel]

@@ -540,23 +540,16 @@ enable_read_profile	PROC	NEAR
 	cCall	FindMode,<ax>
 	test	ax,ax
 	jz	@F
-	; OK, try banked if linear failed or vice versa
-	cCall	FindMode,<[prefer_bank]>
-	test	ax,ax
-	jz	@F
 
-	test	ax,ax
-	jns	@@err
-	neg	ax	; FindMode can return -1 instead of 1!
-@@err:	dec	ax	; these start from 1, not 0!
+	dec	ax	; error codes start from 1, not 0!
 	mov	bx,ax
 	shl	bx,1
 	mov	ax,vesa_err_msgs[bx]
 	mov	[fail_reason],ax
 	jmp	enable_read_profile_fail
-	; Vmode should now be set
 
-@@:	lea	ax,boot_category
+@@:	; Vmode should now be set
+	lea	ax,boot_category
         push    ds
         push    ax
 	lea	ax,font_member
