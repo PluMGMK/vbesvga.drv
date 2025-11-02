@@ -22,6 +22,13 @@ VESA_ATTR_HWTRIPLEBUF	= 0000010000000000b
 VESA_ATTR_HWSTEREO	= 0000100000000000b
 VESA_ATTR_DUAL		= 0001000000000000b
 
+; VESA Window Attributes
+VESA_WINATTR_EXISTS	= 00000001b
+VESA_WINATTR_READ	= 00000010b
+VESA_WINATTR_WRITE	= 00000100b
+; Shortcut for the only type of window VBESVGA.DRV knows how to use
+VESA_WINATTR_NORMAL	= VESA_WINATTR_EXISTS+VESA_WINATTR_READ+VESA_WINATTR_WRITE
+
 ; Detailed Timing Description
 DTD	struc
 pixclock_10kHz	dw ?	; pixel clock in 10-kHz units
@@ -507,7 +514,105 @@ getvendor:
 	int	21h
 	jmp	@@next_mode
 
-@@:
+@@:	; now check the attributes and window attributes
+	mov	bx,[wAttrs]
+	test	bl,VESA_ATTR_LINEAR
+	jz	@F
+	mov	ah,9		; write to stdout
+	lea	dx,linear
+	int	21h
+	
+@@:	test	bl,VESA_ATTR_NOBANKSWITCH
+	jnz	@@check_score	; no windows to check
+
+	mov	bl,[bWinA]
+	test	bl,VESA_WINATTR_EXISTS
+	jz	@@check_score
+
+	; announce that the window exists, and where it is
+	mov	ah,9		; write to stdout
+	lea	dx,wina
+	int	21h
+	mov	ax,[wWinAseg]
+	call	prtxw
+
+	; give its attributes
+	mov	ah,9		; write to stdout
+	; address this table using bits 2-1 of the attrs
+	xor	bh,bh
+	mov	dx,winattrs[bx-VESA_WINATTR_EXISTS]
+	int	21h
+	; Check 1: is Window A read-write?
+	cmp	bl,VESA_WINATTR_NORMAL
+	jne	@@invalid_window
+
+	; announce the size
+	mov	ah,9		; write to stdout
+	lea	dx,colon
+	int	21h
+	mov	ax,[wWinsize]
+	mov	bx,ax
+	call	prtdw
+	mov	ah,2		; write character to stdout
+	mov	dl,'k'		; kiB
+	int	21h
+
+	; Check 2: is the window size 64k or smaller?
+	cmp	bx,64
+	jbe	@F
+
+	mov	ah,9		; write to stdout
+	lea	dx,toobig
+	int	21h
+	jmp	short @@invalid_window
+
+@@:	; announce the granularity
+	mov	ah,2		; write character to stdout
+	mov	dl,'/'
+	int	21h
+	mov	ax,[wWingran]
+	mov	bp,ax
+	call	prtdw
+	mov	ah,2		; write character to stdout
+	mov	dl,'k'		; kiB
+	int	21h
+
+	; Check 3: is the window size an integer multiple of the granularity?
+	mov	ax,bx
+	mov	dx,bp
+	div	dl		; single-byte division to match VBESVGA itself
+	test	ah,ah
+	jz	@F
+
+	mov	ah,9		; write to stdout
+	lea	dx,nonint
+	int	21h
+	jmp	short @@invalid_window
+
+@@:	; Check 4: is the window size either 64k or an integer multiple of
+	; the memory width?
+	mov	ax,bx
+	cmp	ax,64
+	je	@@check_score
+	; here we know we have WinSize < 64k, since we already discounted 
+	; > 64k in Check 2
+	mov	cl,10
+	shl	ax,cl		; convert kiB to bytes
+	cwd
+	div	[wPitch]
+	test	dx,dx		; check remainder
+	jz	@@check_score
+	mov	ah,9		; write to stdout
+	lea	dx,nonints
+	int	21h
+
+@@invalid_window:
+	; check again if it's linear-addressable
+	mov	bx,[wAttrs]
+	test	bl,VESA_ATTR_LINEAR
+	; if not, then it's not usable at all
+	jz	@@next_mode
+
 @@check_score:
 	; check how well this mode matches the default / desired one
 	mov	al,[cur_sigdepth]
@@ -743,6 +848,13 @@ mm_x	db " mm * ","$"
 mm_y	db " mm",0Dh,0Ah,"$"
 modes	db 0Dh,0Ah,"Available VBE video modes:",0Dh,0Ah,"$"
 nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
+linear	db ", linOK","$"
+wina	db ", winA@","$"
+; these window error messages are very long and will wrap across lines,
+; but hopefully not many people will ever have a reason to see them!
+toobig	db ">64k => NG for VBESVGA.DRV",'$'
+nonint	db " = non-integer ratio => NG for VBESVGA.DRV",'$'
+nonints	db "(not 64k or integer multiple of scanline pitch => NG for VBESVGA.DRV)","$"
 closest	db 0Dh,0Ah
 closes	db "Closest usable match for de"
 fault	db "fault mode ","$"
@@ -786,6 +898,14 @@ mpacked	db " Packed-pixel",'$'
 mseq256	db " Non-chain-4 packed-pixel (Mode-X-type, NG for VBESVGA.DRV)",'$'
 mdirect	db " Direct-colour, ",'$'
 myuv	db " YUV (NG for VBESVGA.DRV)",'$'
+
+; window attribute descriptions
+winattrs dw invalid,ronly,wonly,rw
+invalid	db " (invalid, NG for VBESVGA.DRV)",'$'
+ronly	db " (read-only, NG for VBESVGA.DRV)",'$'
+wonly	db " (write-only, NG for VBESVGA.DRV)"
+; read-write is the default, so don't print anything
+rw	db '$'
 
 align	2
 ; track the best score of any mode enumerated
