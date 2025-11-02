@@ -309,6 +309,7 @@ VESAWinSize	dw ?	; in kiB, hopefully == 64
 OFF_VESA_WSEG	equ $-VESAModeStruct
 VESAWinASeg	dw ?	; copy of ScreenSelector in CS, for bank switching!
 VESAWinBSeg	dw ?
+OFF_VESA_BSF	equ $-VESAModeStruct
 public	VESABankSwitch
 VESABankSwitch	FARPOINTER <?,?>
 OFF_VESA_SLL	equ $-VESAModeStruct
@@ -1409,13 +1410,14 @@ ModeFound:
 	jnz	FindMode_setuplin
 
 	; Fix up the far pointer to the bank-switch function
-	test	dx,dx			; does the screen fit inside one bank?
 	mov	dx,[int10h_es]
-	jz	@F			; if so, skip the bank-switch fixup!
 	call	FixupFarPtr
 	test	ax,ax
-	mov	di,ERR_PROT_ALLOC
-	jz	@@segfix_done
+	jnz	@F
+
+	; setup a fallback bank-switch function if fixup failed
+	mov	[VESABankSwitch.sel],seg BankSwitchInt10
+	mov	[VESABankSwitch.off],offset BankSwitchInt10
 
 @@:	; Fix up the segments too
 	xor	cx,cx		; want data segments!
@@ -1556,14 +1558,6 @@ FindMode_done:
 	mov	[notwhite.lo],ax
 	mov	[notwhite.hi],dx
 
-	; setup a fallback bank-switch function, just in case we somehow got
-	; this far without one...
-	cmp	[VESABankSwitch.sel],0
-	jnz	@@donewithsel
-
-	mov	[VESABankSwitch.sel],seg BankSwitchInt10
-	mov	[VESABankSwitch.off],offset BankSwitchInt10
-
 @@donewithsel:
 	; time to free the selector
 	cCall	FreeSelector,<[CodeSel]>
@@ -1601,8 +1595,9 @@ check_last_resort	proc near
 	; pretend we've a granularity and window size of 64 kiB
 	; (in fact it's a size of 64 kB, not kiB, and no granularity
 	; since there's no bank switching)
-	mov	word ptr es:[di.OFF_VESA_GRAN],64
-	mov	word ptr es:[di.OFF_VESA_WSIZE],64
+	mov	cx,64
+	mov	word ptr es:[di.OFF_VESA_GRAN],cx
+	mov	word ptr es:[di.OFF_VESA_WSIZE],cx
 	; set the actual attributes
 	mov	word ptr es:[di.OFF_VESA_SLL],LASTRESORT_WDTH
 	mov	word ptr es:[di.OFF_VESA_WIDTH],LASTRESORT_WDTH
@@ -1611,6 +1606,10 @@ check_last_resort	proc near
 	; single plane, packed pixel
 	mov	byte ptr es:[di.OFF_VESA_PLANES],1
 	mov	byte ptr es:[di.OFF_VESA_MODEL],VESA_MEM_PACKED
+	; null bank select pointer, which will be replaced by the dummy one
+	xor	cx,cx
+	mov	word ptr es:[di.OFF_VESA_BSF.off],cx
+	mov	word ptr es:[di.OFF_VESA_BSF.sel],cx
 	; finally, set the mode number
 	mov	cx,LASTRESORT_MODE
 	ret
