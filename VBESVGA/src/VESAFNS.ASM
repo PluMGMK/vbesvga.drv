@@ -273,6 +273,9 @@ ThreeByte	db 0
 ScreenWidthMM	dw 0	; calculate at runtime
 ScreenHeightMM	dw 180
 
+; Which BIOS function to use to set the mode - either 4F02h, or 0013h
+ModeSetFn	dw (VBE_INT10_FN SHL 8) + VBE_SETMODE
+
 sEnd	Data
 
 
@@ -892,11 +895,17 @@ cProc	FindMode,<NEAR,PUBLIC>,<es,ds,di,bx,si,cx>
 	localW	BestScore
 	localB	GranFac	; granularity factor for current mode
 	localB	LastResortChecked
+
+	; temporary storage for global variables that may need to change
+	; if we fall into last-resort mode:
+	localW	LocalModeSetFn
+	localB	LocalDacSize
 cBegin
 	; initialize "best score" to worst possible value
 	or	[BestScore],-1
 	; we have not checked the last-resort mode yet
 	mov	[LastResortChecked],0
+	mov	[LocalModeSetFn],(VBE_INT10_FN SHL 8) + VBE_SETMODE
 
 	; do a few checks before agreeing to search for a linear mode
 	mov	ax,__WinFlags
@@ -967,7 +976,8 @@ VBEInfoReady:
 	int	3
 endif
 	; set the DAC size to the best available if necessary
-	cmp	[dac_size],-1	; "auto" setting?
+	mov	al,[dac_size]
+	cmp	al,-1	; "auto" setting?
 	jne	@F
 
 	mov	al,byte ptr [VESACaps.lo]
@@ -976,9 +986,8 @@ endif
 	; now AL == 1 if it CANNOT be switched to 8-bit, 0 if it can
 	shl	al,1	; set to 2 (i.e. 8 minus 6) if applicable
 .errnz	(VESA_CAP_DAC_8BSWITCH - (2 SHR 1))
-	mov	[dac_size],al
+@@:	mov	[LocalDacSize],al
 
-@@:
 	push	seg VESAModeStruct
 	cCall	AllocCSToDSAlias
 	mov	[CodeSel],ax
@@ -1028,6 +1037,10 @@ FindMode_loop:
 @@:	; ensure next round of loop will turn up -1 again
 	sub	si,2
 	call	check_last_resort
+	; for last-resort mode, use old BIOS function (AH=0) for modeset
+	mov	[LocalModeSetFn],cx
+	; and force 6-bit (8 minus 2) DAC
+	mov	[LocalDacSize],2
 	jmp	short gotmodeinfo
 
 getmodeinfo:
@@ -1296,15 +1309,19 @@ baddepth:
 	; then set the parameters for the driver...
 	mov	[Vmode],cx
 	mov	al,[GranFac]
+	mov	ah,[LocalDacSize]
 	dec	al
+	mov	cx,[LocalModeSetFn]
 	mov	[bank_granfac_m1],al
+	mov	[dac_size],ah
+	mov	[ModeSetFn],cx
 
+	; we have to do a load of segment translation...
 	push	ds
 	push	si
 	push	es
 	push	di
 
-	; we have to do a load of segment translation...
 	push	es
 	pop	ds
 	assumes	ds,nothing
@@ -1901,23 +1918,8 @@ setmode	proc near
 ifdef	INT3
 	int	3
 endif
-	mov	ax,(VBE_INT10_FN SHL 8) + VBE_SETMODE
+	mov	ax,[ModeSetFn]
 	mov	bx,[Vmode]
-	cmp	bx,LASTRESORT_MODE
-	jne	common_vesafun
-
-	; if we're setting the last resort mode, then use the traditional
-	; BIOS function instead, since we may not have learned about it
-	; from the VBE API!
-	cmp	[VScreen_Width],LASTRESORT_WDTH
-	jne	common_vesafun
-	cmp	[VScreen_Height],LASTRESORT_HGHT
-	jne	common_vesafun
-	; use traditional BIOS function, AH=0, AL=mode
-	mov	ax,bx
-
-	; DAC probably needs to be 6-bit in this situation
-	mov	[dac_size],2
 
 common_vesafun:
 	; there's no point in messing around with VM86 redirects or PMIDs here
