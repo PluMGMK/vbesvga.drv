@@ -97,7 +97,14 @@ getvendor:
 	lea	dx,newline
 	int	21h
 
-	lds	si,[lpVendr]
+	cmp	[vesaver],200h	; VBE 2.00 or later?
+	jnb	@F
+
+	; on VBE 1.x, we only have the "OEM name" available
+	lds	si,[lpOEM]
+	jmp	@@print_oem_str
+
+@@:	lds	si,[lpVendr]
 	call	prtz
 
 	; Write a space
@@ -114,6 +121,7 @@ getvendor:
 	int	21h
 
 	lds	si,cs:[lpPrev]
+@@print_oem_str:
 	call	prtz
 
 	push	cs
@@ -737,6 +745,8 @@ getvendor:
 	mov	ah,9		; write to stdout
 	lea	dx,failure
 	int	21h
+	lea	dx,newline
+	int	21h
 
 	mov	ax,4C02h	; EXIT with failure (distinct from "bad mode" above)
 	int	21h
@@ -835,8 +845,8 @@ prtdw	proc	near
 prtdw	endp
 
 .data
-failure	db "No SVGA BIOS"
-newline	db 0Dh,0Ah,"$"
+failure	db "No SVGA BIOS - VBESVGA.DRV will attempt to boot in "
+lrname	db "MCGA256 mode (aka 13h)","$"
 card	db "Your card"
 colon	db ": ","$"
 screen	db "Your monitor: ","$"
@@ -845,7 +855,8 @@ cm_x	db " cm * ","$"
 cm_y	db " cm",0Dh,0Ah	; runs onto next string...
 prefres	db "- Preferred resolution: ","$"
 mm_x	db " mm * ","$"
-mm_y	db " mm",0Dh,0Ah,"$"
+mm_y	db " mm"
+newline	db 0Dh,0Ah,"$"
 modes	db 0Dh,0Ah,"Available VBE video modes:",0Dh,0Ah,"$"
 nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
 linear	db ", linOK","$"
@@ -863,7 +874,6 @@ check	db 0Dh,0Ah, "VBESVGA.DRV will attempt to boot in that mode."
 	db "To check another mode, use /w, /h and /d switches",0Dh,0Ah
 	db "to specify desired width / height / depth - e.g.:",0Dh,0Ah
 	db 9,"vidmodes/w800/h600/d16",0Dh,0Ah,"$"
-lrname	db "MCGA256 mode (aka 13h)","$"
 
 ; five characters to change "default" to "desired" above
 sired	db "sired"
