@@ -387,17 +387,18 @@ getvendor:
 	push	cs
 	pop	ds		; back to tiny model...
 
-	dec	[total_found]	; since we will be re-incrementing it...
 	mov	[curmode],LAST_RESORT_MODE
 	mov	[wWidth],320
 	mov	[wHeight],200
 	mov	[cur_sigdepth],8
-	sub	si,2	; go back to the -1 for next round of the loop
 
-	mov	[lastresortchecked],1
+	; this will ensure we don't loop back around here
+	mov	[lastresortchecked],2
 	jmp	@@check_score
 
-@@:	cmp	ax,LAST_RESORT_MODE
+@@:	; Are we checking the last resort mode as part of the list?
+	; (e.g. with SeaBIOS)
+	cmp	ax,LAST_RESORT_MODE
 	jne	@F
 	mov	[lastresortchecked],1
 
@@ -551,6 +552,10 @@ getvendor:
 	pop	si
 
 @@next_mode:
+	; have we already reached the end of the list?
+	cmp	[lastresortchecked],2
+	jae	@@done
+
 	mov	ah,9		; write to stdout
 	lea	dx,newline
 	int	21h
@@ -590,9 +595,23 @@ getvendor:
 	mov	ah,9		; write to stdout
 	lea	dx,colon
 	int	21h
-	mov	ax,[bstmode]
-	call	prtxw
 
+	mov	ax,[bstmode]
+	cmp	ax,LAST_RESORT_MODE
+	jne	@F
+	cmp	[lastresortchecked],2
+	jb	@F
+
+	; if we ended up going to the last resort, and it wasn't
+	; on the list, then print its name instead of its number
+	mov	ah,9		; write to stdout
+	lea	dx,lrname
+	int	21h
+	jmp	short @@mode_printed
+
+@@:	call	prtxw
+
+@@mode_printed:
 	mov	ah,9		; write to stdout
 	lea	dx,check
 	int	21h
@@ -725,13 +744,14 @@ mm_y	db " mm",0Dh,0Ah,"$"
 modes	db 0Dh,0Ah,"Available VBE video modes:",0Dh,0Ah,"$"
 nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
 closest	db 0Dh,0Ah
-closes	db "Closest match for de"
+closes	db "Closest usable match for de"
 fault	db "fault mode ","$"
 check	db 0Dh,0Ah, "VBESVGA.DRV will attempt to boot in that mode."
 	db 0Dh,0Ah,0Dh,0Ah
 	db "To check another mode, use /w, /h and /d switches",0Dh,0Ah
 	db "to specify desired width / height / depth - e.g.:",0Dh,0Ah
 	db 9,"vidmodes/w800/h600/d16",0Dh,0Ah,"$"
+lrname	db "MCGA256 mode (aka 13h)","$"
 
 ; five characters to change "default" to "desired" above
 sired	db "sired"
@@ -780,6 +800,8 @@ hcheck	dw 768
 dcheck	db 24
 
 ; checked the last resort mode yet?
+; 1 = it appeared in the list
+; 2 = we're checking it at the end of the list
 lastresortchecked db 0
 
 align	2
