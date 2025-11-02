@@ -110,12 +110,6 @@ bad_hardware	db	'VESA BIOS says function not supported by current hardware confi
 bad_mode	db	'VESA BIOS says function not supported in current mode',13,10,'$'
 real_alloc_fail	db	'Unrecoverable DOS memory allocation error during mode search',13,10,'$'
 prot_alloc_fail	db	'Unrecoverable memory allocation / mapping error during mode search',13,10,'$'
-bad_win_attr	db	'Suitable mode found, but window A is not read-write',13,10,'$'
-bad_win_toobig	db	'Suitable mode found, but window is bigger than 64 kiB',13,10
-		db	'(the Video RAM window must fit inside a single segment)',13,10,'$'
-bad_win_gran	db	'Suitable mode found, but window size is not an integer multiple of granularity',13,10,'$'
-bad_win_size	db	'Suitable mode found, but scanlines cross window boundaries which are < 64 kiB',13,10
-		db	'(this driver only handles scanlines crossing 64k segment boundaries)',13,10,'$'
 press_key	db	'Press any key to abort booting Windows...',13,10,'$'
 
 ; map of return codes from FindMode to error messages
@@ -124,10 +118,6 @@ vesa_err_msgs	dw	offset general_fail
 		dw	offset bad_mode
 		dw	offset real_alloc_fail
 		dw	offset prot_alloc_fail
-		dw	offset bad_win_attr
-		dw	offset bad_win_toobig
-		dw	offset bad_win_gran
-		dw	offset bad_win_size
 
 boot_category   db      "VBESVGA.DRV",0
 
