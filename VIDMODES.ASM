@@ -5,6 +5,8 @@
 .model tiny
 .8086
 
+LAST_RESORT_MODE	= 13h
+
 ; VESA Mode Attributes
 VESA_ATTR_HWSUPPORT	= 0000000000000001b
 VESA_ATTR_OPTINFO	= 0000000000000010b
@@ -371,9 +373,35 @@ getvendor:
 @@next:
 	lodsw
 	cmp	ax,-1
-	je	@@done
+	jne	@F
+	; if we're out of modes, maybe we need to check the last resort?
+	cmp	cs:[score],0
+	; if we've a perfect match, then there's no need
+	jz	@@done
 
-	mov	cx,ax
+	cmp	cs:[lastresortchecked],0
+	jnz	@@done
+
+	; we know all the checks will pass, so go straight to score calc
+	push	ds
+	push	cs
+	pop	ds		; back to tiny model...
+
+	dec	[total_found]	; since we will be re-incrementing it...
+	mov	[curmode],LAST_RESORT_MODE
+	mov	[wWidth],320
+	mov	[wHeight],200
+	mov	[cur_sigdepth],8
+	sub	si,2	; go back to the -1 for next round of the loop
+
+	mov	[lastresortchecked],1
+	jmp	@@check_score
+
+@@:	cmp	ax,LAST_RESORT_MODE
+	jne	@F
+	mov	[lastresortchecked],1
+
+@@:	mov	cx,ax
 	mov	ax,4F01h	; SVGA mode info
 	lea	di,[wAttrs]
 	int	10h
@@ -438,7 +466,7 @@ getvendor:
 
 	; If direct, we need to calculate total & significant depths
 	cmp	dx,offset mdirect
-	jne	@@depth_checked	; otherwise, we have no more info to offer
+	jne	@@next_mode	; otherwise, we have no more info to offer
 
 	; Significant depth = red + green + blue
 	xor	bh,bh
@@ -472,9 +500,15 @@ getvendor:
 
 @@check_depth:
 	test	bl,7
-	jnz	@@depth_nondiv
+	jz	@F
+	mov	ah,9		; write to stdout
+	lea	dx,nondiv
+	int	21h
+	jmp	@@next_mode
 
-	; check if this mode matches the default / desired one
+@@:
+@@check_score:
+	; check how well this mode matches the default / desired one
 	mov	al,[cur_sigdepth]
 	sub	al,[dcheck]
 	jns	@F
@@ -495,7 +529,7 @@ getvendor:
 @@:	add	dx,ax
 
 	cmp	dx,[score]
-	jnb	@@depth_checked
+	jnb	@@next_mode
 	; if it's better than any other, then update...
 	mov	[score],dx
 	mov	ax,[curmode]
@@ -503,7 +537,7 @@ getvendor:
 
 	; if it's a _perfect_ match, then change the message!
 	test	dx,dx
-	jnz	@@depth_checked
+	jnz	@@next_mode
 
 	push	si
 	push	di
@@ -516,14 +550,7 @@ getvendor:
 	pop	di
 	pop	si
 
-	jmp	short @@depth_checked
-
-@@depth_nondiv:
-	mov	ah,9		; write to stdout
-	lea	dx,nondiv
-	int	21h
-
-@@depth_checked:
+@@next_mode:
 	mov	ah,9		; write to stdout
 	lea	dx,newline
 	int	21h
@@ -742,15 +769,18 @@ myuv	db " YUV (NG for VBESVGA.DRV)",'$'
 
 align	2
 ; track the best score of any mode enumerated
-score	dw -1	; start at worst possible value
-bstmode	dw 13h	; mode which had that score
-curmode	dw -1	; current mode we're checking
+score	dw -1			; start at worst possible value
+bstmode	dw LAST_RESORT_MODE	; mode which had that score
+curmode	dw -1			; current mode we're checking
 
 ; specific mode to check for when determining if driver will boot
 ; (1024*768*24 is the default, width/height will be overridden by EDID)
 wcheck	dw 1024
 hcheck	dw 768
 dcheck	db 24
+
+; checked the last resort mode yet?
+lastresortchecked db 0
 
 align	2
 ; VBE card info
