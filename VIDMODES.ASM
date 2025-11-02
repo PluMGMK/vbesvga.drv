@@ -397,6 +397,7 @@ getvendor:
 
 	; Write the mode number
 	mov	ax,cx
+	mov	[curmode],ax
 	call	prtxw
 
 	mov	ah,9		; write to stdout
@@ -471,23 +472,54 @@ getvendor:
 
 @@check_depth:
 	test	bl,7
-	jnz	@F
+	jnz	@@depth_nondiv
 
 	; check if this mode matches the default / desired one
 	mov	al,[cur_sigdepth]
-	cmp	al,[dcheck]
-	jne	@@depth_checked
-	mov	ax,[wWidth]
-	cmp	ax,[wcheck]
-	jne	@@depth_checked
-	mov	ax,[wHeight]
-	cmp	ax,[hcheck]
-	jne	@@depth_checked
-	; all checks passed, VBESVGA.DRV should be able to boot!
-	or	[canboot],1
-	jmp	@@depth_checked
+	sub	al,[dcheck]
+	jns	@F
+	neg	al	; ensure positive
+@@:	cbw
+	mov	dx,ax	; track score
 
-@@:	mov	ah,9		; write to stdout
+	mov	ax,[wWidth]
+	sub	ax,[wcheck]
+	jns	@F
+	neg	ax	; ensure positive
+@@:	add	dx,ax
+
+	mov	ax,[wHeight]
+	sub	ax,[hcheck]
+	jns	@F
+	neg	ax	; ensure positive
+@@:	add	dx,ax
+
+	cmp	dx,[score]
+	jnb	@@depth_checked
+	; if it's better than any other, then update...
+	mov	[score],dx
+	mov	ax,[curmode]
+	mov	[bstmode],ax
+
+	; if it's a _perfect_ match, then change the message!
+	test	dx,dx
+	jnz	@@depth_checked
+
+	push	si
+	push	di
+	push	cx
+	lea	si,perfec
+	lea	di,closes
+	mov	cx,PERFEC_CLOSES_LEN
+	rep	movsb
+	pop	cx
+	pop	di
+	pop	si
+
+	jmp	short @@depth_checked
+
+@@depth_nondiv:
+	mov	ah,9		; write to stdout
 	lea	dx,nondiv
 	int	21h
 
@@ -505,17 +537,9 @@ getvendor:
 	push	cs
 	pop	ds
 
-	; state whether or not VBESVGA.DRV can be expected to boot
+	; indicate which mode VBESVGA.DRV will try to boot with
 	mov	ah,9		; write to stdout
-	lea	dx,vbesvga
-	int	21h
-	; use canboot to determine which string to print next
-	lea	dx,wont
-	cmp	[canboot],0
-	jz	@F
-	lea	dx,should
-@@:	int	21h
-	lea	dx,boot
+	lea	dx,closest
 	int	21h
 
 	; state which mode we checked
@@ -532,8 +556,15 @@ getvendor:
 	int	21h
 
 	mov	al,[dcheck]
-	xor	ah,ah
+	cbw
 	call	prtdw
+
+	; print the mode number
+	mov	ah,9		; write to stdout
+	lea	dx,colon
+	int	21h
+	mov	ax,[bstmode]
+	call	prtxw
 
 	mov	ah,9		; write to stdout
 	lea	dx,check
@@ -545,9 +576,10 @@ getvendor:
 	mov	ax,[total_found]
 	call	prtdw
 
-	mov	ah,4Ch		; EXIT
-	mov	al,[canboot]
-	xor	al,1		; 1 (fail) if can't boot, 0 (success) if it can
+	mov	ax,4C00h	; EXIT with success
+	cmp	[score],1
+	cmc			; CF := 1 if score >= 1 (i.e. imperfect match)
+	rcl	al,1		; AL := 1 (failure) if imperfect match
 	int	21h
 
 @@failure:
@@ -665,18 +697,21 @@ mm_x	db " mm * ","$"
 mm_y	db " mm",0Dh,0Ah,"$"
 modes	db 0Dh,0Ah,"Available VBE video modes:",0Dh,0Ah,"$"
 nondiv	db " (not byte-aligned => NG for VBESVGA.DRV)","$"
-vbesvga	db 0Dh,0Ah,"VBESVGA.DRV ","$"
-should	db "should","$"
-wont	db "will NOT","$"
-boot	db " boot with de"
+closest	db 0Dh,0Ah
+closes	db "Closest match for de"
 fault	db "fault mode ","$"
-check	db 0Dh,0Ah,"To check another mode, use /w, /h and /d switches",0Dh,0Ah
+check	db 0Dh,0Ah, "VBESVGA.DRV will attempt to boot in that mode."
+	db 0Dh,0Ah,0Dh,0Ah
+	db "To check another mode, use /w, /h and /d switches",0Dh,0Ah
 	db "to specify desired width / height / depth - e.g.:",0Dh,0Ah
 	db 9,"vidmodes/w800/h600/d16",0Dh,0Ah,"$"
 
 ; five characters to change "default" to "desired" above
 sired	db "sired"
 SIRED_FAULT_LEN	equ $-sired
+; six characters to change "Closest" to "Perfect" above
+perfec	db "Perfec"
+PERFEC_CLOSES_LEN equ $-perfec
 
 ; EDID failure messages
 ef_call	db "[VBIOS failed to return EDID data]",0Dh,0Ah,"$"
@@ -706,13 +741,18 @@ mdirect	db " Direct-colour, ",'$'
 myuv	db " YUV (NG for VBESVGA.DRV)",'$'
 
 align	2
+; track the best score of any mode enumerated
+score	dw -1	; start at worst possible value
+bstmode	dw 13h	; mode which had that score
+curmode	dw -1	; current mode we're checking
+
 ; specific mode to check for when determining if driver will boot
 ; (1024*768*24 is the default, width/height will be overridden by EDID)
 wcheck	dw 1024
 hcheck	dw 768
 dcheck	db 24
-canboot	db 0
 
+align	2
 ; VBE card info
 sig	db "VBE2"
 .data?
@@ -766,8 +806,6 @@ pFBuf	dd ?
 dOSoff	dd ?
 wOSsize	dw ?
 	db 206 dup (?)
-
-align	16
 
 ; Monitor info
 edid_hdr	db 8 dup (?)
