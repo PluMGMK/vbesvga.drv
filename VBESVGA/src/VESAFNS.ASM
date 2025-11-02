@@ -969,13 +969,30 @@ endif
 
 @@:	; ensure that VBE Info is populated before we use it!
 	call	GetVBEInfo
+	; check the error code...
+	cmp	ax,VBE_ERR_FAIL
+	jna	@F
+	; if there's a specific failure mode, then crash
+	; (ENABLE should print an error message)
+	mov	di,ax
+	jmp	FindMode_reterr
 
-ifdef	INT3
-public	VBEInfoReady
-VBEInfoReady:
-	int	3
-endif
-	; set the DAC size to the best available if necessary
+@@:	; if the error code is <1, then it's 0, i.e. success
+	jb	@F
+
+	; otherwise, we've got a general failure, most likely because there
+	; is no VBE on this system, so populate the info block with some
+	; generic values to enable us to fall into last-resort mode
+	xor	ax,ax
+	mov	[VESACaps.lo],ax
+	mov	[VESACaps.hi],ax
+	; set a mode list that's just the value -1
+	dec	ax	; get -1 value
+	mov	word ptr [VESAScratch1],ax
+	mov	[VESAModes.off],offset VESAScratch1
+	mov	[VESAModes.sel],seg VESAScratch1
+
+@@:	; set the DAC size to the best available if necessary
 	mov	al,[dac_size]
 	cmp	al,-1	; "auto" setting?
 	jne	@F
@@ -1391,14 +1408,16 @@ ModeFound:
 	test	[Vmode],VESA_FLAG_LINEAR
 	jnz	FindMode_setuplin
 
-	; Fix up the far pointer
+	; Fix up the far pointer to the bank-switch function
+	test	dx,dx			; does the screen fit inside one bank?
 	mov	dx,[int10h_es]
+	jz	@F			; if so, skip the bank-switch fixup!
 	call	FixupFarPtr
 	test	ax,ax
 	mov	di,ERR_PROT_ALLOC
 	jz	@@segfix_done
 
-	; Fix up the segments too
+@@:	; Fix up the segments too
 	xor	cx,cx		; want data segments!
 	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
 	jz	@F
