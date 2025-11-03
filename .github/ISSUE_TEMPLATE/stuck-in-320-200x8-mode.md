@@ -1,5 +1,5 @@
 ---
-name: Stuck in 320×200x8 mode
+name: Stuck in 320×200×8 mode
 about: Report a situation where Windows always boots in fallback 320×200×8 mode, no
   matter what mode you've selected
 title: "[MODESTUCK]"
