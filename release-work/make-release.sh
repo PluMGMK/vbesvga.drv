@@ -15,6 +15,7 @@ echo To do so, it requires the following:
 echo - A working mkfs.fat at /usr/sbin
 echo - A working mcopy in your PATH
 echo - A working dosbox in your PATH
+echo - A working sha1sum in your PATH
 echo - The full Win16 DDK directory hierarchy at:
 echo   $(pwd)/WIN16DDK
 echo - The full Visual C++ 1.5 directory hierarchy at:

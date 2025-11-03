@@ -35,6 +35,18 @@ In theory, this suite of drivers should support _any_ graphics card that properl
 
 In general, if your hardware is old enough, it probably has an official driver for Windows 3.1 (like the i810). Official drivers should be preferred where available because they generally use hardware acceleration and don't use inefficient Real-Mode BIOS calls. On processors from that era (especially early on), the CPU-bound routines of `VBESVGA.DRV` tend to give **really** poor performance!
 
+### Integrity Verification
+
+From v0.9.4, the releases ship with SHA1 sums for integrity verification, to ensure corrupt driver files or helper programs don't cause weird crashes or instability.
+
+To make sure the files aren't corrupt, ensure everything is in one folder and use the [`MD5SUM`](https://www.ibiblio.org/pub/micro/pc-stuff/freedos/files/util/file/md5sum/md5sumx.zip) utility from FreeDOS, as follows:
+
+```
+md5sum/m:sha/v/c VBESVGA.SHA
+```
+
+If any file from the release archive is corrupt, it will come up as "FAILED".
+
 ### Setup / Configuration Procedure
 
 There are a few different ways to setup and configure the driver, according to your tastes and requirements. In all cases, the first step is to extract the `vbesvga-release.zip` archive to a folder on your DOS/Win3.1 machine, or else mount the `vbesvga.img` as a floppy image (or put it on a real floppy).
@@ -147,19 +159,24 @@ On a somewhat related note, it is also possible to get General Protection Faults
 
 ### Mode selection
 
-When Windows boots, the driver queries the BIOS for available modes, and automatically selects the first one which fulfills the following criteria:
+When Windows boots, the driver queries the BIOS for available modes, and evaluates each one which fulfills the following criteria:
 
 * Supported by the current hardware according to the BIOS
 * Graphics mode (not text)
 * Colour mode (not black & white)
-* Resolution matches what was specified in `SYSTEM.INI` (or the monitor's preferred resolution, or the default value of 1024×768)
 * Total bit depth (i.e. red+green+blue+padding) is exactly 1, 2, 3 (unless `Allow3ByteMode=0`) or 4 bytes
 * Either packed-pixel or direct-colour framebuffer
-* Significant bit depth (i.e. red+green+blue but without padding) matches what was specified in `SYSTEM.INI`
 
-The driver searches for linear modes (as defined [below](#linear-modes-and-double-buffering)) first, and if it can't find any (or the system can't support them), it goes back and looks for bank-switching modes (or *vice versa* if `PreferBankedModes=1`). If it can't find any mode matching the above criteria, it will switch the display back to text mode, print an error message and return to DOS. Note that this automatic search is the only way the driver selects modes: you cannot give it a specific VESA mode number to use.
+Each mode which fulfills these criteria is assigned a "score", indicating how well it matches the desired resolution and depth specified in `SYSTEM.INI`. The score is the sum of four components:
 
-If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected), and the driver will either boot successfully or give you a list of `Depth` values to try (if the default, 24 bits, isn't supported).
+* Absolute difference of width (in pixels) from the `SYSTEM.INI` spec (or, by default, your monitor's preferred width, or 1024)
+* Absolute difference of height (in scanlines) from the `SYSTEM.INI` spec (or, by default, your monitor's preferred height, or 768)
+* Absolute difference of significant depth (in bits) from the `SYSTEM.INI` spec (or, by default, 24)
+* +1 if you asked for a linear mode (i.e. if `PreferBankedModes=0`) but it can only work with bank switching, or *vice versa* (see [below](#linear-modes-and-double-buffering) for more details)
+
+If it doesn't find a perfect match among your system's VBE modes, the driver also checks mode `13h`, which is the standard 320×200×8 VGA mode. Depending on your configuration options, this may or may not turn out to be the best-scoring mode.
+
+If you know what resolution your monitor and card support, then set the `Width` and `Height` accordingly (or allow them to be autodetected). Note that this automatic search and scoring system is the only way the driver selects modes: you cannot give it a specific VESA mode number to use.
 
 If you're not sure which resolution to try, the `VIDMODES.COM` tool included in the releases can list the available modes on your system to give some idea. Example output running under DOSBox-X 2024.07.01[^2]:
 ```
@@ -170,66 +187,68 @@ Your monitor:
 [VBIOS failed to return EDID data]
 
 Available VBE video modes:
-0100: 640*400*8 Packed-pixel
-0101: 640*480*8 Packed-pixel
+0100: 640*400*8 Packed-pixel, linOK, winA@A000: 64k/64k
+0101: 640*480*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0102: 800*600*4 EGA-type (NG for VBESVGA.DRV)
-0103: 800*600*8 Packed-pixel
+0103: 800*600*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0104: 1024*768*4 EGA-type (NG for VBESVGA.DRV)
-0105: 1024*768*8 Packed-pixel
+0105: 1024*768*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0106: 1280*1024*4 EGA-type (NG for VBESVGA.DRV)
-0107: 1280*1024*8 Packed-pixel
-010D: 320*200*15 Direct-colour, 15S/16T
-010E: 320*200*16 Direct-colour, 16S/16T
-0110: 640*480*15 Direct-colour, 15S/16T
-0111: 640*480*16 Direct-colour, 16S/16T
-0113: 800*600*15 Direct-colour, 15S/16T
-0114: 800*600*16 Direct-colour, 16S/16T
-0116: 1024*768*15 Direct-colour, 15S/16T
-0117: 1024*768*16 Direct-colour, 16S/16T
-0119: 1280*1024*15 Direct-colour, 15S/16T
-011A: 1280*1024*16 Direct-colour, 16S/16T
-010F: 320*200*32 Direct-colour, 24S/32T
-0112: 640*480*32 Direct-colour, 24S/32T
-0115: 800*600*32 Direct-colour, 24S/32T
-0118: 1024*768*32 Direct-colour, 24S/32T
-01F0: 320*200*32 Direct-colour, 24S/32T
-01F1: 640*480*32 Direct-colour, 24S/32T
-01F2: 800*600*32 Direct-colour, 24S/32T
-01F3: 1024*768*32 Direct-colour, 24S/32T
-0151: 320*240*8 Packed-pixel
-0153: 320*200*8 Packed-pixel
-015C: 512*384*8 Packed-pixel
-0159: 400*300*8 Packed-pixel
-015D: 512*384*16 Direct-colour, 16S/16T
-015A: 400*300*16 Direct-colour, 16S/16T
-0160: 320*240*15 Direct-colour, 15S/16T
-0161: 320*400*15 Direct-colour, 15S/16T
-0162: 320*480*15 Direct-colour, 15S/16T
-0165: 640*400*15 Direct-colour, 15S/16T
-0136: 320*240*16 Direct-colour, 16S/16T
-0170: 320*240*16 Direct-colour, 16S/16T
-0172: 320*480*16 Direct-colour, 16S/16T
-0175: 640*400*16 Direct-colour, 16S/16T
-0190: 320*240*32 Direct-colour, 24S/32T
-0201: 640*480*8 Packed-pixel
+0107: 1280*1024*8 Packed-pixel, linOK, winA@A000: 64k/64k
+010D: 320*200*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+010E: 320*200*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0110: 640*480*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0111: 640*480*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0113: 800*600*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0114: 800*600*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0116: 1024*768*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0117: 1024*768*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0119: 1280*1024*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+011A: 1280*1024*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+010F: 320*200*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+0112: 640*480*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+0115: 800*600*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+0118: 1024*768*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+01F0: 320*200*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+01F1: 640*480*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+01F2: 800*600*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+01F3: 1024*768*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+0151: 320*240*8 Packed-pixel, linOK, winA@A000: 64k/64k
+0153: 320*200*8 Packed-pixel, linOK, winA@A000: 64k/64k
+015C: 512*384*8 Packed-pixel, linOK, winA@A000: 64k/64k
+0159: 400*300*8 Packed-pixel, linOK, winA@A000: 64k/64k
+015D: 512*384*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+015A: 400*300*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0160: 320*240*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0161: 320*400*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0162: 320*480*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0165: 640*400*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+0136: 320*240*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0170: 320*240*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0172: 320*480*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0175: 640*400*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+0190: 320*240*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+0201: 640*480*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0202: 800*600*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
-0203: 800*600*8 Packed-pixel
+0203: 800*600*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0204: 1024*768*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
-0205: 1024*768*8 Packed-pixel
+0205: 1024*768*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0206: 1280*960*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
-0207: 1152*864*8 Packed-pixel
+0207: 1152*864*8 Packed-pixel, linOK, winA@A000: 64k/64k
 0208: 1280*1024*4 Packed-pixel (not byte-aligned => NG for VBESVGA.DRV)
-0209: 1152*864*15 Direct-colour, 15S/16T
-020A: 1152*864*16 Direct-colour, 16S/16T
-020B: 1152*864*32 Direct-colour, 24S/32T
-0213: 640*400*32 Direct-colour, 24S/32T
+0209: 1152*864*15 Direct-colour, 15S/16T, linOK, winA@A000: 64k/64k
+020A: 1152*864*16 Direct-colour, 16S/16T, linOK, winA@A000: 64k/64k
+020B: 1152*864*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
+0213: 640*400*32 Direct-colour, 24S/32T, linOK, winA@A000: 64k/64k
 
-VBESVGA.DRV should boot with default / desired mode 1024*768*24
+Perfect usable match for default mode 1024*768*24: 0118
+VBESVGA.DRV will attempt to boot in that mode.
+
 To check another mode, use /w, /h and /d switches
 to specify desired width / height / depth - e.g.:
 	vidmodes/w800/h600/d16
 
-VIDMODES.COM from Git commit cf263dc
+VIDMODES.COM from Git commit ab3f0fc
 Total modes found: 53
 ```
 Another example can be seen in the screenshot above, running on real hardware.
@@ -238,10 +257,12 @@ You can see that it lists all detected colour graphics modes, showing their reso
 
 Direct-colour modes may have padding bits in each pixel, so the bit depths for these modes are listed with and without padding. The "S" number is what I call the *significant depth*, which excludes padding bits, and the "T" number is the *total depth*, which is the physical size of a pixel in memory. The driver searches for modes whose significant depths match what is specified in `SYSTEM.INI` (or 24 by default), but also makes sure the total depth is divisible by eight. If it is not divisible by eight, then pixels are not byte-aligned, and so those modes are also "NG" as seen above.
 
+For modes which pass these checks, `VIDMODES.COM` also prints out `linOK` if they can be used as linear modes. This is followed by the location, size and granularity of the VRAM window, if they can be used as bank-switched modes. In all the cases I've seen so far, the size has always been 64k, while the granularity can [sometimes](https://github.com/PluMGMK/vbesvga.drv/issues/59) be smaller. If the size is over 64k, or not an integer multiple of the granularity, or less than 64k and not an integer multiple of the scanline width, then `VBESVGA.DRV` cannot bank-switch the mode, and `VIDMODES.COM` will briefly explain why. Such modes can still be used as linear modes, if they support it. These conditions may sound quite complicated, but I would be very surprised if there turned out to be real hardware that violates them!
+
 You can also use `VIDMODES.COM` as part of a batch file to check whether or not `VBESVGA.DRV` can be expected to boot with certain mode settings. An example usage is given at the end of the output above. The errorlevel is set to:
-* `0` (**success**) if a successful boot is expected
-* `1` if a corresponding mode is **not** found
-* `2` if your graphics card doesn't support VBE at all
+* `0` (**success**) if a perfect match is found
+* `1` if a corresponding mode is **not** found, but `VBESVGA.DRV` will attempt to boot with the closest match
+* `2` if your graphics card doesn't support VBE at all, in which case `VBESVGA.DRV` will attempt to boot in mode `13h`, i.e. 320×200×8
 
 ### Linear Modes and Double Buffering
 
