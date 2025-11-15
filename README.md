@@ -3,6 +3,10 @@ Modern Generic SVGA driver for Windows 3.1
 
 This is a rewrite of the Windows 3.1 SVGA driver, designed to support **ALL** available 8-bit, 16-bit, 24-bit or 32-bit graphic modes on any system providing the [VESA BIOS Extensions](https://en.wikipedia.org/wiki/VESA_BIOS_Extensions) (hence the `VBE` in the name). It is based on the Video 7 SVGA driver included in the [Win16 Driver Development Kit](http://www.win3x.org/win3board/viewtopic.php?t=2776), with most of the hardware-specific code gutted out, and with support added for multi-byte pixels.
 
+## Issue Templates
+
+Issue templates were added to this repository in November 2025. **Please use them when reporting bugs!** By "use them", I mean "fill out the answers to the questions _in the given format_", **not** "select them and replace the content with your own freeform text". The questions are there for a reason, and if you don't provide all the information then I won't be able to figure out what's going on on your system. I know most of the currently-open issues don't follow these formats, but that's only because they predate the creation of the templates. The templates were written based on my experience of debugging all the previous issues, and reflect questions that I would otherwise need to ask anyway.
+
 ## Why on Earth did I make such a thing?
 
 * To demonstrate that it's possible to run Windows 3.1 in True-Colour Full HD
