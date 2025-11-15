@@ -30,8 +30,8 @@ This screenshot showcases the True Colour rendering capability, in the wallpaper
 In theory, this suite of drivers should support _any_ graphics card that properly supports the VESA BIOS Extensions, and doesn't do anything funky with the memory window size. So basically, any hardware made in the last thirty years. Unfortunately, real life is rarely as simple as one would like, so there is some hardware that has some issues:
 
 * The NVIDIA GeForce 1050 GTX has some issues with windowed DOS prompts, and presumably newer NVIDIA hardware has the same problem. The issues include potential freezes when using the `mode` command to change the size of the prompt, and font corruption when switching to full screen (which also affects blue screens).
+* AMD Radeons: the RX 5000 series works perfectly, and I use it for development. There has been one report of a 386 Enhanced Mode boot failure with an RX 7000 series card, but it's not clear whether that was caused by the graphics hardware or some other incompatibility on the motherboard.
 * Intel 810 chipset integrated graphics [crashes back to DOS during boot](https://github.com/PluMGMK/vbesvga.drv/issues/99) leaving you with a blank screen. It turns out there is an official driver for this chipset, so please use that instead: https://archive.org/details/w-810-r-209
-* The AMD Radeon RX 7800 XT (and presumably newer Radeons) [fails to boot in Enhanced Mode](https://github.com/PluMGMK/vbesvga.drv/issues/95). The RX 5000 series is OK (that's what I develop on), and I don't know what the story is with the RX 6000 series.
 
 In general, if your hardware is old enough, it probably has an official driver for Windows 3.1 (like the i810). Official drivers should be preferred where available because they generally use hardware acceleration and don't use inefficient Real-Mode BIOS calls. On processors from that era (especially early on), the CPU-bound routines of `VBESVGA.DRV` tend to give **really** poor performance!
 
@@ -365,7 +365,6 @@ Note that the only step below which requires Windows is the initial installation
 
 * Consider efficiency improvements in `swap_buffers` and/or `VDD_SwapBuffers`, to reduce [idle CPU usage](https://github.com/PluMGMK/vbesvga.drv/issues/32)
 * Consider adding a virtual RAMDAC to the double-buffering code in `VDDVBE.386` to allow standard 256-colour modes to be emulated on hardware that only supports high-colour VBE modes
-* See if `VDDVBE.386` can work [on newer AMD hardware](https://github.com/PluMGMK/vbesvga.drv/issues/95) (I don't have any affected hardware)
 * Investigate adding [Windows 3.0 support](https://github.com/PluMGMK/vbesvga.drv/issues/49) (perhaps still requiring a 286, i.e. refusing to boot on anything older)
 * Investigate [using VBE/AF](https://github.com/PluMGMK/vbesvga.drv/issues/27) where available for 2D acceleration
 * Investigate adding [Windows 1/2 support](https://github.com/PluMGMK/vbesvga.drv/issues/49)
