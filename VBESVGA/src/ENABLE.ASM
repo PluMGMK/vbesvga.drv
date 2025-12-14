@@ -69,9 +69,18 @@ ifdef PALETTES
 	externFP SetPaletteTranslate    ;in color\ega\vga\palette.asm
 endif
 
+	; DPI sizes in VGA.ASM
+	externA	DPI_TINY
+	externA	DPI_SMALL
+	externA	DPI_LARGE
+
 MAXFNAMELEN	equ	64
 
 OCR_ICOCUR	  =  32647
+OCR_NORMAL	  =  32512
+RT_ICON         = 3
+DIFFERENCE       =   11
+RT_GROUP_ICON    =   RT_ICON + DIFFERENCE
 
 sBegin  Data
 
@@ -82,7 +91,7 @@ EXTRN	cursor_ydraw:WORD
 EXTRN	dac_size:byte
 EXTRN	windowsVersion:WORD	;Windows version number
 
-dpi_size	dw	96
+dpi_size	dw	DPI_SMALL
 Profile_read	dw	0
 prefer_bank     dw      0
 aszSystemIni	db	"system.ini",0
@@ -130,11 +139,13 @@ interval_member	db	"SwapBuffersInterval",0
 allow3b_member	db	"Allow3ByteMode",0
 
 font_member	db	"fontsize",0
-dpi_96		db	"small",0
-dpi_120 	db	"large",0
+dpi_tiny	db	"tiny",0
+dpi_small	db	"small",0
+dpi_large	db	"large",0
 sysini_fontstruc	LABEL	BYTE
-SYSINI	<dpi_96,5,96>
-SYSINI	<dpi_120,5,120>
+SYSINI	<dpi_tiny,4,DPI_TINY>
+SYSINI	<dpi_small,5,DPI_SMALL>
+SYSINI	<dpi_large,5,DPI_LARGE>
 
 dac_member	db	"dacdepth",0
 dac_depth_6	db	"6",0
@@ -437,7 +448,7 @@ enable_read_profile	PROC	NEAR
         lea     si,aszCurDrvFName
 	lea	bp,sysini_bankstruc
         call    enable_find_substring
-	mov	special_blits,ax
+	mov	special_blits,al
 
 	lea	ax,boot_category
         push    ds
@@ -553,8 +564,8 @@ enable_read_profile	PROC	NEAR
         push    ax
 	call	GetPrivateProfileString
 
-	mov	ax,96				;default return value
-	mov	bx,2				;number different modes
+	mov	ax,DPI_SMALL			;default return value
+	mov	bx,3				;number different modes
         lea     si,aszCurDrvFName
 	lea	bp,sysini_fontstruc
 	call	enable_find_substring
@@ -830,32 +841,51 @@ cBegin
 	mov	ax,iResID		;Get res id into ax.
 
 ;-----------------------------------------------------------------
-; if f96DPI is not set to MULTIRES_96DPI then do not map
+; if DPI is > DPI_SMALL (i.e. 96), then do not map
 ; (use 120 dpi resources).
 ;-----------------------------------------------------------------
-;	 cmp	 byte ptr f96DPI, MULTIRES_96DPI
-;	 jne	 short GDR_Exit
-
-	cmp	dpi_size,96
-	jne	short GDR_Exit
+	cmp	dpi_size,DPI_SMALL
+	ja	short GDR_Exit
 
 ;-----------------------------------------------------------------
 ; if the ID identifies an icon or cursor then do not map it. 
-; Otherwise, map it by subtracting 2000 from it.  If the ID
-; is a 1 or 3, add 2000 to it.
+; Otherwise, map it by adding 2000 to it.
 ;-----------------------------------------------------------------
 	mov	dx,2000
         cmp     ax, OCR_ICOCUR          ;ICOCUR is the "largest" icon/cursor
 	jg	short GDR_MapIt		;ID.  If the ID is bigger than this
         cmp	ax,1                    ;it must be a bitmap
-	je	short @f
+	je	short GDR_MapIt
         cmp     ax,3
-	je	short @f
-	jmp	short GDR_Exit
-@@:
-;	neg	dx
+	je	short GDR_MapIt
+	jmp	short @F
 GDR_MapIt:
         add     ax,dx                   ;96 dpi resource IDs are +2000
+@@:
+;-----------------------------------------------------------------
+; now check 48dpi - in this case, we DO map cursors, but still
+; not icons. Unfortunately, the IDs for icons and cursors overlap,
+; so we need to check lpResType...
+;-----------------------------------------------------------------
+	cmp	dpi_size,DPI_TINY
+	ja	short GDR_Exit
+
+	; handle OEMBIN resources first - 2001 (CONFIG.BIN) needs
+	; to become 4001, but 2003 (FONTS.BIN) can stay the same:
+	cmp	ax,2001
+	je	short GDR_MapItAgain
+	cmp	ax,OCR_NORMAL		;OCR_NORMAL is first cursor
+	jb	short @F		; if lower, no need to map
+	; let's assume that RT_GROUP_ICON is ALWAYS passed as 0000:000E
+	; (should be valid since developers are only supposed to
+	;  use LoadIcon, instead of messing with FindResource.)
+	cmp	[lpResType.sel],0
+	jnz	short GDR_MapItAgain
+        cmp     [lpResType.off],RT_GROUP_ICON
+	je	short @F		;if an icon, skip mapping
+GDR_MapItAgain:
+        add     ax,dx                   ;48 dpi resource IDs are +2000
+@@:
 GDR_Exit:
 	xor	dx,dx		        ;dx must be zero.                
 GDR_Exit2:

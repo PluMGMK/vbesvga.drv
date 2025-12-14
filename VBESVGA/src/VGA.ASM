@@ -104,20 +104,11 @@ endif
 	externFP init_hw_regs		;Initialize ega state code
         externFP SetPalette             ;loads palette
 	externNP set_dacsize		;in VESAFNS.ASM
-;	public	SSB_EXTRA_SCANS 	;Number of extra scanlines
-;	public	SSB_EXTRA_PELS		;Number of extra columns
-;	public	SSB_SAVE_X		;X cord of save area
-;	public	SSB_SAVE_Y		;Y cord of save area
 	public	PHYS_DEVICE_SIZE	;Number of bytes in physical device
 	public	BW_THRESHOLD		;Black/white threshold
-;	public	COLOR_FORMAT		;Color format
-;	public	SCREEN_W_BYTES		;Screen width in bytes
-;	public	SCREEN_WIDTH		;Screen width in pixels
-;	public	SCREEN_HEIGHT		;Screen height in scans
 	public	ScratchSel
 
 	public	NUM_PALETTES		;Number of palette registers
-;	public	PaletteSupported	;whether palette manager supported
 
 	public	physical_enable 	;Enable routine
 	public	physical_disable	;Disable
@@ -131,6 +122,8 @@ endif
 	public	Y_MINOR_DIST
 	public	X_MINOR_DIST
 	public	MAX_STYLE_ERR
+
+	public	DPI_TINY, DPI_SMALL, DPI_LARGE
 
 	public	 H_HATCH_BR_0, H_HATCH_BR_1, H_HATCH_BR_2, H_HATCH_BR_3
 	public	 H_HATCH_BR_4, H_HATCH_BR_5, H_HATCH_BR_6, H_HATCH_BR_7
@@ -222,6 +215,13 @@ Y_MINOR_DIST	=	HYPOTENUSE-X_MAJOR_DIST
 X_MINOR_DIST	=	HYPOTENUSE-Y_MAJOR_DIST
 MAX_STYLE_ERR	=	HYPOTENUSE*2	;Max error before updating
 					;  rotating bit mask
+
+;-----------------------------------------------------------------------;
+;	DPI values for "tiny", "small" and "large" fonts
+;-----------------------------------------------------------------------;
+DPI_TINY	equ	48
+DPI_SMALL	equ	96
+DPI_LARGE	equ	120
 
 ;-----------------------------------------------------------------------;
 ;	The black/white threshold is used to determine the split
@@ -558,10 +558,10 @@ RC_BIGFONT      equ 0000010000000000b   ; can do fonts > 64k
 	dw	254 			;  HorizRes * 254
 	dw	-254			;  -VertRes * 254
 
-	dw	96			;Logical Pixels/inch in X
+	dw	DPI_SMALL		;Logical Pixels/inch in X
 	errnz	dpLogPixelsX-dpTwpWin-8
 
-	dw	96			;Logical Pixels/inch in Y
+	dw	DPI_SMALL		;Logical Pixels/inch in Y
 	errnz	dpLogPixelsY-dpLogPixelsX-2
 
 	dw	DC_IgnoreDFNP		;dpDCManage

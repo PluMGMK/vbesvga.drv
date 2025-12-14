@@ -19,6 +19,7 @@ SRC     = $(DDK)\src            # VRAM driver source directory
 OBJ     = $(DDK)\obj            # VRAM driver objects directory
 RES     = $(DDK)\res31          # VRAM driver resources directory
 RES96   = $(DDK)\res96
+RES48   = $(DDK)\res48
 TOOLDIR = $(DDK)\tools          # VRAM driver tools directory
 TOOLS   =                       # with backslash, so blanking defaults to path
 
@@ -399,6 +400,15 @@ $(RES96)\fonts.bin:     $(RES96)\$*.asm
 	del $*.exe
 	cd $(MAK)
 
+$(RES48)\config.bin:    $(RES48)\$*.asm
+	cd $(RES48)
+	$(RASM) $*;
+	$(LNK) $*;
+	del $*.obj
+	$(X2B) $*
+	del $*.exe
+	cd $(MAK)
+
 $(RES)\drv256.res:      $(RES)\drv256.rc        \
 		$(RES)\config.bin       \
 		$(RES)\colortab.bin     \
@@ -454,6 +464,7 @@ $(RES)\drv256.res:      $(RES)\drv256.rc        \
 		$(RES)\ques.ico         \
 		$(RES)\sample.ico       \
 		$(RES)\96dpi.h          \
+		$(RES)\48dpi.h          \
 		$(RES96)\config.bin     \
 		$(RES96)\fonts.bin      \
 		$(RES96)\orest.bmp      \
@@ -490,6 +501,52 @@ $(RES)\drv256.res:      $(RES)\drv256.rc        \
 		$(RES96)\downi.bmp      \
 		$(RES96)\lefti.bmp      \
 		$(RES96)\righti.bmp     \
+		$(RES48)\config.bin     \
+		$(RES48)\orest.bmp      \
+		$(RES48)\ored.bmp       \
+		$(RES48)\ozoom.bmp      \
+		$(RES48)\oright.bmp     \
+		$(RES48)\oleft.bmp      \
+		$(RES48)\oup.bmp        \
+		$(RES48)\odown.bmp      \
+		$(RES48)\oclose.bmp     \
+		$(RES48)\restore.bmp    \
+		$(RES48)\restored.bmp   \
+		$(RES48)\min.bmp        \
+		$(RES48)\mind.bmp       \
+		$(RES48)\max.bmp        \
+		$(RES48)\maxd.bmp       \
+		$(RES48)\right.bmp      \
+		$(RES48)\rightd.bmp     \
+		$(RES48)\left.bmp       \
+		$(RES48)\leftd.bmp      \
+		$(RES48)\up.bmp         \
+		$(RES48)\upd.bmp        \
+		$(RES48)\down.bmp       \
+		$(RES48)\downd.bmp      \
+		$(RES48)\sysmenu.bmp    \
+		$(RES48)\ocheck.bmp     \
+		$(RES48)\obtsize.bmp    \
+		$(RES48)\osize.bmp      \
+		$(RES48)\obutton.bmp    \
+		$(RES48)\obtncorn.bmp   \
+		$(RES48)\combo.bmp      \
+		$(RES48)\mnarrow.bmp    \
+		$(RES48)\upi.bmp        \
+		$(RES48)\downi.bmp      \
+		$(RES48)\lefti.bmp      \
+		$(RES48)\righti.bmp     \
+		$(RES48)\cross.cur      \
+		$(RES48)\ibeam.cur      \
+		$(RES48)\icon.cur       \
+		$(RES48)\normal.cur     \
+		$(RES48)\size.cur       \
+		$(RES48)\sizenesw.cur   \
+		$(RES48)\sizens.cur     \
+		$(RES48)\sizenwse.cur   \
+		$(RES48)\sizewe.cur     \
+		$(RES48)\up.cur         \
+		$(RES48)\wait.cur       \
 ###             $(RES)\ver.h            \
 		$(RES)\vbesvga.rcv
 	cd $(RES)

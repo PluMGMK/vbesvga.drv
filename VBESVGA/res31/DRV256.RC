@@ -3,6 +3,7 @@
 #define  OEMRESOURCE
 #include "windows.h"
 #include "96dpi.h"
+#include "48dpi.h"
 
 /***************************************************************/
 /* 120 dpi resources                                           */
@@ -116,6 +117,60 @@ OBM_96_RGARROWI      bitmap       PRELOAD          "../res96/righti.bmp"
 
 2001                 oembin       PRELOAD          "../res96/config.bin"
 2003                 oembin       PRELOAD          "../res96/fonts.bin"
+
+/* 48 dpi resources */
+/* the _48_ defines are the above + 2000d AGAIN */
+
+OCR_48_NORMAL        cursor       PRELOAD FIXED    "../res48/normal.cur"
+OCR_48_WAIT          cursor       PRELOAD FIXED    "../res48/wait.cur"
+OCR_48_SIZENWSE      cursor       PRELOAD          "../res48/sizenwse.cur"
+OCR_48_SIZENESW      cursor       PRELOAD          "../res48/sizenesw.cur"
+OCR_48_SIZEWE        cursor       PRELOAD          "../res48/sizewe.cur"
+OCR_48_SIZENS        cursor       PRELOAD          "../res48/sizens.cur"
+OCR_48_IBEAM         cursor                        "../res48/ibeam.cur"
+OCR_48_CROSS         cursor                        "../res48/cross.cur"
+OCR_48_UP            cursor                        "../res48/up.cur"
+OCR_48_SIZE          cursor                        "../res48/size.cur"
+OCR_48_ICON          cursor                        "../res48/icon.cur"
+
+OBM_48_OLD_RESTORE   bitmap                        "../res48/orest.bmp"
+OBM_48_OLD_REDUCE    bitmap                        "../res48/ored.bmp"
+OBM_48_OLD_ZOOM      bitmap                        "../res48/ozoom.bmp"
+OBM_48_OLD_RGARROW   bitmap                        "../res48/oright.bmp"
+OBM_48_OLD_LFARROW   bitmap                        "../res48/oleft.bmp"
+OBM_48_OLD_UPARROW   bitmap                        "../res48/oup.bmp"
+OBM_48_OLD_DNARROW   bitmap                        "../res48/odown.bmp"
+OBM_48_OLD_CLOSE     bitmap                        "../res48/oclose.bmp"
+
+OBM_48_RESTORE       bitmap       PRELOAD          "../res48/restore.bmp"
+OBM_48_RESTORED      bitmap       PRELOAD          "../res48/restored.bmp"
+OBM_48_REDUCE        bitmap       PRELOAD          "../res48/min.bmp"
+OBM_48_REDUCED       bitmap       PRELOAD          "../res48/mind.bmp"
+OBM_48_ZOOM          bitmap       PRELOAD          "../res48/max.bmp"
+OBM_48_ZOOMD         bitmap       PRELOAD          "../res48/maxd.bmp"
+OBM_48_RGARROW       bitmap       PRELOAD          "../res48/right.bmp"
+OBM_48_RGARROWD      bitmap       PRELOAD          "../res48/rightd.bmp"
+OBM_48_LFARROW       bitmap       PRELOAD          "../res48/left.bmp"
+OBM_48_LFARROWD      bitmap       PRELOAD          "../res48/leftd.bmp"
+OBM_48_UPARROW       bitmap       PRELOAD          "../res48/up.bmp"
+OBM_48_UPARROWD      bitmap       PRELOAD          "../res48/upd.bmp"
+OBM_48_DNARROW       bitmap       PRELOAD          "../res48/down.bmp"
+OBM_48_DNARROWD      bitmap       PRELOAD          "../res48/downd.bmp"
+OBM_48_CLOSE         bitmap       PRELOAD          "../res48/sysmenu.bmp"
+OBM_48_CHECK         bitmap                        "../res48/ocheck.bmp"
+OBM_48_BTSIZE        bitmap                        "../res48/obtsize.bmp"
+OBM_48_SIZE          bitmap                        "../res48/osize.bmp"
+OBM_48_CHECKBOXES    bitmap                        "../res48/obutton.bmp"
+OBM_48_BTNCORNERS    bitmap                        "../res48/obtncorn.bmp"
+OBM_48_COMBO         bitmap                        "../res48/combo.bmp"
+OBM_48_MNARROW       bitmap                        "../res48/mnarrow.bmp"
+
+OBM_48_UPARROWI      bitmap       PRELOAD          "../res48/upi.bmp"
+OBM_48_DNARROWI      bitmap       PRELOAD          "../res48/downi.bmp"
+OBM_48_LFARROWI      bitmap       PRELOAD          "../res48/lefti.bmp"
+OBM_48_RGARROWI      bitmap       PRELOAD          "../res48/righti.bmp"
+
+4001                 oembin       PRELOAD          "../res48/config.bin"
 
 FONTS                oembin                        fonts.bin
 
