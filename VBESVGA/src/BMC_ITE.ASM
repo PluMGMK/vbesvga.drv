@@ -54,6 +54,10 @@ CAN_CROSS_SEG		equ	00010000b
 
 MONO_BIT		equ	00000001b
 
+ifdef	DEBUGAUX
+PUBDEFS	equ	1
+endif
+
 	.xlist
 	include	cmacros.inc
 	include	gdidefs.inc
@@ -449,6 +453,7 @@ page
 	assumes	ds, nothing
 	assumes	es, nothing
 
+        ?_pub   ite_1
 ite_1	proc	near
 
         xor     ax, ax
@@ -629,6 +634,7 @@ page
 	assumes	ds, nothing
 	assumes	es, nothing
 
+        ?_pub   ite_8
 ite_8	proc	near
 
 	xor	ax, ax			;Will not require any buffer adjustment
@@ -715,6 +721,7 @@ page
 	assumes	ds, nothing
 	assumes	es, nothing
 
+        ?_pub   ite_24
 ite_24	proc	near
 
 	mov	num_pels_per_src_byte,8 ; actually .3, but we want a min of 1
@@ -2610,7 +2617,7 @@ public	copy_i8e24
 copy_i8e24      proc near
 
 	; check if we have a colour info table.
-	cmp	wptr lpColorInfo[2],0
+	cmp	[lpColorInfo.sel],0
 	jnz	ci8e24_next_byte
 
 	; if not, we just have to convert back to a list of RGBTRIPLEs
@@ -2685,7 +2692,7 @@ page
 copy_i8e24_partial proc	near
 
 ci8e24p_next_pixel:
-	cmp	wptr lpColorInfo[2],0
+	cmp	[lpColorInfo.sel],0
 	jnz	@F
 
 	push	es

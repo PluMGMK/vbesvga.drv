@@ -1,4 +1,3 @@
-PUBDEFS	equ	1
 ;----------------------------------------------------------------------------;
 ;			 SetDeviceBitmapBits				     ;
 ;			 -------------------				     ;
@@ -49,6 +48,10 @@ PUBDEFS	equ	1
 
 .286
 MONO_BIT		equ	00000001b
+
+ifdef	DEBUGAUX
+PUBDEFS	equ	1
+endif
 
 	.xlist
 	include	cmacros.inc
