@@ -732,6 +732,29 @@ ite_24	proc	near
         test    fbsd, SD_COLOR          ;Monochrome source?
 	jnz	ite_24_have_proc	;  No
 
+	; check if we have a colour table - if not, create one:
+	xor	ax,ax
+	cwd				;default: colour 0 = black
+	mov	cx,0FFFFh
+	mov	bx,0FFh			;default: colour 1 = white
+	cmp	[lpColorInfo.sel],0
+	jz	@F
+
+	push	es
+	les	bx,lpColorInfo
+	; load the table provided by GDI:
+	mov	ax,es:[bx+0]
+	mov	dx,es:[bx+2]
+	mov	cx,es:[bx+4]
+	mov	bx,es:[bx+6]
+	pop	es
+
+@@:	; store colour table
+	mov	color_xlate[0],ax
+	mov	color_xlate[2],dx
+	mov	color_xlate[4],cx
+	mov	color_xlate[6],bx
+
 	mov	ax, DIMapSegOFFSET copy_i1e24
 	mov	bx, DIMapSegOFFSET copy_i1e24_partial
 
@@ -1569,14 +1592,12 @@ ci1e24_next_bit:
 	sbb	al,al			; 0 or ff
 	xor	ah,ah
 
-        push    es
-	les	bx,lpColorInfo
+	lea	bx,color_xlate
 	shl	ax,1
 	shl	ax,1
 	add	bx,ax
-	mov	ax,es:[bx]
-	mov	bl,es:[bx+2]
-	pop	es
+	mov	ax,ss:[bx]
+	mov	bl,ss:[bx+2]
 
         cmp     di,0fffch
 	jae	ci1e24_eos_check
@@ -1673,7 +1694,6 @@ page
 
 copy_i1e24_partial proc	near
 
-	lea	bx,color_xlate
         lodsb
 	mov	dh,al
 ;
@@ -1682,14 +1702,12 @@ ci1e24p_next_bit:
 	sbb	al,al			; 0 or ff
 	xor	ah,ah
 
-	push	es
-	les	bx,lpColorInfo
+	lea	bx,color_xlate
 	shl	ax,1
 	shl	ax,1
         add     bx,ax
-	mov	ax,es:[bx]
-	mov	bl,es:[bx+2]
-	pop	es
+	mov	ax,ss:[bx]
+	mov	bl,ss:[bx+2]
 
 	cmp	di,0fffch
 	jae	ci1e24p_eos_check
