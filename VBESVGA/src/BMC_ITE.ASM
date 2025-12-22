@@ -1593,9 +1593,8 @@ ci1e24_next_bit:
 	xor	ah,ah
 
 	lea	bx,color_xlate
-	shl	ax,1
-	shl	ax,1
-	add	bx,ax
+	and	ax,4			; convert 0 to 0, FF to 4
+	add	bx,ax			; BX+0 = "black", BX+4 = "white"
 	mov	ax,ss:[bx]
 	mov	bl,ss:[bx+2]
 
@@ -1703,9 +1702,8 @@ ci1e24p_next_bit:
 	xor	ah,ah
 
 	lea	bx,color_xlate
-	shl	ax,1
-	shl	ax,1
-        add     bx,ax
+	and	ax,4			; convert 0 to 0, FF to 4
+	add	bx,ax			; BX+0 = "black", BX+4 = "white"
 	mov	ax,ss:[bx]
 	mov	bl,ss:[bx+2]
 
