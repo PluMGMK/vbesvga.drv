@@ -742,8 +742,24 @@ getvendor:
 	int	21h
 
 @@failure:
-	mov	ah,9		; write to stdout
+	; check for VGA or MCGA
+	mov	ax,1A00h	; GET DISPLAY COMBINATION CODE
+	int	10h
+	lea	dx,nomcga
+
+	cmp	al,1Ah		; function supported?
+	jne	@F		; nope, don't set HWSUPPORT flag!
+
+	; ensure active display code is in range 07h-0Ch, as these represent
+	; VGA/MCGA configurations
+	cmp	bl,07h
+	jb	@F
+	cmp	bl,0Ch
+	ja	@F
+	; We have VGA/MCGA, so MCGA256 mode is supported:
 	lea	dx,failure
+
+@@:	mov	ah,9		; write to stdout
 	int	21h
 	lea	dx,newline
 	int	21h
@@ -845,6 +861,7 @@ prtdw	proc	near
 prtdw	endp
 
 .data
+nomcga	db "No SVGA, VGA or MCGA - VBESVGA.DRV will not boot at all","$"
 failure	db "No SVGA BIOS - VBESVGA.DRV will attempt to boot in "
 lrname	db "MCGA256 mode (aka 13h)","$"
 card	db "Your card"

@@ -1588,8 +1588,24 @@ cEnd
 ;--------------------------------------------------------------------------;
 check_last_resort	proc near
 	; the following attributes apply to MCGA256 mode:
-	mov	word ptr es:[di.OFF_VESA_ATTRS],VESA_ATTR_HWSUPPORT OR VESA_ATTR_BIOS_OP OR VESA_ATTR_COLOUR OR VESA_ATTR_GRAPHICS OR VESA_ATTR_DBLSCAN
-	; the window is a normal one, at A000h
+	mov	word ptr es:[di.OFF_VESA_ATTRS],VESA_ATTR_BIOS_OP OR VESA_ATTR_COLOUR OR VESA_ATTR_GRAPHICS OR VESA_ATTR_DBLSCAN
+
+	; check for VGA or MCGA to make sure the mode is actually supported!
+	mov	ax,1A00h	; GET DISPLAY COMBINATION CODE
+	int	10h
+	cmp	al,1Ah		; function supported?
+	jne	@F		; nope, don't set HWSUPPORT flag!
+
+	; ensure active display code is in range 07h-0Ch, as these represent
+	; VGA/MCGA configurations
+	cmp	bl,07h
+	jb	@F
+	cmp	bl,0Ch
+	ja	@F
+	; We have VGA/MCGA, so MCGA256 mode is supported:
+	or	word ptr es:[di.OFF_VESA_ATTRS],VESA_ATTR_HWSUPPORT
+
+@@:	; the window is a normal one, at A000h
 	mov	byte ptr es:[di.OFF_VESA_WATTRS],VESA_WINATTR_NORMAL
 	mov	word ptr es:[di.OFF_VESA_WSEG],0A000h
 	; pretend we've a granularity and window size of 64 kiB

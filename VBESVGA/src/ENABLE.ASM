@@ -114,7 +114,8 @@ bad_height	db	'Height < 200 is not allowed',13,10,'$'
 bad_depth	db	'Depth < 8 is not allowed',13,10,'$'
 bad_interval	db	'Swap-buffers interval > 55 ms is not allowed',13,10
 		db	'(Note that a value of 0 disables double buffering)',13,10,'$'
-general_fail	db	'No usable modes found with requested resolution and bit depth',13,10,'$'
+general_fail	db	'No usable modes found at all, not even "last-resort" MCGA256 mode!',13,10
+		db	'This probably means you are trying to run this driver on MDA/CGA/EGA...',13,10,'$'
 bad_hardware	db	'VESA BIOS says function not supported by current hardware configuration',13,10,'$'
 bad_mode	db	'VESA BIOS says function not supported in current mode',13,10,'$'
 real_alloc_fail	db	'Unrecoverable DOS memory allocation error during mode search',13,10,'$'
