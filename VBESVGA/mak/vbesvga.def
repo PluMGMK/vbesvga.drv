@@ -3,15 +3,14 @@
 ; display.def
 ;
 ; Copyright (c) 1991 Microsoft Corporation.  All Rights Reserved.
-; Copyright (c) 2023 PluMGMK.
+; Copyright (c) 2023, 2024, 2025 PluMGMK.
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 LIBRARY     DISPLAY
 
-DESCRIPTION 'DISPLAY : 100, 96, 96 : Multi-resolution multi-depth driver.'
+DESCRIPTION 'VBESVGA : Multi-resolution multi-depth VESA driver.'
 
-;STUB        'WINSTUB.EXE'
 EXETYPE     WINDOWS
 
 DATA        PRELOAD FIXED SINGLE
@@ -24,7 +23,6 @@ SEGMENTS
     _LINES	MOVEABLE DISCARDABLE SHARED
     _PIXEL	MOVEABLE DISCARDABLE SHARED
     _SCANLINE	MOVEABLE DISCARDABLE SHARED
-    _TEXTSTUFF	MOVEABLE DISCARDABLE SHARED
     _DIMAPS	MOVEABLE DISCARDABLE SHARED
 
 
@@ -51,7 +49,6 @@ EXPORTS
 
     DeviceBitmapBits	@19			;for device independent bitmaps
     CreateBitmap	@20
-;   DIBScreenBlt	@21
     DIBtoDevice   	@21
 
     SetPalette		@22			;palette stuff, Win 3.0
