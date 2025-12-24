@@ -1832,7 +1832,6 @@ screen_size_known:
 	jne	correct_ratio
 	; the calculation is dpHorzRes / (dpHorzSize/25.4)
 	; = dpHorzRes*254 / dpHorzSize / 10
-	int	3
 	mov	ax,bp
 	mov	dx,254
 	mul	dx
