@@ -63,7 +63,13 @@ incDevice	= 1
 	externFP GetPrivateProfileString
         externFP GetPrivateProfileInt   ; Kernel!GetProfileInt
 	externFP LoadLibrary
+	externFP FreeLibrary
 	externFP GetProcAddress
+	externFP FindResource
+	externFP LoadResource
+	externFP FreeResource
+	externFP LockResource
+	externFP GlobalUnlock
 
 ifdef PALETTES
 	externFP SetPaletteTranslate    ;in color\ega\vga\palette.asm
@@ -79,6 +85,8 @@ MAXFNAMELEN	equ	64
 OCR_ICOCUR	  =  32647
 OCR_NORMAL	  =  32512
 RT_ICON         = 3
+RT_FONTDIR      = 7
+RT_FONT         = 8
 DIFFERENCE       =   11
 RT_GROUP_ICON    =   RT_ICON + DIFFERENCE
 
@@ -140,10 +148,14 @@ interval_member	db	"SwapBuffersInterval",0
 allow3b_member	db	"Allow3ByteMode",0
 
 font_member	db	"fontsize",0
+dpi_auto	db	"auto",0
+dpi_nat		db	"nativedpi",0
 dpi_tiny	db	"tiny",0
 dpi_small	db	"small",0
 dpi_large	db	"large",0
 sysini_fontstruc	LABEL	BYTE
+SYSINI	<dpi_auto,4,0>	; detect fonts.fon size
+SYSINI	<dpi_nat,9,-1>	; detect actual screen dpi
 SYSINI	<dpi_tiny,4,DPI_TINY>
 SYSINI	<dpi_small,5,DPI_SMALL>
 SYSINI	<dpi_large,5,DPI_LARGE>
@@ -179,6 +191,7 @@ assumes cs,InitSeg
 	externNP QueryGeometry		;from vesafns.asm
 	externNP vesa_gdi_fixup		;from vesafns.asm
 	externNP physical_enable	;Enable routine
+	externNP match_dpi		;from vga.asm
 	externB  physical_device	;Device physical data
 	externB  info_table_base	;GDIInfo table
 page
@@ -506,12 +519,16 @@ enable_read_profile	PROC	NEAR
         push    ax
 	call	GetPrivateProfileString
 
-	mov	ax,DPI_SMALL			;default return value
-	mov	bx,3				;number different modes
+	xor	ax,ax				;default return value = auto
+	mov	bx,5				;number different modes
         lea     si,aszCurDrvFName
 	lea	bp,sysini_fontstruc
 	call	enable_find_substring
-        mov     dpi_size,ax
+
+	test	ax,ax				;set to auto?
+	jnz	@F				; nope, continue
+	call	enable_check_sysfontsize	; yep, detect fonts.fon size
+@@:	mov     dpi_size,ax
 
 enable_read_profile_done:
 	push	es
@@ -521,13 +538,16 @@ enable_read_profile_done:
 
         mov     si,InitSegOFFSET info_table_base
         lea     di,physical_device
-	mov	ax,windowsVersion 		;fixup GDI info table
+	mov	ax,windowsVersion
 	mov	es:[si].dpVersion,ax
         mov     ax,dpi_size
 	mov	es:[si].dpLogPixelsX,ax
         mov     es:[si].dpLogPixelsY,ax
 
 	call	vesa_gdi_fixup			;fixup GDI info table
+	; update DPI in case the fixup routine made any change:
+        mov     ax,es:[si].dpLogPixelsX
+	mov	dpi_size,ax
 
         xor     bx,bx
         mov     es,bx                   	;invalidate es before freeing
@@ -598,6 +618,122 @@ enable_read_profile_fail:
 	int	21h
 
 enable_read_profile	ENDP
+
+
+;
+;       enable_check_sysfontsize
+;
+;       This routine loads FONTS.FON, checks the DPI of its first (presumably
+;	only!) font resource, and chooses the closest DPI we can use.
+;
+;	PARMS:
+;	ds	Data
+;
+;       RETURNS:
+;       ax	DPI value to set for us (DPI_TINY, DPI_SMALL or DPI_LARGE)
+
+fonts_fon	db "FONTS.FON",0
+orig_boot_cat	db "BOOT",0
+fontdir		db "FONTDIR",0
+
+cProc	enable_check_sysfontsize,<NEAR,PUBLIC,NODATA>,<si,di>
+	localW	retval
+cBegin
+	; ; default to -1, meaning "nativedpi"
+	; mov	[retval],-1
+	mov	[retval],96
+
+	; find out who FONTS.FON is
+	lea	ax,orig_boot_cat
+        push    cs
+        push    ax
+	lea	ax,fonts_fon
+        push    cs
+        push    ax
+	push	cs				;this is the default as well
+        push    ax
+        lea     ax,aszCurDrvFName
+        push    ds
+        push    ax
+        push    MAXFNAMELEN
+	lea	ax,aszSystemIni 		;ptr to "system.ini" string
+        push    ds                              ;long ptr
+        push    ax
+	call	GetPrivateProfileString
+
+	; load it up...
+	lea	ax,aszCurDrvFName
+	cCall	LoadLibrary,<ds,ax>
+	cmp	ax,20h	; HINSTANCE_ERROR
+	jnb	@F
+	jmp	check_sysfontsize_done
+
+@@:	; find the fontdir
+	lea	dx,fontdir
+	mov	di,ax	; stash the library handle
+	; lpszType is passed as an INT, with the "selector" 0
+	cCall	FindResource,<ax,cs,dx,0,RT_FONTDIR>
+	test	ax,ax	; NULL?
+	jz	check_sysfontsize_freelib
+
+	; load it up
+	cCall	LoadResource,<di,ax>
+	test	ax,ax	; NULL?
+	jz	check_sysfontsize_freelib
+	mov	si,ax	; stash the resource handle
+
+	; lock it into memory
+	cCall	LockResource,<ax>
+	test	dx,dx
+	jz	check_sysfontsize_freeres
+	mov	es,dx
+	mov	bx,ax
+	; the ordinal of the first font resource should be at offset 2
+	mov	ax,es:[bx+2]
+	push	ax
+
+	; free the FONTDIR
+	cCall	GlobalUnlock,<si>
+	cCall	FreeResource,<si>
+
+	; now load the font itself
+	pop	ax	; get back the ordinal
+	; lpszName and Type are both passed as INTs, with the "selectors" 0
+	cCall	FindResource,<di,0,ax,0,RT_FONT>
+	test	ax,ax	; NULL?
+	jz	check_sysfontsize_freelib
+
+	; load it up
+	cCall	LoadResource,<di,ax>
+	test	ax,ax	; NULL?
+	jz	check_sysfontsize_freelib
+	mov	si,ax	; stash the resource handle
+
+	; lock it into memory
+	cCall	LockResource,<ax>
+	test	dx,dx
+	jz	check_sysfontsize_freeres
+	mov	es,dx
+	mov	bx,ax
+
+	; the version at offset 0 should be 0200h, meaning a Windows 2.00 font
+	cmp	word ptr es:[bx],0200h
+	jne	@F	; wrong version, we don't know how to check this!
+	; with this version, the X-DPI should be at offset 46h
+	mov	ax,es:[bx+46h]
+	; match it to one of our internal values
+	call	match_dpi
+	mov	[retval],ax
+
+@@:	; free the FONT
+	cCall	GlobalUnlock,<si>
+check_sysfontsize_freeres:
+	cCall	FreeResource,<si>
+check_sysfontsize_freelib:
+	cCall	FreeLibrary,<di>
+check_sysfontsize_done:
+	mov	ax,[retval]
+cEnd
 
 
 ;

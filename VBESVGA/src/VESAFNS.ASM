@@ -548,6 +548,7 @@ sEnd	PaletteSeg
 createSeg _INIT,InitSeg,word,public,CODE
 sBegin	InitSeg
 
+externNP	match_dpi		; in VGA.ASM
 externNP	init_modal_realizations	; in ROBJECT.ASM
 externNP	setup_double_buf	; in DBLBUF.ASM
 externNP	setup_dosx_bugfix	; in DOSXBFIX.ASM
@@ -1817,13 +1818,38 @@ screen_size_known:
 	mov	dx,14400
 	mul	dx
 	; QUESTION: can this overflow, and hence crash Windows on boot?
-	; ANSWER: minimum denominator in this situation is DI==480==1E0h, so we would
-	;	  need to have a situation where dpVertSize*14400 >= 1E00000h, meaning
-	;	  dpVertSize >= 2185, i.e. 2.185 metres - I'd say it's unlikely!
+	; ANSWER: minimum denominator in this situation is DI==200==0C8h
+	;	  (in last-resort mode), so we would need to have a situation
+	;	  where dpVertSize*14400 >= 0C80000h, meaning dpVertSize >= 911,
+	;	  i.e. 91.1 centimetres, or 35.8 inches.
+	;	  In 16:9 this would be a 73" screen - still seems unlikely!
 	div	di
 	mov	es:[si].dpTwpWin.ycoord,ax
 
-	; lastly, correct the pixel aspect ratio if we're using an old sub-640*480 res
+	; if user has asked for native DPI, then calculate the physical pixels
+	; per physical inch of screen
+	cmp	es:[si].dpLogPixelsX,-1
+	jne	correct_ratio
+	; the calculation is dpHorzRes / (dpHorzSize/25.4)
+	; = dpHorzRes*254 / dpHorzSize / 10
+	int	3
+	mov	ax,bp
+	mov	dx,254
+	mul	dx
+	div	bx
+	; We can divide by ten in byte mode because the highest value we allow
+	; (i.e. 120dpi) does fit inside a byte! But check this first...
+	cmp	ax,2560
+	jnb	@F	; just do the matching, it'll return 120dpi anyway!
+	mov	dl,10
+	div	dl
+	xor	ah,ah	; kill the remainder
+@@:	call	match_dpi
+	mov	es:[si].dpLogPixelsX,ax
+	mov	es:[si].dpLogPixelsY,ax
+
+correct_ratio:
+	; lastly, correct the pixel aspect ratio if using an old sub-640*480 res
 	mov	dl,byte ptr es:[si].dpAspectX
 	mov	dh,byte ptr es:[si].dpAspectY
 	mov	ax,es:[si].dpAspectXY

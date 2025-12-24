@@ -838,11 +838,33 @@ page
 	assumes es,nothing
 	externNP setmode	; in VESAFNS.ASM
 	public	farsetmode
+
 farsetmode     proc    far
 	call	setmode
 	ret
-
 farsetmode      endp
+
+
+	; take a calculated DPI value (or one from a font) in AX,
+	; find the closest DPI we support, and return it in AX
+	public	match_dpi
+match_dpi	PROC	NEAR
+	; compare with the midpoints between our set values
+	cmp	ax,(DPI_TINY + DPI_SMALL) SHR 1
+	jb	@@tiny
+	cmp	ax,(DPI_SMALL + DPI_LARGE) SHR 1
+	ja	@@large
+
+	; it's in between the midpoints, so we go SMALL
+	mov	ax,DPI_SMALL
+	ret
+@@tiny:	; it's below the lower midpoint, so we go TINY
+	mov	ax,DPI_TINY
+	ret
+@@large:; it's above the upper midpoint, so we go LARGE
+	mov	ax,DPI_LARGE
+	ret
+match_dpi	ENDP
 
 sEnd
 
