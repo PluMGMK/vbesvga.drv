@@ -158,25 +158,8 @@ SYSINI	<dac_depth_8,1,0>
 SYSINI	<dac_depth_auto,4,0FFh>
 
 PreferBank_member	db	"PreferBankedModes",0
-PreferBank_on		db	"1",0
-PreferBank_off		db	"0",0
-sysini_bankstruc       LABEL   BYTE
-SYSINI	<PreferBank_on,1,1>
-SYSINI	<PreferBank_off,1,0>
-
 GarishPalette_member	db	"GarishSystemPalette",0
-GarishPalette_on	db	"1",0
-GarishPalette_off	db	"0",0
-sysini_garishstruc     LABEL   BYTE
-SYSINI	<GarishPalette_on,1,1>
-SYSINI	<GarishPalette_off,1,0>
-
 SpecialBlit_member	db	"EnableSpecialCaseLinearBlits",0
-SpecialBlit_on		db	"1",0
-SpecialBlit_off		db	"0",0
-sysini_sblitstruc      LABEL   BYTE
-SYSINI	<SpecialBlit_on,1,1>
-SYSINI	<SpecialBlit_off,1,0>
 
 	externW ScreenSelector		; screen selector
         externW ScratchSel              ; the free selector
@@ -380,76 +363,34 @@ enable_read_profile	PROC	NEAR
 @@:	mov     Profile_read,1
 
 	lea	ax,boot_category
-        push    ds
-        push    ax
-	lea	ax,PreferBank_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,0			       ;default return value
-	mov	bx,2				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_bankstruc
-        call    enable_find_substring
-	mov	prefer_bank,ax
+	lea	bx,PreferBank_member
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+	; default to 0:
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+	test	ax,ax
+	jz	@F
+	mov	ax,1				;any non-zero value becomes 1!
+@@:	mov	prefer_bank,ax
 
 	lea	ax,boot_category
-        push    ds
-        push    ax
 	lea	ax,GarishPalette_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,0			       ;default return value
-	mov	bx,2				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_bankstruc
-        call    enable_find_substring
-	mov	garish_palette,al
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+	; default to 0:
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+	test	al,al
+	jz	@F
+	mov	al,1				;any non-zero value becomes 1!
+@@:	mov	garish_palette,al
 
 	lea	ax,boot_category
-        push    ds
-        push    ax
 	lea	ax,SpecialBlit_member
-        push    ds
-        push    ax
-	push	ds				;this is the default as well
-        push    ax
-        lea     ax,aszCurDrvFName
-        push    ds
-        push    ax
-        push    MAXFNAMELEN
-	lea	ax,aszSystemIni 		;ptr to "system.ini" string
-        push    ds                              ;long ptr
-        push    ax
-	call	GetPrivateProfileString
-
-	mov	ax,1			       ;default return value (allow)
-	mov	bx,2				;number different modes
-        lea     si,aszCurDrvFName
-	lea	bp,sysini_bankstruc
-        call    enable_find_substring
-	mov	special_blits,al
+	lea	cx,aszSystemIni 		;ptr to "system.ini" string
+	; default to 1:
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,1,ds,cx>
+	test	al,al
+	jz	@F
+	mov	al,1				;any non-zero value becomes 1!
+@@:	mov	special_blits,al
 
 	lea	ax,boot_category
         push    ds
