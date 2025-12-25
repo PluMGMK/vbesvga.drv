@@ -671,6 +671,7 @@ eti_4   endp
 ;   from external 8 bit	format to our internal formats			    ;
 ;									    ;
 ; Entry:								    ;
+;	ES:BX --> bitmap info header					    ;
 ;	ES:DI --> where	color table is					    ;
 ; Returns:								    ;
 ;	None								    ;
@@ -688,8 +689,11 @@ eti_8	proc	near
 	mov	scan_length.hi, ax	; Max dest scan	size is	< 64K
 	mov	num_pels_per_src_byte,8 ; loop max = 8 for mono
 
-        mov     cx, 256                 ; There will be 256 color table entries
-	call	create_color_table	; Create the color table to use
+	mov	cx, word ptr es:[bx.biClrUsed]
+	test	cx, cx
+	jnz	@F
+        mov     cx, 256                 ; Default = 256 color table entries
+@@:	call	create_color_table	; Create the color table to use
 
 	mov	ax, DIMapSegOFFSET copy_e8i1
 	mov	bx, DIMapSegOFFSET copy_e8i1_partial
