@@ -362,7 +362,7 @@ cBegin
 	test	ax,ax
 	jz	@F
 
-	mov	si,es:[bx.dwReserved1.lo]
+	mov	si,[si.dwReserved1.lo]
 	cCall	GlobalUnlock,<si>
 	cCall	GlobalFree,<si>
 @@:
