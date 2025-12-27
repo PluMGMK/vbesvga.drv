@@ -236,7 +236,7 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
         localB  cur_bank
 
 	localW	DstXBytes		;ClipRect.left * bytes per pixel
-	localW	CurX			;current X coord (may be negative)
+	localW	CurX_clip		;current X (maybe <0) for clip calcs
 cBegin
         cld
 
@@ -380,7 +380,7 @@ RleBltEOL:
         call    [fn_next_scan]      ; advance to next scan
         mov     scan_start,di
 	mov	ax,[DstX]
-	mov	[CurX],ax
+	mov	[CurX_clip],ax
         add     di,DstXBytes
 	jnc	@F
 	call	adv_bank
@@ -665,9 +665,10 @@ rle_init_success:
 	sub	ax,[scan_start]
 	mov	[DstXBytes],ax
 
-	; initialize CurX
+	; initialize CurX for clipping (may or may not be needed, but
+	; it's as easy to just do it as it would be to check!)
 	mov	ax,[DstX]
-	mov	[CurX],ax
+	mov	[CurX_clip],ax
 
         lds     si,lpBits
         lea     bx,color_xlat
@@ -816,12 +817,14 @@ init_clip_clipped:
 
 init_clip_null:
         mov     ax,DstX
+	mov	dx,ax
 	test	ax,ax
 	jns	@F
 	xor	ax,ax	; DO NOT INCLUDE negative coordinates!
+        or      BltFlags, RLE_CLIPPED
 @@:     mov     ClipRect.left,ax
-        add     ax,xExt
-        mov     ClipRect.right,ax
+        add     dx,xExt
+        mov     ClipRect.right,dx
 
         mov     ax,DstY
         inc     ax
@@ -829,6 +832,7 @@ init_clip_null:
         sub     ax,yExt
 	jnc	@F
 	xor	ax,ax	; DO NOT INCLUDE negative coordinates!
+        or      BltFlags, RLE_CLIPPED
 @@:     mov     ClipRect.top,ax
         ret
 
@@ -970,7 +974,6 @@ decode_abs_8_clip_huge:
 
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
 
 @@:     add     si,ax
         jnc     @f
@@ -995,7 +998,6 @@ decode_abs_8_clip:
 
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
         add     si,ax
         jcxz    @f
         call    decode_abs_8
@@ -1013,7 +1015,6 @@ decode_abs_8_huge:
 
 decode_abs_8:
 decode_abs_8_loop:
-	add	[CurX],cx
         REPMOVSB
         ret
 
@@ -1038,7 +1039,6 @@ decode_abs_8_clip_xlat_huge:
 
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
 
 @@:     add     si,ax
         jnc     @f
@@ -1062,7 +1062,6 @@ decode_abs_8_clip_xlat:
         jnc     decode_abs_8_xlat
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
         add     si,ax
         jcxz    @f
         call    decode_abs_8_xlat
@@ -1147,7 +1146,6 @@ decode_abs_4_clip:
 
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
 
         shr     ax,1                ; test for a odd nibble clip!
         jnc     decode_abs_4_clip_even
@@ -1305,7 +1303,6 @@ decode_rle_8_clip:
         call    clip_rle
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
 	mov	bx,dx	; save second clip retval in BX
         pop     ax
 	pop	dx
@@ -1366,7 +1363,6 @@ decode_rle_4_clip:
 
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	add	[CurX],ax
 
         pop     ax
         jnc     @f
@@ -1488,13 +1484,18 @@ clip_rle  proc near
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;   check the span for being totaly clipped (in X) region 2 or 4
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
-	mov	ax,[CurX]
+	mov	ax,[CurX_clip]
 
         cmp     ax,ClipRect.right       ; check for region-2
+	; update CurX immediately, for the next time clip_rle is called
+	pushf
+        add     ax,cx           
+	mov	[CurX_clip],ax
+	popf
+	; act on the check done above
         jge     clip_rle_invisible
 
-        add     ax,cx                   ; check for region-4
-        cmp     ax,ClipRect.left
+        cmp     ax,ClipRect.left        ; check for region-4
         jl      clip_rle_invisible
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -1540,13 +1541,11 @@ clip_rle  endp
 
 ; advance the pointer ES:DI by AX *pixels* and set CF on wrap
 adv_dest1 proc near
-	add	[CurX],ax
 	add	di,ax
 	ret
 adv_dest1 endp
 
 adv_dest2 proc near
-	add	[CurX],ax
 	shl	ax,1
 	add	di,ax
 	; need to restore AX and also preserve CF
@@ -1556,7 +1555,6 @@ adv_dest2 proc near
 adv_dest2 endp
 
 adv_dest3 proc near
-	add	[CurX],ax
 	; TODO: is there a way to do this without the stack?
 	push	dx
 	mov	dx,ax
@@ -1569,7 +1567,6 @@ adv_dest3 proc near
 adv_dest3 endp
 
 adv_dest4 proc near
-	add	[CurX],ax
 	shl	ax,2
 	add	di,ax
 	; need to restore AX and also preserve CF
@@ -1645,19 +1642,16 @@ adv_bank	endp
         assumes es,nothing
 
 stos_colour1	proc near
-	inc	[CurX]
 	stosb
 	ret
 stos_colour1	endp
 
 stos_colour2	proc near
-	inc	[CurX]
 	stosw
 	ret
 stos_colour2	endp
 
 stos_colour3	proc near
-	inc	[CurX]
 	stosw
 	mov	al,dl
 	stosb
@@ -1665,7 +1659,6 @@ stos_colour3	proc near
 stos_colour3	endp
 
 stos_colour4	proc near
-	inc	[CurX]
 	stosw
 	mov	ax,dx
 	stosw
@@ -1682,7 +1675,6 @@ stos_colour_checked	proc near
 stos_colour_checked	endp
 
 stos_colour3_checked	proc near
-	inc	[CurX]
 	; this case is a bit more complicated than the others because
 	; the pixel itself could cross a bank boundary!
 	cmp	di,-3		; will the pixel cross the bank end?
@@ -1741,13 +1733,11 @@ stos_colour3_checked	endp
         assumes es,nothing
 
 rep_stos_colour1	proc near
-	add	[CurX],cx
 	REPSTOSB
 	ret
 rep_stos_colour1	endp
 
 rep_stos_colour2	proc near
-	add	[CurX],cx
 	; no need to check alignment because a 16-bit bitmap
 	; will always have pixels on 16-bit boundaries
 	rep	stosw
@@ -1755,7 +1745,6 @@ rep_stos_colour2	proc near
 rep_stos_colour2	endp
 
 rep_stos_colour3	proc near
-	add	[CurX],cx
 	jcxz	@B	; go back to the ret above
 @@:	stosw
 	xchg	al,dl
@@ -1766,7 +1755,6 @@ rep_stos_colour3	proc near
 rep_stos_colour3	endp
 
 rep_stos_colour4_286	proc near
-	add	[CurX],cx
 	jcxz	@B	; go back to the ret above
 @@:	stosw
 	xchg	ax,dx
@@ -1777,7 +1765,6 @@ rep_stos_colour4_286	proc near
 rep_stos_colour4_286	endp
 
 rep_stos_colour4_386	proc near
-	add	[CurX],cx
 	jcxz	@B	; go back to the ret above
 	.386
 	ror	eax,10h
@@ -1830,7 +1817,6 @@ rep_stos_colour4_386	endp
 rep_stos_colpair1	proc near
 	cmp	al,bl	; colours the same?
 	je	rep_stos_colour1
-	add	[CurX],cx
 
 	mov	ah,bl
 	test	di,1	; check alignment
@@ -1849,7 +1835,6 @@ rep_stos_colpair1	endp
 rep_stos_colpair2_286	proc near
 	cmp	ax,bx	; colours the same?
 	je	rep_stos_colour2
-	add	[CurX],cx
 
 	mov	dx,bx
 	shr	cx,1
@@ -1864,7 +1849,6 @@ rep_stos_colpair2_286	endp
 rep_stos_colpair2_386	proc near
 	cmp	ax,bx	; colours the same?
 	je	rep_stos_colour2
-	add	[CurX],cx
 
 	mov	dx,bx
 	shr	cx,1
@@ -1885,8 +1869,7 @@ rep_stos_colpair4_286	proc near
 	cmp	dx,si
 	je	rep_stos_colour4_286
 
-@@:	add	[CurX],cx
-	; two STOSWs per colour!
+@@:	; two STOSWs per colour!
 	shl	cx,1
 
 @@:	stosw
@@ -1905,8 +1888,7 @@ rep_stos_colpair4_386	proc near
 	cmp	dx,si
 	je	rep_stos_colour4_386
 
-@@:	add	[CurX],cx
-	.386
+@@:	.386
 	ror	eax,10h
 	xchg	ax,dx	; stash the upper half of EAX in DX
 	ror	eax,10h
@@ -1929,7 +1911,6 @@ rep_stos_colpair4_386	proc near
 rep_stos_colpair4_386	endp
 
 rep_stos_colpair3	proc near
-	add	[CurX],cx
 	; We want to store DL:AX followed by SIL:BX (SIL is not a thing on IA-32)...
 	; Let's turn it into BX:DX:AX so it can be a nice stream of STOSWs
 	mov	dh,bl
@@ -2013,11 +1994,9 @@ rep_stos_colpair_table	label word
 
 rep_stos_colour_checked	proc near
 	push	di
-	push	[CurX]
 	xchg	cx,ax
 	call	[fn_adv_dest]	; NOT checked: we only want to know CF
 	xchg	cx,ax
-	pop	[CurX]
 	pop	di
 	jc	@F
 	jmp	[fn_rep_stos]
@@ -2076,11 +2055,9 @@ rep_stos_colour_checked	endp
 
 rep_stos_colpair_checked	proc near
 	push	di
-	push	[CurX]
 	xchg	cx,ax
 	call	[fn_adv_dest]	; NOT checked: we only want to know CF
 	xchg	cx,ax
-	pop	[CurX]
 	pop	di
 	jc	@F
 	jmp	[fn_rep_stos_pair]
