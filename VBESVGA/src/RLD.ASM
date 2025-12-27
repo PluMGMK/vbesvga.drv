@@ -213,7 +213,7 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
         localW  fn_decode_rle           ; function to output a solid scan
         localW  fn_next_scan            ; function to jump in Y
 	localW	fn_stos			; function to store one pixel of xlated colour
-	localW	fn_adv_dest		; function to advance by AX pixels
+	localW	fn_adv_dest		; function to advance by CX pixels
 	localW	fn_rep_stos		; function to store CX pixels of xlated colours
 	localW	fn_rep_stos_pair	; function to store CX pixels of two xlated colours
 
@@ -296,9 +296,10 @@ RleBltEncodedRun:
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 RleBltEscape:
         cmp     ah,al
-        je      RleBltEOL
+	jne	@F
+        jmp     RleBltEOL
 
-        inc     al
+@@:     inc     al
         cmp     ah,al
 	jne	@F
         jmp     RleBltEOF
@@ -338,22 +339,38 @@ RleBltDelta:
         jnz     RleBltDeltaXY
 
 RleBltDeltaX:
-        call	[fn_adv_dest_checked]
+        test    BltFlags, RLE_CLIPPED
+	mov	cx,ax
+	jz	@F
+	; Clip the delta too - we increase CurX by the full delta, but
+	; clip the adjustment to the actual destination pointer
+	call	clip_rle
+@@:     call	[fn_adv_dest_checked]
         jmp     short RleBltNext
 
 RleBltDeltaXY:
-        mov     cl,ah
-        xor     ch,ch               ; cx = deltaY
-        mov     ah,ch               ; ax = deltaX
-	; NOT checked since we're not actually going to draw here!
+        mov     cl,al
+        xor     ch,ch               ; cx = deltaX
+        mov     al,ah
+        mov     ah,ch               ; ax = deltaY
+
+        test    BltFlags, RLE_CLIPPED
+	jz	@F
+	; Clip the delta too - we increase CurX by the full delta, but
+	; clip the adjustment to the actual destination pointer
+	push	ax
+	call	clip_rle
+	pop	ax
+@@:	; NOT checked since we're not actually going to draw here!
         call	[fn_adv_dest]       ; adjust curX
 ;
         mov     dx,DstY
-        sub     dx,cx               ; adjust curY
+        sub     dx,ax               ; adjust curY
         cmp     dx,ClipRect.top
         mov     DstY,dx
         jl      RleBltEOF
 ;
+	mov	cx,ax
         mov     ax,di
         sub     ax,scan_start       ; ax = curX
         sub     di,ax               ; di = scan_start
@@ -659,8 +676,8 @@ rle_init_success:
         mov     scan_start,di       ; remember the start of scan
 
 	; calculate offset of starting byte from beginning of scanline
-	mov	ax,[ClipRect.left]
-	call	[adv_dest_checked]
+	mov	cx,[ClipRect.left]
+	call	[fn_adv_dest_checked]
 	mov	ax,di
 	sub	ax,[scan_start]
 	mov	[DstXBytes],ax
@@ -983,9 +1000,7 @@ decode_abs_8_clip_huge:
 
 @@:     jcxz    @f
         call    decode_abs_8_huge
-	mov	ax,dx
-        call	[fn_adv_dest_checked]
-        add     si,ax
+        add     si,dx
         jnc     @f
         mov     ax,ds
         add     ax,__AHINCR
@@ -1001,9 +1016,7 @@ decode_abs_8_clip:
         add     si,ax
         jcxz    @f
         call    decode_abs_8
-        mov     ax,dx
-        call	[fn_adv_dest_checked]
-        add     si,ax
+        add     si,dx
 @@:     ret
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -1048,9 +1061,7 @@ decode_abs_8_clip_xlat_huge:
 
 @@:     jcxz    @f
         call    decode_abs_8_xlat_huge
-	mov	ax,dx
-        call	[fn_adv_dest_checked]
-        add     si,ax
+        add     si,dx
         jnc     @f
         mov     ax,ds
         add     ax,__AHINCR
@@ -1065,9 +1076,7 @@ decode_abs_8_clip_xlat:
         add     si,ax
         jcxz    @f
         call    decode_abs_8_xlat
-	mov	ax,dx
-        call	[fn_adv_dest_checked]; update dest
-        add     si,ax
+        add     si,dx
 @@:     ret
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -1181,8 +1190,6 @@ decode_abs_4_clip_out:
         adc     ax,si
         push    ax
         call    decode_abs_4
-	mov	ax,dx
-        call	[fn_adv_dest_checked]
         mov     ax,si
         pop     si
         cmp     si,ax
@@ -1297,21 +1304,16 @@ decode_rle8  proc near
 decode_rle_8_clip_xlat:
         call	load_xlated_colour
 decode_rle_8_clip:
-	push	bx
 	push	dx
         push    ax
         call    clip_rle
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
-	mov	bx,dx	; save second clip retval in BX
         pop     ax
 	pop	dx
         jcxz    @f
         call	[fn_rep_stos_checked]
-	mov	ax,bx
-        call	[fn_adv_dest_checked]
-@@:	pop	bx
-	ret
+@@:	ret
 
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
@@ -1369,8 +1371,6 @@ decode_rle_4_clip:
         rol     al,4
 @@:     jcxz    @f
         call    decode_rle_4_xlat
-	mov	ax,dx
-        call	[fn_adv_dest_checked]
 @@:     ret
 
 decode_rle_4_not_clipped:
@@ -1539,40 +1539,40 @@ clip_rle_clipped:
 
 clip_rle  endp
 
-; advance the pointer ES:DI by AX *pixels* and set CF on wrap
+; advance the pointer ES:DI by CX *pixels* and set CF on wrap
 adv_dest1 proc near
-	add	di,ax
+	add	di,cx
 	ret
 adv_dest1 endp
 
 adv_dest2 proc near
-	shl	ax,1
-	add	di,ax
-	; need to restore AX and also preserve CF
-	adc	al,0
-	shr	ax,1
+	shl	cx,1
+	add	di,cx
+	; need to restore CX and also preserve CF
+	adc	cl,0
+	shr	cx,1
 	ret
 adv_dest2 endp
 
 adv_dest3 proc near
 	; TODO: is there a way to do this without the stack?
-	push	dx
-	mov	dx,ax
-	shl	ax,1
-	add	ax,dx
-	add	di,ax
-	mov	ax,dx
-	pop	dx
+	push	ax
+	mov	ax,cx
+	shl	cx,1
+	add	cx,ax
+	add	di,cx
+	mov	cx,ax
+	pop	ax
 	ret
 adv_dest3 endp
 
 adv_dest4 proc near
-	shl	ax,2
-	add	di,ax
-	; need to restore AX and also preserve CF
-	adc	al,1	; adds 1 if NC, 2 if CY
-	shr	ax,1	; if we added 1, we get rid of it here
-	shr	ax,1	; if we added 2, it sets CF here
+	shl	cx,2
+	add	di,cx
+	; need to restore CX and also preserve CF
+	adc	cl,1	; adds 1 if NC, 2 if CY
+	shr	cx,1	; if we added 1, we get rid of it here
+	shr	cx,1	; if we added 2, it sets CF here
 	ret
 adv_dest4 endp
 
@@ -1994,9 +1994,7 @@ rep_stos_colpair_table	label word
 
 rep_stos_colour_checked	proc near
 	push	di
-	xchg	cx,ax
 	call	[fn_adv_dest]	; NOT checked: we only want to know CF
-	xchg	cx,ax
 	pop	di
 	jc	@F
 	jmp	[fn_rep_stos]
@@ -2055,9 +2053,7 @@ rep_stos_colour_checked	endp
 
 rep_stos_colpair_checked	proc near
 	push	di
-	xchg	cx,ax
 	call	[fn_adv_dest]	; NOT checked: we only want to know CF
-	xchg	cx,ax
 	pop	di
 	jc	@F
 	jmp	[fn_rep_stos_pair]
