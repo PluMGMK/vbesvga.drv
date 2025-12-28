@@ -492,7 +492,7 @@ eti_1	proc	near
 eti_1_have_proc:
 	mov	full_byte_proc, dx
 	mov	partial_byte_proc, bx	; Might	need this for seg boundaries
-        mov     cx, 2                   ; There will be 16 color table entries
+        mov     cx, 2                   ; There will be 2 color table entries
         call    create_color_table      ; Create the color table to use
 
 ; Whenever we allocated	a scanline (or each scan of a color
@@ -570,7 +570,15 @@ eti_4	proc	near
 	mov	scan_length.hi, ax	      ; Max dest scan size is < 64K
 	mov	mono_shift_align_count,ax
 ;
-        mov     cx, 16                  ; There will be 16 color table entries
+	mov	cx, word ptr es:[bx.biClrUsed]
+	; need CX to be between 1 and 16 inclusive, and the default is 16,
+	; so decrement it and make sure upper 3 nibbles are zero - if not, make
+	; lower nibble = 0Fh
+	dec	cx
+	test	cx, 0FFF0h
+	jz	@F
+        mov     cx, 15                  ; Default = 16 color table entries
+@@:	inc	cx
 	call	create_color_table	; Create the color table to use
 
 	mov	ax, DIMapSegOFFSET copy_e4i1
@@ -690,10 +698,15 @@ eti_8	proc	near
 	mov	num_pels_per_src_byte,8 ; loop max = 8 for mono
 
 	mov	cx, word ptr es:[bx.biClrUsed]
-	test	cx, cx
-	jnz	@F
-        mov     cx, 256                 ; Default = 256 color table entries
-@@:	call	create_color_table	; Create the color table to use
+	; need CX to be between 1 and 256 inclusive, and the default is 256,
+	; so decrement it and make sure upper byte is zero - if not, make
+	; lower byte = 0FFh
+	dec	cx
+	test	ch, ch
+	jz	@F
+        mov     cx, 255                 ; Default = 256 color table entries
+@@:	inc	cx
+	call	create_color_table	; Create the color table to use
 
 	mov	ax, DIMapSegOFFSET copy_e8i1
 	mov	bx, DIMapSegOFFSET copy_e8i1_partial
