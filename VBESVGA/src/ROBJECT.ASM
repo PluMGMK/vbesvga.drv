@@ -69,7 +69,6 @@ assumes cs,Code
         externNP ipc_to_rgb             ; and vice versa
         externA  BW_THRESHOLD           ;Where black becomes white
 	externW _cstods
-	externW	ColourFormat_CS		;in VESAFNS.ASM
 	externB	PaddingBits		;in VESAFNS.ASM
 	externB	??BigFontFlags
 ;

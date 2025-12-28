@@ -83,7 +83,11 @@ common_cursor_set	PROC	NEAR
 	rep	movsw
 	mov	dh,CURSOR_WIDTH*CURSOR_HEIGHT/8	;# bytes in AND mask
 
+	cmp	byte ptr es:swcursor.csColor[1],1
+	ja	swcursor_expand_colour
+
 swcursor_expand_loop:
+	; mono cursor: XOR mask is 1bpp, so it's the same size as the AND mask
 	mov	ah,[si + CURSOR_WIDTH*CURSOR_HEIGHT/8]
 	lodsb
 	mov	bx,ax
@@ -106,6 +110,37 @@ pxbytes label	word
 
 	dec	dh
 	jnz	swcursor_expand_loop
+        push    es
+        pop     ds
+	ret
+
+swcursor_expand_colour:
+	; colour cursor: AND mask is 1bpp but XOR mask is full colour
+	; need to intersperse them carefully
+	mov	bx,si
+	lea	si,[si + CURSOR_WIDTH*CURSOR_HEIGHT/8]
+swcursor_colour_loop:
+	; load next mono byte from BX
+	mov	ah,[bx]
+	inc	bx
+
+	mov	dl,8
+swcursor_colour_nextbit:
+	shl	ah,1
+	sbb	al,al
+
+	mov	cx,[pxbytes]
+@@:	; store expanded mono byte from BX
+	stosb
+	; then colour byte from SI
+	movsb
+	loop	@B
+
+	dec	dl
+	jnz	swcursor_colour_nextbit
+
+	dec	dh
+	jnz	swcursor_colour_loop
         push    es
         pop     ds
 	ret

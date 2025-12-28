@@ -568,7 +568,9 @@ RC_BIGFONT      equ 0000010000000000b   ; can do fonts > 64k
 	errnz	dpDCManage-dpLogPixelsY-2
 
 C1_TRANSPARENT  equ     0001h           ;driver supports transparency in BitBlt
-        dw      C1_TRANSPARENT          ;CAPS1
+C1_COLORCURSOR  equ 0000100000000000b   ; Supports color-cursors and async SetCursor
+					;CAPS1
+        dw      C1_TRANSPARENT+C1_COLORCURSOR
 
 	dw	0			;Reserved fields
 	dw	0
