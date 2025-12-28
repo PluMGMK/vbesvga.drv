@@ -14,6 +14,10 @@
 .286
 FILE_CURSOR	EQU	1
 
+ifdef	DEBUGAUX
+PUBDEFS	equ	1
+endif
+
 include cmacros.inc
 include macros.mac
 include windefs.inc
@@ -56,10 +60,14 @@ exclude_rect_left	DW	0
 exclude_rect_right	DW	0
 exclude_rect_top	DW	0
 exclude_rect_bottom	DW	0
-cursor_data		DW	(SIZE cursorShape + 100H) DUP(?)
+cursor_data		LABEL	WORD
+cursor_hdr		DB	(SIZE cursorShape) DUP(?)
+; the AND mask is always one bit per pixel, packed
+cursor_andmask		DB	(CURSOR_HEIGHT * CURSOR_WBYTEMNO) DUP (?)
+; the XOR mask can be colour, so allocate up to four BYTES per pixel
+cursor_xormask		DB	(CURSOR_HEIGHT * CURSOR_WBYTECLR) DUP (?)
 cursor_state_lock	DW	0
 saved_bank_select	DB	0
-work_buf		DB	(256 + SIZE cursorShape) DUP(0)
 cursor_funcs	DW	swcursor_set, swcursor_move, swcursor_check
 		DW	swcursor_off, swcursor_exclude, swcursor_unexclude
 
@@ -78,6 +86,7 @@ sBegin	Code
 	assumes cs,Code
 	assumes ds,Data
 
+externW	pxbytes				;lives in SWCURS.ASM, set in VESAFNS.ASM
 
 ;
 ;	SetCursor	- change cursor shape
@@ -102,8 +111,7 @@ SetCursor_locally:
 	or	ax,si
 	je	SetCursor_Busy
 	lea	di,cursor_data
-	mov	cx,(SIZE cursorShape + 100H) / 2
-	rep	movsw
+	call	cursor_sanitize			;convert to internal format
 	or	es:cursor_flags,LOCAL_LOAD + YES_CURSOR
 	jmp	SetCursor_Busy
 
@@ -133,7 +141,25 @@ SetCursor_OldXY:
 	mov	exclude_global,0
         or      cursor_flags,YES_CURSOR
 
-	call	cursor_funcs.CURSFUNC_SET	;pass cursor info to submodule
+	call	cursor_check_sane		;check if we need to sanitize
+	jz	@F
+
+	; need to sanitize the cursor before passing it in - swap segs...
+	push	es
+	push	ds
+	pop	es
+	pop	ds
+	; place sanitized cursor in our internal buffer:
+	lea	di,cursor_data
+	push	di
+	call	cursor_sanitize			;convert to internal format
+	; now point the submodule function at that buffer instead:
+	pop	si
+	; now we need DS == ES == Data :3
+	push	es
+	pop	ds
+
+@@:	call	cursor_funcs.CURSFUNC_SET	;pass cursor info to submodule
 
 SetCursor_Exit:
 	mov	screen_busy,1
@@ -480,6 +506,223 @@ cursor_kludge_done:
 	ret
 
 cursor_kludge	ENDP
+
+
+;	cursor_check_sane
+;
+;	This routine checks if a cursor is the right size, and returns ZF set
+;	if so, clear if not. If ZF clear, then cursor_sanitize needs to be run
+;	before the data can be used!
+;
+;	PARMS:
+;	es:si	external cursor
+
+cursor_check_sane	PROC	NEAR
+	assumes	ds,nothing
+	assumes	es,nothing
+
+	cmp	es:[si.csHeight],CURSOR_HEIGHT
+	jne	@F
+	cmp	es:[si.csWidth],CURSOR_WIDTH
+@@:	ret
+cursor_check_sane	ENDP
+
+;	cursor_sanitize
+;
+;	This routine converts an external mono or colour cursor of arbitrary
+;	size to our internal 32*32, truncating if necessary
+;
+;	PARMS:
+;	ds:si	external cursor
+;	es:di	destination
+
+?_pub	cursor_sanitize
+cursor_sanitize	PROC	NEAR
+	assumes	ds,nothing
+	assumes	es,nothing
+
+	push	bp	; we will use this as an inner-loop counter
+
+	cld
+	; copy in the header
+	mov	cx,(SIZE cursorShape) SHR 1
+	rep	movsw
+
+	; check whether we're sanitizing a mono or colour cursor
+	cmp	es:[di-(SIZE cursorShape)].csColor,0101h
+	je	set_width_bytes_mono
+	mov	bx,[pxbytes]
+	; multiply by cursor width to get width in bytes:
+	mov	cl,5
+	shl	bx,cl
+.errnz	(CURSOR_WIDTH - (1 SHL 5))
+	jmp	short fix_width_bytes
+set_width_bytes_mono:
+	mov	bx,CURSOR_WBYTEMNO
+fix_width_bytes:
+	xchg	bx,es:[di-(SIZE cursorShape)].csWidthBytes
+
+	; regularize the size
+	mov	cx,CURSOR_HEIGHT
+	mov	dx,CURSOR_WIDTH
+	xchg	cx,es:[di-(SIZE cursorShape)].csHeight
+	xchg	dx,es:[di-(SIZE cursorShape)].csWidth
+
+	; regularize the hotspot (in case they gave us a cursor that's too big!)
+	cmp	es:[di-(SIZE cursorShape)].csHotX,CURSOR_WIDTH
+	jna	@F
+	mov	es:[di-(SIZE cursorShape)].csHotX,CURSOR_WIDTH
+
+@@:	cmp	es:[di-(SIZE cursorShape)].csHotY,CURSOR_HEIGHT
+	jna	@F
+	mov	es:[di-(SIZE cursorShape)].csHotY,CURSOR_HEIGHT
+
+@@:	; at this point, CX is the number of rows of cursor data, and we have
+	; to copy this many rows of 1bpp AND mask.
+	push	cx
+	cmp	cx,CURSOR_HEIGHT
+	jbe	@F
+	mov	cx,CURSOR_HEIGHT
+
+@@:	; set 0FFh so we pad the AND mask with ones
+	mov	al,0FFh
+
+and_mask_loop:
+	mov	bp,CURSOR_WIDTH
+	cmp	dx,bp
+	jae	@F	; if cursor width correct or too wide, go copy 32 cols
+	mov	bp,dx	; if too narrow, only copy as many cols as given
+@@:	sar	bp,3	; convert to mono bytes
+	xchg	bp,cx	; use CX for the actual REP instruction
+	rep	movsb
+	mov	cx,bp	; get back outer loop counter
+	; now check if we've to skip any bytes in src or dest
+	mov	bp,dx
+	sub	bp,CURSOR_WIDTH
+	loope	and_mask_loop
+	je	and_mask_copy_done
+
+	ja	and_mask_skip_src
+	; BP negative --> we need to pad -BP pixels in the destination with ones
+	neg	bp
+	sar	bp,3	; convert to mono bytes
+	xchg	bp,cx	; use CX for the actual REP instruction
+	rep	stosb
+	mov	cx,bp	; get back outer loop counter
+	jcxz	and_mask_copy_done
+	jmp	short and_mask_loop
+and_mask_skip_src:
+	; BP positive --> we need to skip +BP pixels in the source
+	sar	bp,3	; convert to mono bytes
+	lea	si,[bp+si]
+	jcxz	and_mask_copy_done
+	jmp	short and_mask_loop
+
+and_mask_copy_done:
+	pop	cx
+	; now check if we've to skip any rows in src or dest
+	mov	bp,cx
+	sub	bp,CURSOR_HEIGHT
+	je	and_mask_done
+
+	ja	and_mask_skip_src_rows
+	; BP negative --> we need to pad -BP rows in the destination with ones
+	neg	bp
+	xchg	bp,cx	; use CX for the actual REP instruction
+	shl	cx,5-3	; convert to width of mono row in bytes
+.errnz	(CURSOR_WBYTEMNO - (1 SHL (5-3)))
+	rep	stosb
+	mov	cx,bp	; get back outer loop counter
+	jmp	short and_mask_done
+
+and_mask_skip_src_rows:
+	; BP positive --> we need to skip +BP rows in the source
+	push	dx
+	xchg	bp,cx	; use CX for the actual LOOP instruction
+	shr	dx,3	; convert to mono bytes
+@@:	add	si,dx
+	loop	@B
+	mov	cx,bp	; get back outer loop counter
+	pop	dx
+
+and_mask_done:
+	; Now the XOR mask. If it's mono, then we basically do the exact same
+	; thing again, whereas if it's colour things are a bit different...
+	inc	al			; make it 0 if it was 0FFh
+	jnz	cursor_sanitize_done	; if it was already 0, we're done
+
+	push	cx
+	cmp	cx,CURSOR_HEIGHT
+	jbe	@F
+	mov	cx,CURSOR_HEIGHT
+
+@@:	; if it's mono, then widthbytes (== BX) < width (== DX)
+	cmp	bx,dx
+	jb	and_mask_loop		; go do the same thing we did before!
+
+xor_mask_loop:
+	mov	ax,CURSOR_WIDTH
+	cmp	dx,ax
+	jae	@F	; if cursor width correct or too wide, go copy 32 cols
+	mov	ax,dx	; if too narrow, only copy as many cols as given
+@@:	mov	ah,byte ptr pxbytes[0]
+	mul	ah	; convert AX to colour bytes
+	xchg	ax,cx	; use CX for the actual REP instruction
+	rep	movsb
+	mov	cx,ax	; get back outer loop counter
+	; now check if we've to skip any bytes in src or dest
+	mov	ax,dx
+	sub	ax,CURSOR_WIDTH
+	loope	xor_mask_loop
+	je	xor_mask_copy_done
+
+	ja	xor_mask_skip_src
+	; AX negative --> we need to pad -AX pixels in dest with black
+	neg	ax
+	mov	ah,byte ptr pxbytes[0]
+	mul	ah	; convert AX to colour bytes
+	mov	bp,cx	; save outer loop counter
+	mov	cx,ax	; use CX for the actual REP instruction
+	xor	al,al	; zero - black
+	rep	stosb
+	mov	cx,bp	; get back outer loop counter
+	jcxz	xor_mask_copy_done
+	jmp	short xor_mask_loop
+xor_mask_skip_src:
+	; AX positive --> we need to skip +AX pixels in the source
+	mov	bp,ax
+	mov	ax,cx	; save outer loop counter
+	mov	cx,[pxbytes]
+@@:	lea	si,[bp+si]
+	loop	@B
+	mov	cx,ax	; get back outer loop counter
+	jcxz	xor_mask_copy_done
+	jmp	short xor_mask_loop
+
+xor_mask_copy_done:
+	pop	cx
+	; now check if we've to skip any rows in src or dest
+	mov	ax,cx
+	sub	ax,CURSOR_HEIGHT
+	; we're done with the source, so we don't bother to skip rows in it -
+	; hence done if **above or** equal!
+	jae	cursor_sanitize_done
+
+	; AX negative --> we need to pad -AX rows in the destination with black
+	neg	ax
+	mov	ah,byte ptr pxbytes[0]
+	mul	ah	; convert AX to colour bytes
+	xchg	ax,cx	; use CX for the actual REP instruction
+	shl	cx,5	; convert to width of row in bytes
+.errnz	(CURSOR_WIDTH - (1 SHL 5))
+	rep	stosb
+	mov	cx,ax	; get back outer loop counter
+
+cursor_sanitize_done:
+	pop	bp
+	ret
+
+cursor_sanitize	ENDP
 
 sEnd    Code
 

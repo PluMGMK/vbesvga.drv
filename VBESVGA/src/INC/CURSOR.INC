@@ -11,7 +11,6 @@
 
 
 CUR_HEIGHT	equ	32			;Height of cursor/icon
-MAX_BUF_HEIGHT  equ     64                      ;Number of scans in work buffer
 
 CUR_ICON_WIDTH	equ	4			;Width in bytes of cursor/icon
 SAVE_WIDTH	equ	CUR_ICON_WIDTH+1	;Width of save area
@@ -34,6 +33,8 @@ LOCAL_LOAD	EQU	00001000B
 
 CURSOR_HEIGHT	EQU	20H
 CURSOR_WIDTH	EQU	20H
+CURSOR_WBYTEMNO	EQU	CURSOR_WIDTH SHR 3	;Mono -> 1 BIT per px
+CURSOR_WBYTECLR	EQU	CURSOR_WIDTH SHL 2	;Colour -> up to 4 BYTES per px
 
 IFNDEF	FILE_CURSOR
 	EXTRN	exclude:NEAR
