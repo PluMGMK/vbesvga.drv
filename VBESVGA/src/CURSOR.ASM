@@ -48,6 +48,8 @@ PUBLIC	cursor_xcoord, cursor_ycoord
 PUBLIC	cursor_xdraw, cursor_ydraw
 PUBLIC  screen_busy
 
+; it's a bit confusing: screen_busy==1 means we're NOT busy, we can mess with
+; the cursor!
 screen_busy		DB	1,0
 cursor_xcoord		DW	0
 cursor_ycoord		DW	0
@@ -107,16 +109,17 @@ SetCursor_locally:
 	pop	es
 	and	cursor_flags,NOT YES_CURSOR
         lds     si,lp_cursor
+	lea	di,cursor_data
 	mov	ax,ds
 	or	ax,si
 	je	SetCursor_Busy
-	lea	di,cursor_data
 	call	cursor_sanitize			;convert to internal format
 	or	es:cursor_flags,LOCAL_LOAD + YES_CURSOR
 	jmp	SetCursor_Busy
 
 SetCursor_enabled:
-	sub	cx,cx				;check for screen busy and
+	sub	ax,ax				;prepare to return zero (fail)
+	mov	cx,ax				;check for screen busy and
 	xchg	screen_busy,cl			; prevent reentrance
 	jcxz	SetCursor_Busy
 
@@ -162,7 +165,8 @@ SetCursor_OldXY:
 @@:	call	cursor_funcs.CURSFUNC_SET	;pass cursor info to submodule
 
 SetCursor_Exit:
-	mov	screen_busy,1
+	mov	ax,1				;return success
+	mov	screen_busy,al
 
 SetCursor_Busy:
 
