@@ -1474,10 +1474,14 @@ ce24i1p_save_byte:
 	ret
 
 ce24i1p_next_seg:
+	add	cl, 2			; ensure CL > 1 for first two calls!
+
 	call	load_with_seg_check	; load a byte with segment test
 	xchg	al, dl
+	dec	cl
 	call	load_with_seg_check	; load the next	byte
 	xchg	al, dh
+	dec	cl
 	call	load_with_seg_check	; the last 8 of 24 bits
 	xchg	dx, ax
 	jmp	ce24i1p_have_source
@@ -1945,9 +1949,9 @@ copy_e24i8	endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;
-; copy_e24i8_partial								     ;
+; copy_e24i8_partial							     ;
 ;									     ;
-;   copy external 24 bit RGB to	internal one byte per pixel                  ;
+;   copy external 24 bit RGB to	internal X bytes per pixel                   ;
 ;									     ;
 ;   The	source is copied to all	four planes of the destination,	with	     ;
 ;   color conversion via the actual RGB	triplet.			     ;
@@ -1957,7 +1961,7 @@ page
 ; Entry:								     ;
 ;	DS:SI --> source						     ;
 ;	ES:DI --> destination						     ;
-;	CX     =  number of destination	bytes to xlate			     ;
+;	CX     =  number of pixels to xlate				     ;
 ; Returns:								     ;
 ;	DS:SI --> next source byte					     ;
 ;----------------------------------------------------------------------------;
@@ -1968,6 +1972,13 @@ page
         ?_pub	copy_e24i8_partial
 copy_e24i8_partial	proc near
 	push	es
+
+	; make CX count source bytes so that load_with_seg_check doesn't
+	; erroneously think it's on the last one
+	mov	ch,cl		; single-byte operand, fine since it's <= 8
+	shl	ch,1
+	add	cl,ch
+	xor	ch,ch
 
 ce24i8_next_pixel_p:
 ;
