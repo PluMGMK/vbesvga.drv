@@ -1991,14 +1991,14 @@ ce24i8_next_pixel_p:
 	push	bx
 	mov	bl,[total_depth_bytes]
 
-	call load_with_seg_check	; Byte 0 in al
-	mov	ah,al			; Byte 0 in ah
-	call load_with_seg_check	; Byte 0 in ah, byte 1 in al
-	xchg	al,ah			; Byte 1 in ah, byte 0 in al
-	push	ax
-	call load_with_seg_check	; Byte 2 in al
-	mov	dl,al			; Byte 2 in dl
-	pop	ax
+	call	load_with_seg_check	; load a byte with segment test
+	xchg	al, dl
+	dec	cl
+	call	load_with_seg_check	; load the next	byte
+	xchg	al, dh
+	dec	cl
+	call	load_with_seg_check	; the last 8 of 24 bits
+	xchg	dx, ax
 ;
 ; check if we have a colour info table
 ;
