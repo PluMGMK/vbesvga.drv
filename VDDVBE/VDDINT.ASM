@@ -182,10 +182,24 @@ VIS_end_bp equ $ - VDD_Int_10_Stub
 
 VIS_reflect:
 	pop	di			    ; really EDI
+
+	cmp	eax,4F03h		    ; Q: Mode getting (VBE)?
+	;This kinda sucks: we had to use EAX in the above instruction since it's
+	; being assembled in a 32-bit segment but will be run in a 16-bit one.
+	; That means we've two bytes gone begging, so we have to move the
+	; pointer back by two to overwrite them...
+	org	$-2
+	je	SHORT VIS_modeget
+
 	;jmp to old handler
 	db	0EAh
 VIS_jmp equ $ - VDD_Int_10_Stub
 	dd	?
+
+VIS_modeget:
+VIS_modeget_bp equ $ - VDD_Int_10_Stub
+	; trap to VDD, which simulates an IRET for us
+	nop
 
 VIS_stub_size equ $ - VDD_Int_10_Stub
 
@@ -253,6 +267,9 @@ alloc_ok:
 	VMMCall Install_V86_Break_Point
 	add	eax, VIS_end_bp - VIS_start_bp
 	mov	esi, OFFSET32 VDD_Int_10_Mode_Sw_Done
+	VMMCall Install_V86_Break_Point
+	add	eax, VIS_modeget_bp - VIS_end_bp
+	mov	esi, OFFSET32 VDD_Int_10_Mode_Get
 	VMMCall Install_V86_Break_Point
 	pop	edi
 	mov	esi,OFFSET32 VDD_Int_10     ; ESI = address of handler
@@ -785,6 +802,8 @@ BeginProc   VDD_Int_10
 	jz	SHORT VI10_mode 	    ;	 Y: notify VDD and reflect
 	cmp	ax,4F02h		    ; Q: Mode setting?
 	jz	SHORT VI10_mode 	    ;	 Y: notify VDD and reflect
+	cmp	ax,4F03h		    ; Q: Mode getting?
+	jz	VDD_Int_10_Get_Mode	    ;	 Y: go straight to mode-get fn!
 	cmp	ah,11h			    ; Q: Mode setting(via char set chg)?
 	jnz	SHORT VI10_Reflect	    ;	N: reflect
 	cmp	al,3			    ; Q: Set char map
@@ -1539,6 +1558,46 @@ VIR_exit:
 	ret
 
 EndProc VDD_Int_10_Mode_Sw_Done
+
+;******************************************************************************
+;
+;   VDD_Int_10_Mode_Get & VDD_Int_10_Get_Mode
+;
+;   DESCRIPTION:    V86 Breakpoint handler that receives notification from V86
+;		    stub when an app asks for current VBE mode via INT 10 stub.
+;
+;   ENTRY:
+;
+;   EXIT:	In VBE mode: Client_AX == 4Fh, Client_BX == VM's mode
+;		In non-VBE mode: Client_AX == 34Fh ("bad mode" error code)
+;
+;   USES:
+;
+;==============================================================================
+BeginProc VDD_Int_10_Mode_Get
+
+	Assert_Client_Ptr ebp
+	VMMCall	Simulate_Iret
+
+; This entry point is from call back if mode change is detected from
+; INT 10 trap instead of breakpoint.
+PUBLIC VDD_Int_10_Get_Mode
+VDD_Int_10_Get_Mode:
+	VMMCall Get_Cur_VM_Handle
+	SetVDDPtr edi
+
+	mov	[ebp.Client_AX],34Fh	; assume "bad mode"
+	mov	cx,[edi.VDD_Stt.V_Extend.VBE_VidModeP1]
+	jcxz	short @F
+
+	mov	[ebp.Client_AH],0	; nullify error code
+	dec	cx
+	mov	[ebp.Client_BX],cx	; report the mode
+
+@@:	clc				; indicate we handled the int
+	ret
+
+EndProc VDD_Int_10_Mode_Get
 
 
 ;******************************************************************************
