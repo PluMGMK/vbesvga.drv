@@ -94,12 +94,16 @@ mv -v WIN16DDK/386/VBEGRAB/VBEVMDIB.SYM relsyms
 # Build the tools as well
 VIDMODES_COMMIT=`git log -1 --pretty=format:"%h" ../VIDMODES.ASM`
 git status --short ../VIDMODES.ASM | grep "^ M" && VIDMODES_COMMIT="$VIDMODES_COMMIT(modified)"
+MODETEST_COMMIT=`git log -1 --pretty=format:"%h" ../MODETEST.ASM`
+git status --short ../MODETEST.ASM | grep "^ M" && MODETEST_COMMIT="$MODETEST_COMMIT(modified)"
 jwasm -bin ../AUXSTACK.ASM
 mv -v AUXSTACK.BIN AUXSTACK.COM
 jwasm -bin ../AUXCHECK.ASM
 mv -v AUXCHECK.BIN AUXCHECK.COM
 jwasm -DVIDMODES_COMMIT=\'$VIDMODES_COMMIT\' -bin ../VIDMODES.ASM
 mv -v VIDMODES.BIN VIDMODES.COM
+jwasm -DMODETEST_COMMIT=\'$MODETEST_COMMIT\' -bin ../MODETEST.ASM
+mv -v MODETEST.BIN MODETEST.COM
 jwasm -bin ../SETUP.ASM
 mv -v SETUP.BIN SETUP.EXE # !
 
