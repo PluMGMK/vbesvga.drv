@@ -551,6 +551,7 @@ sBegin	InitSeg
 externNP	match_dpi		; in VGA.ASM
 externNP	init_modal_realizations	; in ROBJECT.ASM
 externNP	setup_double_buf	; in DBLBUF.ASM
+externNP	setup_bankswitch_ring0	; in BANKSWR0.ASM
 externNP	setup_dosx_bugfix	; in DOSXBFIX.ASM
 
 assumes	cs,InitSeg
@@ -1379,9 +1380,10 @@ ModeFound:
 
 	mov	di,VBE_ERR_FAIL	; error code to return if no mode found
 	cmp	[Vmode],0
-	jz	@@segfix_done
+	jnz	@F
+	jmp	FindMode_done
 
-	; set pxbytes now because we may need it for setup_double_buf
+@@:	; set pxbytes now because we may need it for setup_double_buf
 	mov	al,[VESABPP]
 	shr	al,3	; bits to bytes
 	cbw
@@ -1397,7 +1399,7 @@ ModeFound:
 	; Calculate total framebuffer size:
 	mov	ax,[MemoryWidth]
 	mul	[VESAHeight]
-	; again we may need it for setup_double_buf
+	; we will need this for setup_double_buf or setup_bankswitch_ring0
 	mov	[MemSize.hi],dx
 	mov	[MemSize.lo],ax
 
@@ -1419,8 +1421,14 @@ ModeFound:
 	; setup a fallback bank-switch function if fixup failed
 	mov	[VESABankSwitch.sel],seg BankSwitchInt10
 	mov	[VESABankSwitch.off],offset BankSwitchInt10
+	jmp	short @@fixup_vid_segments
 
-@@:	; Fix up the segments too
+@@:	; we have a valid Protected Mode bank-switch function pointer,
+	; so make a Ring0 version of it if possible
+	call	setup_bankswitch_ring0
+
+@@fixup_vid_segments:
+	; Fix up the segments too
 	xor	cx,cx		; want data segments!
 	test	[VESAWinAAttrs],VESA_WINATTR_EXISTS
 	jz	@F
@@ -1435,7 +1443,6 @@ ModeFound:
 	mov	[VESAWinBSeg],ax
 
 @@:	xor	di,di	; all good!
-@@segfix_done:
 	jmp	FindMode_done
 
 FindMode_setuplin:

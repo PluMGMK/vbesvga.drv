@@ -37,6 +37,7 @@
 ;
 ;-----------------------------------------------------------------------;
 
+VESA_FLAG_LINEAR	= 0100000000000000b
 incControl	=	1		;Include control for gdidefs.inc
 incDevice	=	1		;Include control for gdidefs.inc
 	.xlist
@@ -294,9 +295,14 @@ DCICreatePrimarySurface	proc near
 	; fill out all the surface info
 	; at this point, BP:SI:DI is the linear framebuffer ptr
 	mov	es:[bx.dwSize.lo],size DCISURFACEINFO
-	mov	es:[bx.dwSIDCICaps.lo],DCI_PRIMARY+DCI_VISIBLE
+	mov	ax,DCI_PRIMARY+DCI_VISIBLE
+	test	[Vmode],VESA_FLAG_LINEAR
+	jnz	@F
+	; linear framebuffer being virtualized => remind client to DWORD-align
+	or	ax,DCI_1632_ACCESS
+@@:	mov	es:[bx.dwSIDCICaps.lo],ax
 
-	; dwCompression and dwMask depend on whether or not we're using a palette
+	; dwCompression and dwMask depend on whether or not we use a palette
 	test	[raster_flags],RC_PALETTE
 	; "RGB" can also mean using a palette, apparently...
 	mov	es:[bx.dwSICompression.lo],BI_RGB

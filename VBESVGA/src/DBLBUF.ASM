@@ -567,6 +567,7 @@ TimeKillEvent_name	db "timeKillEvent",0
 ; Returns:
 ;	VESALinearBuf populated with LINEAR address (even if not double-buffing)
 ;	BackBufSel,FrontBufSel,VramSel populated, pointing at respective buffers
+;	LinBufSel populated even if not double-buffering
 ; Error Returns:
 ;	VESALinearBuf is zero if the phys-to-linear map failed
 ;	BackBufSel and/or FrontBufSel and/or VramSel NULL if not double-buffing

@@ -50,6 +50,7 @@ vgavram.obj +
 mtrr.obj + 
 dosxbfix.obj + 
 dblbuf.obj + 
+bankswr0.obj + 
 3xswitch.obj
 display.drv 
 display.map/map/al:16 

@@ -325,12 +325,17 @@ $(OBJ)\vgastate.obj:    $(SRC)\vgastate.asm     \
 			$(ASM) < vrammak
 
 $(OBJ)\vesafns.obj:     $(SRC)\vesafns.asm
-			echo $(ASMFLAGS) $(INC) $(SRC)\vesafns      > vrammak
+			echo $(ASMFLAGS) $(INC) $(SRC)\vesafns   > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
 $(OBJ)\dblbuf.obj:      $(SRC)\dblbuf.asm
-			echo $(ASMFLAGS) $(INC) $(SRC)\dblbuf      > vrammak
+			echo $(ASMFLAGS) $(INC) $(SRC)\dblbuf    > vrammak
+			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
+			$(ASM) < vrammak
+
+$(OBJ)\bankswr0.obj:    $(SRC)\bankswr0.asm
+			echo $(ASMFLAGS) $(INC) $(SRC)\bankswr0  > vrammak
 			echo $(ASMOPTS) $(OBJ)\$*.obj; >> vrammak
 			$(ASM) < vrammak
 
@@ -601,6 +606,7 @@ $(NAME).drv:    $(OBJ)\v31.obj          \
 		$(OBJ)\trn_pal.obj      \
 		$(OBJ)\vesafns.obj      \
 		$(OBJ)\dblbuf.obj       \
+		$(OBJ)\bankswr0.obj     \
 		$(OBJ)\mtrr.obj         \
 		$(OBJ)\dosxbfix.obj     \
 		$(OBJ)\vgastate.obj     \

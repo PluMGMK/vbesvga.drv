@@ -35,6 +35,7 @@ sBegin	Data
 
         externW ScreenSelector  ; the selector for display memory
 	externD	VDDDBEntry	; in DBLBUF.ASM
+	externD	VFlatDEntry	; in BANKSWR0.ASM
 
 public	VDDEntry,Ring3to0,Ring0to3
 	VDDEntry	dd 0	; entry point to Virtual Display Driver
@@ -95,18 +96,16 @@ cBegin
         xor     ax,ax
         mov     bx,__WinFlags
         test    bx,WF_CPU086+WF_CPU186
-        jnz     dev_init_exit
+	jz	@F
+        jmp     dev_init_exit
 
-	; make sure we can call int 10h from Protected Mode...
+@@:	; make sure we can call int 10h from Protected Mode...
 	call	SetupInt10h
 	test	ax,ax
-	jz	dev_init_exit
+	jnz	@F
+	jmp	dev_init_exit
 
-	; VESA Protected Mode Interface, if available, gets setup later, in
-	; ENABLE.ASM, because we need to allow the user to specify how to check
-	; the structure's integrity...
-
-	; grab the VDD entry and ring-transition code
+@@:	; grab the VDD entry and ring-transition code
 	mov	ax,1684h	; get VxD entry point
 	mov	bx,000Ah	; VDD
 	xor	di,di		; NULL default return value
@@ -144,7 +143,28 @@ cBegin
 	mov	[VDDDBEntry.off],ax
 	mov	[VDDDBEntry.sel],dx
 
-@@:	mov	ax,1		;no way to have error
+@@:	; grab the DVA/VFLATD entry if available
+	mov	ax,1684h	; get VxD entry point
+	mov	bx,045Dh	; DVA.386 (Win3.x)
+	xor	di,di		; NULL default return value
+	mov	es,di		; NULL default return value
+	int	2Fh
+	mov	bx,es
+	test	bx,bx		; Still NULL?
+	jnz	@F
+
+	; no DVA.386, try VFLATD instead
+	mov	bx,011Fh	; VFLATD (Win9x)
+	int	2Fh
+	mov	bx,es
+	test	bx,bx		; Still NULL?
+	jz	dev_init_ok	; not the end of the world!
+
+@@:	mov	[VFlatDEntry.off],di
+	mov	[VFlatDEntry.sel],bx
+
+dev_init_ok:
+	mov	ax,1		;no way to have error
 dev_init_exit:
 cEnd
 

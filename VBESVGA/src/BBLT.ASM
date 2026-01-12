@@ -9,6 +9,7 @@
 ;
 
 SRCFILE_BBLT	equ	1
+VESA_FLAG_LINEAR	= 0100000000000000b
 incLogical	=	1
 incDrawMode	=	1
 
@@ -261,6 +262,9 @@ bitblt_prep_rop_etal	PROC	NEAR
 	; if there is no linear buffer selector, we obviously can't use
 	; any of the special code
 	cmp	LinBufSel,0
+	jz	@F
+	; for now, the simulated linear framebuffer can't be used either
+	test	[Vmode],VESA_FLAG_LINEAR
 	jz	@F
 	; masking is not supported by the special-case code either
 	mov	bx,[colour_mask.lo]
