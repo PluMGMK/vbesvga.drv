@@ -233,13 +233,20 @@ r0_cs_1	dw	?		; becomes selector for flat 32-bit Ring0 code
 	cmp	cs:[r0_ss16],1	; sets CF iff r0_ss16 == 0
 	jc	@F
 	cmp	cs:[bswsel],1	; sets CF iff bswsel == 0
+	jc	@F
+
+	; if we have good Ring0 code, then update VESABankSwitch pointer
+	; to use it whenever we need to do a bank switch
+	mov	es:[VESABankSwitch.off],offset bankswitch_r3to0
+	mov	es:[VESABankSwitch.sel],seg bankswitch_r3to0
+
 @@:	ret
 setup_ring0_template	endp
 
 ; this is a Ring0 16-bit function that does a bank switch while keeping
 ; state coherent with the VBESVGA.DRV internal state.
 ; Entry: EAX = bank, SS = 32-bit flat stack, CS = our Ring0 alias
-do_ring0_bankswitch	proc far
+ring0_set_bank_select	proc far
 	assumes	ds,nothing
 	assumes	es,nothing
 
@@ -265,7 +272,7 @@ do_ring0_bankswitch	proc far
 	; get the size-to-granularity multiplication factor, minus 1
 	mov	ah,ds:[bank_granfac_m1]
 	test	ah,ah
-	jz	@F			; factor == 1 so no need to multiply
+	jz	@F		; factor == 1 so no need to multiply
 
 	inc	ah
 	mov	al,dl
@@ -275,31 +282,9 @@ do_ring0_bankswitch	proc far
 @@:	pushfd
 	cli
 ;
-	xor	bx,bx			; BH = 0 = "set", BL = 0 = window 0
-	xor	dh,dh			; DX = DL = bank number (gran. units)
-
-	db	0B8h		; mov AX,?
-r0_ss16	dw	?		; 16-bit Ring0 stack selector
-
-	; save current stack pointer
-	mov	es,ax
-	mov	es:[0FFCh],ss
-	mov	es:[0FF8h],esp
-
-	; switch to 16-bit stack
-	; DO NOT SINGLE-STEP THIS in WDEB386!
-	; I guess it doesn't expect a Ring0 debuggee to suddenly go onto a
-	; 16-bit stack, and so it seems to halt and catch fire - under VBox
-	; I get a Guru Meditation!
-	mov	ss,ax
-	mov	sp,0FF4h
-
-	; call BIOS function
-	db	9Ah		; far call (16:16)
-bswoff	dw	?		; copy this from VESABankSwitch @ runtime
-bswsel	dw	?		; Ring0 alias for VESABankSwitch, fill @ runtime
-;
-	lss	esp,ss:[0FF8h]	; get back original stack pointer
+	xor	bx,bx		; BH = 0 = "set", BL = 0 = window 0
+	xor	dh,dh		; DX = DL = bank number (gran. units)
+	call	do_ring0_bankswitch
 
 	popfd			; Okay to interrupt now
 
@@ -311,14 +296,81 @@ r0_sbs_exit:
 
 	db	66h		; 32-bit far return!
 	ret
-do_ring0_bankswitch	endp
+ring0_set_bank_select	endp
 
 ; this is a code template that gets executed **in 32-bit Ring0**!
 ring0_bsw_template:
 	db	9Ah		; far call (16:32 in 32-bit mode!)
-	dd	offset do_ring0_bankswitch
+	dd	offset ring0_set_bank_select
 r0_cs_2	dw	?		; to be filled in at runtime
 ring0_bsw_size	equ ($ - ring0_bsw_template)
+
+; this function actually calls the BIOS bank-switch code in 16-bit Ring0,
+; switching to a 16-bit stack in order to do so.
+; Entry: Interrupts OFF, BX/DX already set correctly
+do_ring0_bankswitch	proc near
+	db	0B8h		; mov AX,?
+r0_ss16	dw	?		; 16-bit Ring0 stack selector
+
+	; save current stack pointer
+	mov	es,ax
+	mov	es:[0FFCh],ss
+	mov	es:[0FF8h],esp
+
+	; switch to 16-bit stack
+	; DO NOT SINGLE-STEP THIS in WDEB386!
+	; I guess it doesn't expect a Ring0 debuggee to suddenly go onto a
+	; 16-bit stack, and so it seems to halt and catch fire: under VBox,
+	; I get a Guru Meditation!
+	mov	ss,ax
+	mov	sp,0FF4h
+
+	; call BIOS function
+	db	9Ah		; far call (16:16)
+bswoff	dw	?		; copy this from VESABankSwitch @ runtime
+bswsel	dw	?		; Ring0 alias for VESABankSwitch, fill @ runtime
+;
+	lss	esp,ss:[0FF8h]	; get back original stack pointer
+	ret
+do_ring0_bankswitch	endp
+
+; Ring3 FAR entry point, to replace the original VESABankSwitch pointer, which
+; dispatches to the same code but in Ring0. It is possible that this will give
+; better performance, because we cut out a whole bunch of IOPL checks and/or
+; I/O traps, and replace them with two simple context switches (Ring0to3 and
+; Ring3to0).
+; Entry: Interrupts OFF, BX/DX already set correctly, DS = Data
+bankswitch_r3to0	proc far
+	.386
+	assumes	ds,Data
+
+	; Ring3to0 trashes certain regs (including the ones with our params!)
+	push	eax
+	push	edx
+	push	ebx
+	push	ebp
+
+	; create a simple stack frame to access the params...
+	mov	bp,sp
+
+	call	[Ring3to0]
+	.386p
+	pushf
+	cli
+	mov	bx,[ebp+4]
+	mov	dx,[ebp+8]
+	call	do_ring0_bankswitch
+	mov	[ebp+0Ch],eax
+	popf
+	call	[Ring0to3]
+	.386
+
+	pop	ebp
+	pop	ebx
+	pop	edx
+	pop	eax
+	ret
+bankswitch_r3to0	endp
 
 sEnd	Code
 
@@ -358,22 +410,22 @@ cProc	setup_bankswitch_ring0,<NEAR,PUBLIC>,<es>
 cBegin
 	assumes	es,Code
 
-	; is VFlatD / DVA available?
-	cmp	[VFlatDEntry.sel],0
-	jz	setup_done
-
-	.386	; if VFlatD exists, we're in Enhanced Mode, on a 386!
 	; can we get to Ring0?
-	cmp	[Ring3to0],0
+	cmp	[Ring3to0.sel],0
 	jz	setup_done
 
+	.386	; if Ring3to0 exists, we're in Enhanced Mode, on a 386!
 	pushad
 
 	; first make sure we have valid Ring0 code to run
 	call	setup_ring0_template
 	jc	@F
 
-	; then pass it in to VFlatD as a bank-switch function
+	; is VFlatD / DVA available?
+	cmp	[VFlatDEntry],0
+	jz	@F
+
+	; pass our filled-in Ring0 template to VFlatD as a bank-switch function
         mov     dx, GET_VIDEO_SEL       ; the argument to the VxD function
 	mov	eax,[MemSize]
 	shr	eax,0Ch			; convert to pages
