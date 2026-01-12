@@ -54,6 +54,16 @@ setup_ring0_template	proc far
 	; first, we need to get the full linear address of the 32-bit
 	; code we're about to run...
 	cCall	GetSelectorBase,<cs>
+
+	; get the absolute linear offset of where we are going to fill in our
+	; Ring0 function pointer...
+	mov	di,dx
+	.386
+	shl	edi,10h
+	mov	di,ax
+	add	edi,offset bswoff
+
+	; and of our 32-bit code
 	add	ax,offset setup_ring0_32bit
 	adc	dx,0
 	mov	es:[setup_ring0_32bit_off.lo],ax
@@ -92,17 +102,21 @@ setup_ring0_template	proc far
 	mov	es:[flat_csel],ax
 	jmp	short $+2	; clear prefetch queue
 
-	; `VMMcall`s need DS to point to 32-bit flat selector too...
+	; `VMMcall`s need ES/DS to point to 32-bit flat selector too...
 	push	ds
+	push	es
 	mov	ax,ss
 	mov	ds,ax
-	push	es		; and some will trash ES!
+	mov	es,ax
+	assumes	es,nothing
+	assumes	ds,nothing
 
 	; get the pointer to the BIOS code
-	mov	ax,es:[VESABankSwitch.off]
-	mov	es:[bswoff],ax
-	mov	ax,es:[VESABankSwitch.sel]
-	mov	edi,offset bswsel
+	mov	ax,cs:[VESABankSwitch.off]
+	cld
+	; place offset at bswoff, and advance EDI to bswsel
+	stos	word ptr es:[edi]
+	mov	ax,cs:[VESABankSwitch.sel]
 
 	db	66h,0EAh	; 32-bit FAR JMP
 setup_ring0_32bit_off	label dword
@@ -130,6 +144,7 @@ setup_ring0_32bit:
 
 	mov	sp,si		; really ESP,ESI
 	; push stack parameters right-to-left
+	xor	cx,cx		; really ECX, prev `VMMcall` may have trashed it
 	push	cx		; really ECX => flags = 0
 	and	dh,10011111b	; make DPL = 0 in access byte
 	push	ax		; really EAX = DescDWORD2
@@ -140,11 +155,12 @@ setup_ring0_32bit:
 	dw	1		; VMM
 
 	mov	sp,si		; really ESP,ESI
-	stosd	; really STOSW!	; store AX (selector) @ ES:EDI == bswsel
+	stosd	; really STOSW!	; store AX (selector) @ %EDI == bswsel
 
 	; Third step: allocate a fixed page of memory for a 16-bit stack
 
 	; push stack parameters right-to-left
+	xor	cx,cx		; really ECX, prev `VMMcall` may have trashed it
 	mov	cl,00001000b	; PageFixed
 	push	cx		; really ECX => flags = PageFixed
 	xor	cl,cl
@@ -160,12 +176,12 @@ setup_ring0_32bit:
 	int	20h		; VxDcall
 	dw	83		; _PageAllocate
 	dw	1		; VMM
-	assumes	es,nothing	; above call trashes ES apparently...
 
 	; Fourth step: create 16-bit stack segment descriptor pointing at it
 
 	mov	sp,si		; really ESP,ESI
 	; push stack parameters right-to-left
+	xor	cx,cx		; really ECX, prev `VMMcall` may have trashed it
 	mov	cl,1		; BDDExplicitDPL
 	push	cx		; really ECX => flags = BDDExplicitDPL
 	xor	cl,cl
@@ -204,6 +220,7 @@ r0_cs_1	dw	?		; becomes selector for flat 32-bit Ring0 code
 	pop	es
 	assumes	es,Code
 	pop	ds
+	assumes	ds,Data
 
 	; at this point, AX should be our new 16-bit stack selector
 	mov	es:[r0_ss16],ax
