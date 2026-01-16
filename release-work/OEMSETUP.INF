@@ -48,14 +48,14 @@ vbesvga768str = V:vbesvga.drv, "Modern SVGA  1024x768 16M Small" , "100,96,96", 
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=8"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbeautl]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=8"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe640]
@@ -69,42 +69,42 @@ vbesvga768str = V:vbesvga.drv, "Modern SVGA  1024x768 16M Small" , "100,96,96", 
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=8"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe800l]
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=8"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe768s]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=8"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe768l]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=8"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe15auts]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=15"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe15autl]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=15"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe15640]
@@ -118,42 +118,42 @@ vbesvga768str = V:vbesvga.drv, "Modern SVGA  1024x768 16M Small" , "100,96,96", 
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=15"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe15800l]
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=15"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe15768s]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=15"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbe15768l]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=15"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbehiauts]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=16"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbehiautl]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=16"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbehi640]
@@ -167,42 +167,42 @@ vbesvga768str = V:vbesvga.drv, "Modern SVGA  1024x768 16M Small" , "100,96,96", 
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=16"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbehi800l]
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=16"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbehi768s]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=16"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbehi768l]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=16"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbetrauts]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=24"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbetrautl]
 ,,system.ini,vbesvga.drv,"Width=",""
 ,,system.ini,vbesvga.drv,"Height",""
 ,,system.ini,vbesvga.drv,"Depth","Depth=24"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbetr640]
@@ -216,28 +216,28 @@ vbesvga768str = V:vbesvga.drv, "Modern SVGA  1024x768 16M Small" , "100,96,96", 
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=24"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbetr800l]
 ,,system.ini,vbesvga.drv,"Width=","Width=800"
 ,,system.ini,vbesvga.drv,"Height","Height=600"
 ,,system.ini,vbesvga.drv,"Depth","Depth=24"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbetr768s]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=24"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=small"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [vbetr768l]
 ,,system.ini,vbesvga.drv,"Width=","Width=1024"
 ,,system.ini,vbesvga.drv,"Height","Height=768"
 ,,system.ini,vbesvga.drv,"Depth","Depth=24"
-,,system.ini,vbesvga.drv,"fontsize","fontsize=large"
+,,system.ini,vbesvga.drv,"fontsize",""
 ,,system.ini,drivers,"dci","dci=display"
 
 [sysfonts]
