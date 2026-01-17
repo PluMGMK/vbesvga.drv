@@ -1742,11 +1742,11 @@ issetupexe:
 	mov	ah, 0Dh
 	lea	di, [pname2]
 	call	stpcpyh
-	cmp	byte ptr [di - 1], 92
+	cmp	byte ptr [di - 1], '\'
 	je	@F
-	cmp	byte ptr [di - 1], 47
+	cmp	byte ptr [di - 1], '/'
 	je	@F
-	mov	al, 92
+	mov	al, '\'
 	stosb
 @@:	call	checkwindir
 	jnc	foundwindir
