@@ -44,9 +44,7 @@ setupexetaillen	equ	(_end - mzheader) AND 511
 _start:
 	mov	[pathoff], 0FFFFh	; Putting in initialized data interferes with VBESVGA generation
 env:
-	; For some reason JWasm cannot assemble this instruction
-	;mov	es, word ptr [2Ch]
-	db	8Eh, 06h, 2Ch, 00h
+	mov	es, word ptr ds:[2Ch]
 	cmp	byte ptr es:[si], 0
 	je	env_eot
 	cmp	word ptr [es:si], "AP"
@@ -1157,8 +1155,7 @@ pathfromexepath:
 	lea	di, [pname1]
 	mov	si, [exeoff]
 	push	ds
-	;mov	ds, word ptr [2Ch]
-	db	8Eh, 1Eh, 2Ch, 00h
+	mov	ds, word ptr ds:[2Ch]
 @@:	lodsb	
 	cmp	al, 0
 	je	@F
@@ -1830,8 +1827,7 @@ foundwindir_vidmodes:
 	call	writeblock
 	mov	dx, [exeoff]
 	push	ds
-	;mov	ds, word ptr [2Ch]
-	db	8Eh, 1Eh, 2Ch, 00h
+	mov	ds, word ptr ds:[2Ch]
 	mov	ax, 3D00h
 	int	21h
 	pop	ds
@@ -1998,8 +1994,7 @@ nextpathentry:
 	cmp	si, 0FFFFh
 	je	nomorepathentry
 	push	ds
-	;mov	ds, word ptr [2Ch]
-	db	8Eh, 1Eh, 2Ch, 00h
+	mov	ds, word ptr ds:[2Ch]
 	lea	di, [pname2]
 	mov	cx, di
 @@:	lodsb
