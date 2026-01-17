@@ -20,7 +20,7 @@
 
 ; I am quite pleased the initial binary came out to less than 4K.
 ; (Although it isn't anymore.)
-; Joshua Hudson <joshudson@gamil.com>
+; Joshua Hudson <joshudson@gmail.com>
 
 org	0E0h	; Data offsets are actually 0100h but MZ header is generated
 mzheader:
