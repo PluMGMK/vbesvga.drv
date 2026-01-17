@@ -104,12 +104,15 @@ havesystemini_nextsection2:
 	lea	di, [svbesvgalower]
 	call	section_recognizer
 	jz	havesystemini_vbesvga
-	lea	di, [sboot]
+	; lea	di, [sboot]
+	; call	section_recognizer
+	; jz	havesystemini_boot
+	lea	di, [senhlower]
 	call	section_recognizer
-	jz	havesystemini_boot
+	jz	havesystemini_enh
 	call	readnextline
 	jmp	havesystemini_nextsection
-havesystemini_boot:
+havesystemini_enh:
 	call	readnextline
 	test	si, si
 	jz	havesystemini_eof
@@ -117,7 +120,7 @@ havesystemini_boot:
 	je	havesystemini_nextsection2
 	lea	di, [pupdatetimelwr]
 	call	assign_recognizer
-	jne	havesystemini_boot
+	jne	havesystemini_enh
 	call	silly_atoi
 	mov	[update], bx
 	test	bx, bx
@@ -125,7 +128,7 @@ havesystemini_boot:
 	cmp	byte ptr [si - 1], '0'
 	jne	@F
 	mov	byte ptr [updatel], 0	; Blank entry
-	jmp	havesystemini_boot
+	jmp	havesystemini_enh
 @@:	mov	cx, 10
 	mov	ax, bx
 	mov	bl, 0
@@ -136,7 +139,7 @@ havesystemini_boot:
 	test	ax, ax
 	jnz	@B
 	mov	[updatel], bl
-	jmp	havesystemini_boot
+	jmp	havesystemini_enh
 havesystemini_vbesvga:
 	call	readnextline
 	test	si, si
@@ -857,26 +860,7 @@ save_boot_nextline2:
 	je	save_boot_removeline
 	lea	di, [pgrabber]
 	call	assign_recognizer
-	je	save_boot_removeline
-	lea	di, [pupdatetimelwr]
-	call	assign_recognizer
 	jne	save_boot_nextline
-	cmp	[updatel], 255
-	je	save_boot_removeline
-	push	si			; We want to insert here after removing
-	call	remove_line
-	pop	si
-	lea	di, [pupdatetime]
-	cmp	[updatel], 0
-	je	save_boot_updateempty
-	mov	ax, [update]
-	call	insertpropnumeric
-	jmp	save_boot_updatedone
-save_boot_updateempty:
-	call	insert_line
-save_boot_updatedone:
-	mov	[updatel], 255
-	jmp	save_boot_nextline2
 save_boot_removeline:
 	call	remove_line
 	jmp	save_boot_nextline2
@@ -886,18 +870,6 @@ save_boot_insert:
 	call	insert_line
 	lea	di, [pgrabber]
 	call	insert_line
-	cmp	[updatel], 255
-	je	save_boot_newupdatedone
-	cmp	[updatel], 0
-	je	save_boot_newupdateempty
-	mov	ax, [update]
-	lea	di, [pupdatetime]
-	call	insertpropnumeric
-	jmp	save_boot_newupdatedone
-save_boot_newupdateempty:
-	lea	di, [pupdatetime]
-	call	insert_line
-save_boot_newupdatedone:
 	
 	;Step 2: Locate [386Enh] and add
 save_fenh:
@@ -932,13 +904,45 @@ save_enh_nextline2:
 	je	@F
 	lea	di, [pdisplay]
 	call	assign_recognizer
+	je	save_enh_removeline
+	lea	di, [pupdatetimelwr]
+	call	assign_recognizer
 	jne	save_enh_nextline
+	cmp	[updatel], 255
+	je	save_enh_removeline
+	push	si			; We want to insert here after removing
+	call	remove_line
+	pop	si
+	lea	di, [pupdatetime]
+	cmp	[updatel], 0
+	je	save_enh_updateempty
+	mov	ax, [update]
+	call	insertpropnumeric
+	jmp	save_enh_updatedone
+save_enh_updateempty:
+	call	insert_line
+save_enh_updatedone:
+	mov	[updatel], 255
+	jmp	save_enh_nextline2
+save_enh_removeline:
 	call	remove_line
 	jmp	save_enh_nextline2
 @@:	mov	si, bp
 save_enh_insert:
 	lea	di, [pdisplay]
 	call	insert_line
+	cmp	[updatel], 255
+	je	save_enh_newupdatedone
+	cmp	[updatel], 0
+	je	save_enh_newupdateempty
+	mov	ax, [update]
+	lea	di, [pupdatetime]
+	call	insertpropnumeric
+	jmp	save_enh_newupdatedone
+save_enh_newupdateempty:
+	lea	di, [pupdatetime]
+	call	insert_line
+save_enh_newupdatedone:
 
 	;Step 3: locate [VBESVGA] and add
 save_fvbesvga:
