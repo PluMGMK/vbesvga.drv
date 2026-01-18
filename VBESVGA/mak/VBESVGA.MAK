@@ -34,6 +34,8 @@ INC     = -I$(DDK)\inc -I$(SRC)\ -I$(SRC)\inc   # additional include directories
 ASMFLAGS = -B63 -v -ML 	                        # assmebler flags
 ASMOPTS = -DPALETTES -DHIRES -DPROTECTEDMODE -DDEBUGAUX   # assembler options
 
+RCFLAGS = -DDEBUG                               # resource compiler flags
+
 NAME = VBESVGA
 
 $(OBJ)\v31.obj:         $(SRC)\v31.asm
@@ -552,8 +554,8 @@ $(RES)\drv256.res:      $(RES)\drv256.rc        \
 		$(RES48)\sizewe.cur     \
 		$(RES48)\up.cur         \
 		$(RES48)\wait.cur       \
-###             $(RES)\ver.h            \
-		$(RES)\vbesvga.rcv
+		$(RES)\vbesvga.rcv      \
+###             $(DDK)\inc\ver.h # can't figure out how to make this a proper dep
 	cd $(RES)
 	$(RC) $(RCFLAGS) -r drv256.rc drv256.res
 	cd $(MAK)

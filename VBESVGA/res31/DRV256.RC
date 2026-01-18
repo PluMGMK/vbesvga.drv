@@ -174,4 +174,4 @@ OBM_48_RGARROWI      bitmap       PRELOAD          "../res48/righti.bmp"
 
 FONTS                oembin                        fonts.bin
 
-#include "v731vga.rcv"
+#include "vbesvga.rcv"

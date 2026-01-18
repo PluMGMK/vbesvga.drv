@@ -1,9 +1,9 @@
 /********************************************************************/
 /*                                                                  */
-/*  V731VGA.RCV                                                     */
+/*  VBESVGA.RCV                                                     */
 /*                                                                  */
 /*    This RC fragment defines version information specific         */
-/*    V731VGA.DRV.  It should be #include'd into the component's    */
+/*    VBESVGA.DRV.  It should be #include'd into the component's    */
 /*    main .RC file                                                 */
 /*                                                                  */
 /*  It relies on the public VER.H                                   */
@@ -20,8 +20,14 @@
 /* builder for each build                                       */
 /*--------------------------------------------------------------*/
 
-#define VER_PRODUCTVERSION_STR      "3.10\0"
-#define VER_PRODUCTVERSION          3,10,0,0
+#ifndef OFFICIAL
+/* pretend non-Git builds are 0.99.0.0 */
+#define VER_PRODUCTVERSION_STR      "uncontrolled debug build\0"
+#define VER_PRODUCTVERSION          0,99,0,0
+#else
+/* header generated on-the-fly when make-release.sh is run: */
+#include                            "gitprod.h"
+#endif
 
 /*-----------------------------------------------*/
 /* the following lines are specific to this file */
@@ -29,12 +35,19 @@
 
 #define VER_FILETYPE                VFT_DRV
 #define VER_FILESUBTYPE             VFT2_DRV_DISPLAY
-#define VER_FILEVERSION             3,10,0,0
 
-#define VER_FILEVERSION_STR         "3.10\0"
-#define VER_FILEDESCRIPTION_STR     "Video Seven display driver (256 colors)\0"
+#ifndef OFFICIAL
+/* pretend non-Git builds are 0.99.0.0 */
+#define VER_FILEVERSION             0,99,0,0
+#define VER_FILEVERSION_STR         "uncontrolled debug build\0"
+#else
+/* header generated on-the-fly when make-release.sh is run: */
+#include                            "gitdrv.h"
+#endif
+
+#define VER_FILEDESCRIPTION_STR     "Modern SVGA display driver\0"
 #define VER_INTERNALNAME_STR        "DISPLAY\0"
-#define VER_LEGALCOPYRIGHT_STR      "Copyright \251 Microsoft Corp. 1991-1992\0"
+#define VER_LEGALCOPYRIGHT_STR      "Copyright \251 Microsoft Corp. 1991-1992, PluMGMK 2023-2026\0"
 
 /*  NOTE FOR EXTERNAL VENDORS:  vendor specific copyright and  */
 /*  trademark notices may be added to the Microsoft notices    */
@@ -71,8 +84,8 @@
 
 #define VER_FILEOS                  VOS_DOS_WINDOWS16
 
-#define VER_COMPANYNAME_STR         "Microsoft Corporation\0"
-#define VER_PRODUCTNAME_STR         "Microsoft\256 Windows(TM) Operating System\0"
+#define VER_COMPANYNAME_STR         "VIGoV Productions\0"
+#define VER_PRODUCTNAME_STR         "Modern Generic SVGA driver for Windows 3.1\0"
 #define VER_LEGALTRADEMARKS_STR     \
 "Microsoft\256 is a registered trademark of Microsoft Corporation. Windows(TM) is a trademark of Microsoft Corporation.\0"
 
