@@ -255,6 +255,9 @@ drawscreenanew:
 	mov	dx, 0C0Fh
 	lea	si, [escbase]
 	call	drawstringat
+	mov	dx, 170Fh
+	lea	si, [verbase]
+	call	drawstringat
 	mov	dx, 20Fh
 	lea	si, [modebase]
 	call	drawstringat
@@ -1797,6 +1800,13 @@ bouncebase	db	"B  Bounce on Mode Set$"
 garishbase	db	"G  Garish System Palette$"
 enterbase	db	"ENTER  Save & Exit$"
 escbase		db	"ESC    Exit$"
+; version string
+verbase	db "Setup tool from "
+ifdef	SETUP_COMMIT
+	db "Git commit ",SETUP_COMMIT,"$"
+else
+	db "uncontrolled debug build$"
+endif
 
 systemini	db	"SYSTEM.INI", 0
 svbesvgalower	db	"[vbesvga.drv]"
