@@ -359,7 +359,6 @@ Note that the only step below which requires Windows is the initial installation
 
 ### Things that should probably done before v1.0.0
 
-* Figure out some kind of versioning scheme within the code, ideally integrated with Git (because I'm forgetful!), so user can easily figure out which version of the driver they're installing / running
 * Make sure the driver works just as well [on Win9x](https://github.com/PluMGMK/vbesvga.drv/issues/46) as it does on Win3.1
 * Consider adding a paper-thin implementation of `StretchBlt` to overcome the "zoom-in in Paintbrush" limitation above (basically it would punt straight to GDI for smaller scanline widths, and then for wider ones allocate its own DIB and call out to GDI's `StretchDIBits` function)
 * Investigate adding support for colour / animated cursors, for Win9x

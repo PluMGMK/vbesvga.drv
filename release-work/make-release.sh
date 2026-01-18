@@ -45,7 +45,9 @@ fi
 # non-debug versions of the makefiles...
 rm -rfv WIN16DDK/286/DISPLAY/8PLANE/VBESVGA
 ln -sfnv ../../../../../VBESVGA WIN16DDK/286/DISPLAY/8PLANE/VBESVGA
-sed 's/-DDEBUGAUX/\#\0/' WIN16DDK/286/DISPLAY/8PLANE/VBESVGA/mak/VBESVGA.MAK > WIN16DDK/286/DISPLAY/8PLANE/VBESVGA/mak/VBESREL.MAK
+sed -e 's/-DDEBUGAUX//' -e 's/-DDEBUG/-DOFFICIAL/' -e '/rcv/a\
+		$(RES)\\gitprod.h        \\\
+		$(RES)\\gitdrv.h         \\' WIN16DDK/286/DISPLAY/8PLANE/VBESVGA/mak/VBESVGA.MAK > WIN16DDK/286/DISPLAY/8PLANE/VBESVGA/mak/VBESREL.MAK
 
 rm -rfv WIN16DDK/386/VDDVBE
 ln -sfnv ../../../VDDVBE WIN16DDK/386/VDDVBE
@@ -53,7 +55,10 @@ sed '/^Debug=/d' WIN16DDK/386/VDDVBE/MAKEFILE > WIN16DDK/386/VDDVBE/MAKEREL
 
 rm -rfv WIN16DDK/386/VBEGRAB
 ln -sfnv ../../../VBEGRAB WIN16DDK/386/VBEGRAB
-sed '/^Debug=/d' WIN16DDK/386/VBEGRAB/MAKEFILE > WIN16DDK/386/VBEGRAB/MAKEREL
+sed -e 's/^Debug=.*/OffFinal=-DOFFICIAL/' -e 's/grbvmdib.rc/\0 gitprod.h gitgrb.h/' WIN16DDK/386/VBEGRAB/MAKEFILE > WIN16DDK/386/VBEGRAB/MAKEREL
+
+# Create / update version info headers
+./make-ver-headers.plx
 
 # Run DOSBox to do the building - include "pause" after each stage
 # to make sure we catch any issues...

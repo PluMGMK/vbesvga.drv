@@ -13,3 +13,4 @@ MAKEREL
 *.zip
 *.img
 *.img.bak
+git*.h
