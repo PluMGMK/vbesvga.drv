@@ -102,14 +102,31 @@ havesystemini_nextsection2:
 	lea	di, [svbesvgalower]
 	call	section_recognizer
 	jz	havesystemini_vbesvga
-	; lea	di, [sboot]
-	; call	section_recognizer
-	; jz	havesystemini_boot
+	lea	di, [sboot]
+	call	section_recognizer
+	jz	havesystemini_boot
 	lea	di, [senhlower]
 	call	section_recognizer
 	jz	havesystemini_enh
 	call	readnextline
 	jmp	havesystemini_nextsection
+havesystemini_boot:
+	call	readnextline
+	test	si, si
+	jz	havesystemini_eof
+	call	any_section_recognizer
+	je	havesystemini_nextsection2
+	lea	di, [pfontsfon]
+	call	assign_recognizer
+	jne	havesystemini_boot
+	call	silly_char
+	cmp	al,'A'
+	jb	@F
+	cmp	al,'Z'
+	ja	@F
+	add	al,'a'-'A'
+@@:	mov	[sysfont],al
+	jmp	havesystemini_boot
 havesystemini_enh:
 	call	readnextline
 	test	si, si
@@ -232,10 +249,10 @@ drawscreenanew:
 	lea	si, [configvbe]
 	mov	dx, 1Ah
 	call	drawstringat
-	mov	dx, 0A0Fh
+	mov	dx, 0B0Fh
 	lea	si, [enterbase]
 	call	drawstringat
-	mov	dx, 0B0Fh
+	mov	dx, 0C0Fh
 	lea	si, [escbase]
 	call	drawstringat
 	mov	dx, 20Fh
@@ -247,14 +264,17 @@ drawscreenanew:
 	lea	si, [fontsizebase]
 	mov	dx, 40Fh
 	call	drawstringat
-	lea	si, [updatewndbase]
+	lea	si, [dpibase]
 	mov	dx, 50Fh
 	call	drawstringat
-	lea	si, [bouncebase]
+	lea	si, [updatewndbase]
 	mov	dx, 60Fh
 	call	drawstringat
-	lea	si, [garishbase]
+	lea	si, [bouncebase]
 	mov	dx, 70Fh
+	call	drawstringat
+	lea	si, [garishbase]
+	mov	dx, 80Fh
 	call	drawstringat
 
 drawscreen:
@@ -280,9 +300,19 @@ drawscreen2:
 	mov	dx, 032Dh
 	call	blankfield
 	call	drawstringat
-	call	decodefontsize
-	call	decodedefault
+
+	call	decodesysfontexp
 	mov	dx, 042Dh
+	mov	bx, 17h		; default grey on blue
+	test	[nofonts], 80h	; current font missing?
+	jz	@F
+	mov	bx, 0CEh	; flashing yellow on red
+@@:	call	blankfield_attr
+	call	drawstringat
+
+	call	decodedpiexp
+	call	decodedefault
+	mov	dx, 052Dh
 	call	blankfield
 	call	drawstringat
 	mov	dx, 32Dh
@@ -297,15 +327,15 @@ drawscreen2:
 @@:	mov	al, "$"
 	stosb
 	pop	si
-	mov	dx, 52Dh
-	call	blankfield
-	call	drawstringat
-	call	decodebouncedisplay
 	mov	dx, 62Dh
 	call	blankfield
 	call	drawstringat
-	call	decodegarishdisplay
+	call	decodebouncedisplay
 	mov	dx, 72Dh
+	call	blankfield
+	call	drawstringat
+	call	decodegarishdisplay
+	mov	dx, 82Dh
 	call	blankfield
 	call	drawstringat
 	
@@ -316,6 +346,10 @@ basecfgstate:
 	je	togglef
 	cmp	al, "f"
 	je	togglef
+	cmp	al, "R"
+	je	toggler
+	cmp	al, "r"
+	je	toggler
 	cmp	al, "D"
 	je	setrefresh
 	cmp	al, "d"
@@ -351,21 +385,32 @@ basecfgstate:
 	jmp	basecfgstate
 
 togglef:
+	mov	al, [sysfont]
+	lea	di, [sysfontbytes]
+	mov	cx, numsysfonts - 1
+	cld
+	repne	scasb
+	je	@F
+	; loop back to start of list
+	lea	di, [sysfontbytes]
+@@:	; DI now points at next entry on list
+	mov	al, [di]
+	mov	[sysfont], al
+	jmp	drawscreen
+
+toggler:
 	mov	al, [fontsz]
-	cmp	al, 's'
-	je	toggleflarge
-	cmp	al, 0
-	je	togglefsmall
-	mov	al, 0
-toggleffinal:
+	lea	di, [fontszbytes]
+	mov	cx, numfontszs - 1
+	cld
+	repne	scasb
+	je	@F
+	; loop back to start of list
+	lea	di, [fontszbytes]
+@@:	; DI now points at next entry on list
+	mov	al, [di]
 	mov	[fontsz], al
 	jmp	drawscreen
-toggleflarge:
-	mov	al, 'l'
-	jmp	toggleffinal
-togglefsmall:
-	mov	al, 's'
-	jmp	toggleffinal
 
 toggleg:
 	cmp	[memmod], 6
@@ -407,7 +452,7 @@ setrefresh:
 setupdate:
 	sub	sp, 6
 	mov	bp, sp
-	mov	word ptr [bp], 52Dh
+	mov	word ptr [bp], 62Dh
 	mov	ax, [update]
 	mov	ch, 1
 	mov	cl, [updatel]
@@ -619,6 +664,15 @@ mode2text_edid:
 	lea	si, [bitcolor]
 	jmp	stpcpydollar
 
+blankfield_attr:	; takes attr in BL
+	mov	bh, 0
+	mov	ah, 2
+	int	10h
+	mov	cx, 15
+	mov	ax, 0920h
+	int	10h
+	ret
+
 blankfield:
 	mov	bh, 0
 	mov	ah, 2
@@ -770,20 +824,70 @@ decodedefault:
 	lea	si, [default]
 @@:	ret
 
-decodefontsize:		; returns string for font size in si
+decodesysfonttable:	; returns string for font file in si, takes table in bx
+	mov	al, [sysfont]
+	mov	si, di		; save this...
+	lea	di, [sysfontbytes]
+	mov	cx, numsysfonts
+	cld
+	repne	scasb
+	jne	sysfont_first	; default is first entry in table
+	; TODO: provide for custom font options?
+	; I don't know if that was ever a thing...
+	sub	di, offset sysfontbytes
+	dec	di
+	; While we're at it, check if this font is on the missing list...
+	mov	cx, di
+	mov	al, 1
+	shl	al, cl
+	mov	ah, [nofonts]
+	and	ah, 7Fh		; unset MSB
+	test	al, ah		; current font missing?
+	jz	@F
+	or	ah, 80h		; set MSB to indicate current font missing
+@@:	mov	[nofonts], ah
+	shl	di, 1		; convert to offset in word table
+	lea	bx, [bx+di]
+sysfont_first:
+	mov	di, si		; restore DI
+	mov	si, [bx]
+	ret
+
+decodesysfont:
+	lea	bx, [sysfonttable]
+	jmp	decodesysfonttable
+decodeoemfont:
+	lea	bx, [oemfonttable]
+	jmp	decodesysfonttable
+decodefixfont:
+	lea	bx, [fixfonttable]
+	jmp	decodesysfonttable
+decodesysfontexp:	; "explanations"
+	lea	bx, [fontexptable]
+	jmp	decodesysfonttable
+
+decodedpitable:		; returns string for font size in si, takes table in bx
 	mov	al, [fontsz]
-	cmp	al, "s"
-	je	decodefontsizesmall
-	cmp	al, "l"
-	je	decodefontsizelarge
-	xor	si, si
+	mov	si, di		; save this...
+	lea	di, [fontszbytes]
+	mov	cx, numfontszs
+	cld
+	repne	scasb
+	jne	@F		; default is first entry in table
+	sub	di, offset fontszbytes
+	dec	di
+	shl	di, 1		; convert to offset in word table
+	lea	bx, [bx+di]
+@@:	mov	di, si		; restore DI
+	mov	si, [bx]
 	ret
-decodefontsizesmall:
-	lea	si, [small]
-	ret
-decodefontsizelarge:
-	lea	si, [large]
-	ret
+
+decodedpi:		; returns string for font size in si
+	lea	bx, [dpitable]
+	jmp	decodedpitable
+decodedpiexp:		; returns string for font size explanation in si
+	lea	bx, [dpiexptable]
+	jmp	decodedpitable
 
 decodegarishdisplay:
 	lea	si, [dontcare]
@@ -820,6 +924,10 @@ decodebounceoff:
 	ret
 
 exit_save:
+	;Do not let the user save settings with a missing font!
+	test	[nofonts], 80h
+	jnz	togglef
+
 	call	eraseui
 
 	;Step 1: Locate [boot] and add
@@ -853,6 +961,15 @@ save_boot_nextline2:
 	jz	@F
 	call	any_section_recognizer
 	je	@F
+	lea	di, [pfontsfon]
+	call	assign_recognizer
+	je	save_boot_removeline
+	lea	di, [poemfontsfon]
+	call	assign_recognizer
+	je	save_boot_removeline
+	lea	di, [pfixedfonfon]
+	call	assign_recognizer
+	je	save_boot_removeline
 	lea	di, [pdisplaydrv]
 	call	assign_recognizer
 	je	save_boot_removeline
@@ -868,6 +985,25 @@ save_boot_insert:
 	call	insert_line
 	lea	di, [pgrabber]
 	call	insert_line
+
+	lea	di, [pfontsfon]
+	mov	bp, si
+	call	decodesysfont
+	mov	ax, si
+	mov	si, bp
+	call	insertpropstring
+	lea	di, [poemfontsfon]
+	mov	bp, si
+	call	decodeoemfont
+	mov	ax, si
+	mov	si, bp
+	call	insertpropstring
+	lea	di, [pfixedfonfon]
+	mov	bp, si
+	call	decodefixfont
+	mov	ax, si
+	mov	si, bp
+	call	insertpropstring
 	
 	;Step 2: Locate [386Enh] and add
 save_fenh:
@@ -1014,8 +1150,8 @@ save_vbesvga_insert:
 	jz	@F
 	lea	di, [pdepth]
 	call	insertpropnumeric
-@@:	push	si		; fontize=
-	call	decodefontsize
+@@:	push	si		; fontsize=
+	call	decodedpi
 	xchg	ax, si
 	pop	si
 	test	ax, ax
@@ -1654,7 +1790,8 @@ systeminitoogro	db	"SYSTEM.INI would be too big", 13, 10, "$"
 configvbe	db	"Configure SVGA Video Settings$"
 modebase	db	"M  Video Mode$"
 dblbuffbase	db	"D  Double Buffer Refresh(ms)$"
-fontsizebase	db	"F  Font Size$"
+fontsizebase	db	"F  System Font DPI / Files$"
+dpibase		db	"R  Resolution (DPI) Override$"
 updatewndbase	db	"U  Update DOS Window Tm (ms)$"
 bouncebase	db	"B  Bounce on Mode Set$"
 garishbase	db	"G  Garish System Palette$"
@@ -1690,9 +1827,33 @@ pbouncelwr	db	"bounceonmodeset="
 pbounce		db	"BounceOnModeset=$"
 pupdatetimelwr	db	"windowupdatetime=$"
 pupdatetime	db	"WindowUpdateTime=$"
+pfontsfon	db	"fonts.fon=$"
+poemfontsfon	db	"oemfonts.fon=$"
+pfixedfonfon	db	"fixedfon.fon=$"
 pbootdesc	db	"display.drv=Modern SVGA driver$"
+smallsysfont	db	"VGASYS.FON$"
+smalloemfont	db	"VGAOEM.FON$"
+smallfixfont	db	"VGAFIX.FON$"
+smallfontexp	db	"96  / VGA*.FON$"
+largesysfont	db	"8514SYS.FON$"
+largeoemfont	db	"8514OEM.FON$"
+largefixfont	db	"8514FIX.FON$"
+largefontexp	db	"120 / 8514*.FON$"
+tinysysfont	db	"LRSYS.FON$"
+tinyoemfont	db	"LROEM.FON$"
+tinyfixfont	db	"LRFIX.FON$"
+tinyfontexp	db	"43  / LR*.FON$"
 small		db	"small$"
 large		db	"large$"
+tiny		db	"tiny$"
+nativedpi	db	"nativedpi$"
+auto		db	"auto$"
+smallexp	db	"96dpi$"
+largeexp	db	"120dpi$"
+tinyexp		db	"48dpi$"
+nativedpiexp	db	"screen size$"
+autoexp		db	"system font$"
+
 on		db	"on$"
 off		db	"off$"
 more		db	"PG/DN More$"
@@ -1702,18 +1863,55 @@ default		db	"default$"
 dontcare	db	"(N/A in non-palette mode)$"	; for garish palette in non-palette modes
 bitcolor	db	" bit color$"
 
+; valid values for sysfont and fontsz below
+sysfontbytes	db	'v','8','l'
+numsysfonts	equ	$ - sysfontbytes
+fontszbytes	db	0,'s','l','t','n','a'
+numfontszs	equ	$ - fontszbytes
+
 	ALIGN 2
+
+; tables for assigning font size byte values to strings
+sysfonttable	dw	offset smallsysfont
+		dw	offset largesysfont
+		dw	offset tinysysfont
+oemfonttable	dw	offset smalloemfont
+		dw	offset largeoemfont
+		dw	offset tinyoemfont
+fixfonttable	dw	offset smallfixfont
+		dw	offset largefixfont
+		dw	offset tinyfixfont
+endfonttable	label	word
+fontexptable	dw	offset smallfontexp
+		dw	offset largefontexp
+		dw	offset tinyfontexp
+
+; tables for assigning dpi byte values to strings
+dpitable	dw	0
+		dw	offset small
+		dw	offset large
+		dw	offset tiny
+		dw	offset nativedpi
+		dw	offset auto
+dpiexptable	dw	0
+		dw	offset smallexp
+		dw	offset largeexp
+		dw	offset tinyexp
+		dw	offset nativedpiexp
+		dw	offset autoexp
 
 _width	dw	0	; Initialized to not found ...
 height	dw	0
 depth	dw	0
 memmod	db	6	; memory model of selected mode (assume direct)
+sysfont	db	'v'	; default is small, VGA
 fontsz	db	0
 refresh	dw	16
 garish	db	2
 bounce	db	2
 updatel	db	255
 update	dw	0
+nofonts	db	0	; bitmap of fonts with missing files
 
 issetupexe:
 	;*** SETUP.EXE copies AUXSTACK.COM, AUXCHECK.COM, VGASVGA.DRV, VDDVBE.386, VBEVMDIB.3GR, VIDMODES.COM, VBESVGA.TXT
@@ -1790,6 +1988,44 @@ foundwindir_nadj:
 	lea	si, [vbevmdib]
 	call	copyfile
 	jc	ioerror
+
+	;Loop over all the font files, check if they're there, and
+	;attempt to copy them over if not.
+	lea	si, [sysfonttable]
+	xor	cl, cl			; Bit index counter
+	cld				; Am I being paranoid?
+foundwindir_fontloop:
+	lodsw
+	push	si
+	mov	si, ax
+	push	di
+	call	stpcpydollar		; First just get %WINDIR%\SYSTEM\*.FON
+	mov	byte ptr [di], 0	; in ASCIZ format at [pname2]
+	pop	di
+	lea	dx, [pname2]
+	mov	ax, 4300h
+	mov	bx, cx			; Preserve the index!
+	int	21h
+	mov	cx, bx
+	jnc	@F
+	; It's not there, try to copy it:
+	mov	si, di			; Already have ASCIZ name here!
+	call	copyfile
+	jnc	@F
+	; No dice? This font is not available then!
+	mov	al, 1
+	shl	al, cl
+	or	[nofonts], al
+@@:	pop	si
+	; CL counts the index, small/large/tiny, and repeats periodically
+	; as we have three sets of files to check. Handle the periodicity.
+	inc	cl
+	cmp	cl, numsysfonts
+	jb	@F
+	xor	cl, cl
+@@:	cmp	si, offset endfonttable
+	jb	foundwindir_fontloop
+
 	pop	di
 foundwindir_auxstack:
 	lea	si, [auxstack]
@@ -1804,7 +2040,7 @@ foundwindir_vidmodes:
 	;Executive decision: VIDMODES.COM is an optional component
 	lea	si, [vbesvgatxt]
 	call	copyfile
-	;No error check here as this file isn't ready yet.
+	;No error check here as this file is also optional
 	lea	dx, [vbesvgaexes]
 	mov	si, dx
 	mov	ah, 9
