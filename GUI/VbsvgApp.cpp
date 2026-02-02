@@ -317,6 +317,12 @@ int OwlMain(int , char* [])
 
     fclose(fp);
 
+    if (foundDriverLine == 0)
+    {
+        MessageBox(NULL, "Entry [VBESVGA.DRV] was not found in your SYSTEM.INI file. Please ensure VBESVGA was installed from SETUP and try again.", NULL, MB_OK);
+        exit(EXIT_SUCCESS);
+    }
+
 
     fp = fopen(vidModes, "r");
     while (fp == NULL)
