@@ -22,7 +22,6 @@
 #include <fstream>
 #include <iostream>
 
-int settingsAlreadySaved = 0;
 int setStartPos = 0;
 int widthCheck = 0;
 int heightCheck = 0;
@@ -39,7 +38,6 @@ HWND dialogHWND;
 //
 DEFINE_RESPONSE_TABLE1(TVbesvgaDlgClient, TDialog)
 //{{TVbesvgaDlgClientRSP_TBL_BEGIN}}
-  EV_BN_CLICKED(IDAPPLY, BNClickedApply),
   EV_WM_SETFONT,
   EV_WM_HSCROLL,
   EV_LBN_SELCHANGE(IDC_DEPTH, LBNSelchange),
@@ -74,7 +72,6 @@ TVbesvgaDlgClient::TVbesvgaDlgClient(TWindow* parent, TResId resId, TModule* mod
 //{{TVbesvgaDlgClientXFER_USE}}
   ResolutionScroll = new TScrollBar(this, IDC_SCROLLBAR1);
   ResolutionText = new TStatic(this, IDC_RESOLUTION, 255);
-  ApplyButton = new TButton(this, IDAPPLY);
 
   SetTransferBuffer(&TVbesvgaDlgClientData);
 //{{TVbesvgaDlgClientXFER_USE_END}}
@@ -214,13 +211,6 @@ TVbesvgaDlgClient::~TVbesvgaDlgClient()
 
     // INSERT>> Your destructor code here.
 }
-
-void TVbesvgaDlgClient::BNClickedApply()
-{
-    SaveData();
-    settingsAlreadySaved = 1;
-}
-
 
 HBRUSH TVbesvgaDlgClient::EvCtlColor(HDC dc, HWND hWndChild, uint ctlType)
 {
@@ -513,15 +503,10 @@ void TVbesvgaDlgClient::LBNSelchange()
 
 void TVbesvgaDlgClient::BNOKClicked()
 {
-  int result = IDNO;
-  bool checkWin = ApplyButton->IsWindowEnabled();
-
-    if (checkWin == true || settingsAlreadySaved == 1)
-    {
-        SaveData();
-        result = MessageBox("You will need to restart Windows before the new settings will take effect.\n\nRestart Windows now?",
-                            "VBESVGA", MB_YESNO | MB_ICONQUESTION);
-    }
+    int result = IDNO;
+    SaveData();
+    result = MessageBox("You will need to restart Windows before the new settings will take effect.\n\nRestart Windows now?",
+                        "VBESVGA", MB_YESNO | MB_ICONQUESTION);
 
     switch (result)
     {

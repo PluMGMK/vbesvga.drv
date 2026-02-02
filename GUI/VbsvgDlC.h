@@ -45,7 +45,6 @@ class TVbesvgaDlgClient : public TDialog {
   protected:
     TScrollBar* ResolutionScroll;
     TStatic* ResolutionText;
-    TButton* ApplyButton;
 
 //{{TVbesvgaDlgClientXFER_DEF_END}}
 
@@ -56,7 +55,6 @@ class TVbesvgaDlgClient : public TDialog {
 
 //{{TVbesvgaDlgClientRSP_TBL_BEGIN}}
   protected:
-    void BNClickedApply();
     HBRUSH EvCtlColor(HDC dc, HWND hWndChild, uint ctlType);
     void BNClickedSmall();
     void BNUnhiliteLarge();
