@@ -32,8 +32,6 @@ struct TVbesvgaDlgClientXfer {
 //{{TVbesvgaDlgClientXFER_DATA_END}}
 };
 
-extern HWND dialogHWND;
-
 class TVbesvgaDlgClient : public TDialog {
   public:
     TVbesvgaDlgClient(TWindow* parent, TResId resId = IDD_CLIENT, TModule* module = 0);
