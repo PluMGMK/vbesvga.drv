@@ -43,14 +43,7 @@ string settings[11][2] = {{"Width", "1024"},
                           {"Allow3ByteMode", "1"},
                           {"BounceOnModeSet", "1"}};
 
-int driverInstalled = 0;
-int foundDriverLine = 0;
-
-std::vector<string> vbeModes;
-
-
-
-bool compareResolutions(const Resolution& a, const Resolution& b)
+static bool compareResolutions(const Resolution& a, const Resolution& b)
 {
     if (a.width != b.width)
     {
@@ -66,8 +59,6 @@ bool compareResolutions(const Resolution& a, const Resolution& b)
 }
 
 
-
-std::vector<Resolution> vbeModesSorted;
 Resolution *exportModes;
 int numberModeEntries = 0;
 
@@ -263,9 +254,10 @@ int OwlMain(int , char* [])
     char runVidmodesCommand[255];
     char line_buffer[255];
     int parseModes = 0;
-    int runVidModes = 0;
     int result = 0;
-    foundDriverLine = 0;
+    int foundDriverLine = -1;
+    std::vector<string> vbeModes;
+    std::vector<Resolution> vbeModesSorted;
 
     GetWindowsDirectory(systemINI, 255);
 
@@ -275,12 +267,13 @@ int OwlMain(int , char* [])
     strcat(runVidmodesCommand, "\\VIDMODES.COM > ");
     strcat(runVidmodesCommand, systemINI);
     strcat(runVidmodesCommand, "\\VIDMODES.CFG");
-    //MessageBox(NULL, runVidmodesCommand, "test", MB_OK);
     strcat(vidModes, "\\VIDMODES.CFG");
 
     strcat(systemINI, "\\SYSTEM.INI");
 
     FILE *fp = fopen(systemINI, "r");
+
+    // Parse SYSTEM.INI file to find [VBSVGA.DRV]. When found, grab any settings that exist until no further possibilities e
 
     while (fgets(line_buffer, sizeof(line_buffer), fp) != NULL)
     {
@@ -298,18 +291,8 @@ int OwlMain(int , char* [])
                     line_buffer[strcspn(line_buffer, "\n")] = '\0';
                     string getValue = line_buffer;
                     int pos = getValue.find('=');
-                    getValue = getValue.substr(0, pos);
-                    for (int i = 0; i < 11; i++)
-                    {
-                        if(strstr(line_buffer, settings[i][0].c_str()) != NULL)
-                        {
-                            line_buffer[strcspn(line_buffer, "\n")] = '\0';
-                            string getValue = line_buffer;
-                            int pos = getValue.find('=');
-                            getValue = getValue.substr(pos + 1, getValue.length());
-                            settings[i][1] = getValue;
-                        }
-                    }
+                    getValue = getValue.substr(pos + 1, getValue.length());
+                    settings[i][1] = getValue;
                 }
             }
         }
@@ -317,13 +300,14 @@ int OwlMain(int , char* [])
 
     fclose(fp);
 
-    if (foundDriverLine == 0)
+    // For now, quit if [VBESVGA.DRV] is not found
+    if (foundDriverLine == -1)
     {
         MessageBox(NULL, "Entry [VBESVGA.DRV] was not found in your SYSTEM.INI file. Please ensure VBESVGA was installed from SETUP and try again.", NULL, MB_OK);
         exit(EXIT_SUCCESS);
     }
 
-
+    // Need to be careful when performing a WinExec command. Timing is quite important!
     fp = fopen(vidModes, "r");
     while (fp == NULL)
     {
@@ -335,6 +319,8 @@ int OwlMain(int , char* [])
         }
         fp = fopen(vidModes, "r");
     }
+
+    // Parse VIDMODES.CFG and store all of the supported modes and depths
 
     while (fgets(line_buffer, sizeof(line_buffer), fp) != NULL)
     {
@@ -395,11 +381,8 @@ int OwlMain(int , char* [])
 
     std::sort(vbeModesSorted.begin(), vbeModesSorted.end(), compareResolutions);
 
-    char tt[55];
-    for (int i = 0; i < vbeModesSorted.size(); i++)
-    {
-        sprintf(tt, "%d %d %d", vbeModesSorted[i].width, vbeModesSorted[i].height, vbeModesSorted[i].depth);
-    }
+    // Use exportModes pointer to allow vbeModesSorted vector to be seen throughout the code.
+    // Compiler is causing weird behavior when the vector library is universally used
 
     exportModes = new Resolution[vbeModesSorted.size()];
     for (int i = 0; i < vbeModesSorted.size(); i++)

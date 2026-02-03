@@ -33,7 +33,6 @@ extern string defaultSettings[11];
 extern string settings[11][2];
 extern Resolution *exportModes;
 extern int numberModeEntries;
-extern int foundDriverLine;
 
 
 

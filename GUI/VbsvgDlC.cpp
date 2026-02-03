@@ -22,17 +22,6 @@
 #include <fstream>
 #include <iostream>
 
-int setStartPos = 0;
-int widthCheck = 0;
-int heightCheck = 0;
-int listBoxIndex = 0;
-char *dlgS = "256 (8-bit)";
-char *dlgV = "32K (15-bit)";
-char *dlgH = "64K (16-bit)";
-char *dlgT = "True Color (24-bit)";
-HWND dialogHWND;
-
-
 //
 // Build a response table for all messages/commands handled by the application.
 //
@@ -51,6 +40,7 @@ DEFINE_RESPONSE_TABLE1(TVbesvgaDlgClient, TDialog)
   EV_BN_CLICKED(IDC_RADIOBUTTON4, BNClickedSmall),
   EV_BN_CLICKED(IDC_RADIOBUTTON5, BNClickedLarge),
 
+  EV_LBN_SELCHANGE(IDC_RESOLUTION, LBNSelchangeResolution),
 //{{TVbesvgaDlgClientRSP_TBL_END}}
 END_RESPONSE_TABLE;
 
@@ -70,8 +60,7 @@ TVbesvgaDlgClient::TVbesvgaDlgClient(TWindow* parent, TResId resId, TModule* mod
   TDialog(parent, resId, module)
 {
 //{{TVbesvgaDlgClientXFER_USE}}
-  ResolutionScroll = new TScrollBar(this, IDC_SCROLLBAR1);
-  ResolutionText = new TStatic(this, IDC_RESOLUTION, 255);
+  ResolutionList = new TListBox(this, IDC_RESOLUTION);
 
   SetTransferBuffer(&TVbesvgaDlgClientData);
 //{{TVbesvgaDlgClientXFER_USE_END}}
@@ -84,11 +73,8 @@ static void SaveData()
 {
     char systemINI[255];
     char systemINInew[255];
-    char vidModes[255];
     char line_buffer[255];
-    int parseModes = 0;
-    foundDriverLine = 0;
-    long position = 0;
+    int foundDriverLine = -1;
 
     GetWindowsDirectory(systemINI, 255);
     strcpy(systemINInew, systemINI);
@@ -97,6 +83,9 @@ static void SaveData()
 
     FILE *fp = fopen(systemINI, "r");
     FILE *fp_t = fopen(systemINInew, "w");
+
+    // Create a temporary SYSTEM.VBE to copy off SYSTEM.INI. Overwrite the [VBESVGA.DRV] entries with the user's choice
+    // Then, delete SYSTEM.INI and rename SYSTEM.VBE afterward
 
     while (fgets(line_buffer, sizeof(line_buffer), fp) != NULL)
     {
@@ -199,9 +188,16 @@ static void SaveData()
     fclose(fp);
     fclose(fp_t);
 
-    remove(systemINI);
-    rename(systemINInew, systemINI);
-    remove(systemINInew);
+    if (foundDriverLine == -1)
+    {
+        remove(systemINInew);
+    }
+    else
+    {
+        remove(systemINI);
+        rename(systemINInew, systemINI);
+        remove(systemINInew);
+    }
 }
 
 
@@ -247,9 +243,14 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
 {
     bool result;
     int setNumberOfModeEntries = 0;
+    int listBoxIndex = 0;
+    char resolutionText[14];
+    int widthCheck = 0;
+    int heightCheck = 0;
     result = TDialog::EvInitDialog(hWndFocus);
 
-    dialogHWND = hWndFocus;
+    // Initial dialog setup
+    // Ensure gray color background and then set dialog boxes, radio butons and list boxes to the configured settings
 
     SetBkgndColor(TColor::LtGray);
 
@@ -273,20 +274,21 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
     {
         CheckDlgButton(IDC_RADIOBUTTON5, 1);
     }
-    char depthBuf[20];
 
     for (int i = 0; i < numberModeEntries; i++)
     {
+        sprintf(resolutionText, "%d x %d", exportModes[i].width, exportModes[i].height);
         if (widthCheck != exportModes[i].width || (heightCheck != exportModes[i].height && widthCheck == exportModes[i].width))
         {
+            SendDlgItemMsg(IDC_RESOLUTION, LB_ADDSTRING, 0, (long) resolutionText);
             if (widthCheck == atoi(settings[0][1].c_str()) && heightCheck == atoi(settings[1][1].c_str()))
             {
-                setStartPos = setNumberOfModeEntries;
+                SendDlgItemMsg(IDC_RESOLUTION, LB_SETCURSEL, setNumberOfModeEntries-1, 0);
             }
+
             setNumberOfModeEntries++;
             widthCheck = exportModes[i].width;
             heightCheck = exportModes[i].height;
-            sprintf(depthBuf, "%d", exportModes[i].depth);
         }
     }
 
@@ -296,7 +298,7 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
         {
             if (exportModes[i].depth == 8)
             {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgS);
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "256 (8-bit)");
                 if (settings[2][1] == "8")
                 {
                     SendDlgItemMsg(IDC_DEPTH, LB_SETCURSEL,listBoxIndex,0);
@@ -305,7 +307,7 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
             }
             else if (exportModes[i].depth == 15)
             {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgV);
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "32K (15-bit)");
                 if (settings[2][1] == "15")
                 {
                     SendDlgItemMsg(IDC_DEPTH, LB_SETCURSEL,listBoxIndex,0);
@@ -314,7 +316,7 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
             }
             else if (exportModes[i].depth == 16)
             {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgH);
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "64K (16-bit)");
                 if (settings[2][1] == "16")
                 {
                     SendDlgItemMsg(IDC_DEPTH, LB_SETCURSEL,listBoxIndex,0);
@@ -323,7 +325,7 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
             }
             else if (exportModes[i].depth == 24 || exportModes[i].depth == 32)
             {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgT);
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "True Color (24-bit)");
                 if (settings[2][1] == "24" || settings[2][1] == "32")
                 {
                     SendDlgItemMsg(IDC_DEPTH, LB_SETCURSEL,listBoxIndex,0);
@@ -332,27 +334,6 @@ bool TVbesvgaDlgClient::EvInitDialog(HWND hWndFocus)
             }
         }
     }
-
-    ResolutionScroll->SetRange(0,setNumberOfModeEntries,true);
-    ResolutionScroll->SetPosition(setStartPos);
-    ResolutionScroll->SetLineMagnitude(1);
-    ResolutionScroll->SetPageMagnitude(1);
-
-    const char *text = settings[0][1].c_str();
-    const char *text2 = " x ";
-    const char *text3 = settings[1][1].c_str();
-    char buffer[255];
-
-    strcpy(buffer, text);
-    strcat(buffer, text2);
-    strcat(buffer, text3);
-
-    const char *combined_text = buffer;
-    ResolutionText->SetText(combined_text);
-
-    widthCheck = atoi(settings[0][1].c_str());
-    heightCheck = atoi(settings[1][1].c_str());
-    setNumberOfModeEntries = 0;
 
     return result;
 }
@@ -367,126 +348,17 @@ void TVbesvgaDlgClient::EvSetFont(HFONT hFont, bool redraw)
 }
 
 
-void TVbesvgaDlgClient::EvHScroll(uint scrollCode, uint thumbPos, THandle hWndCtl)
-{
-    int updateLoop = 0;
-
-    switch (scrollCode)
-    {
-        case SB_LINELEFT:
-        case SB_PAGELEFT:
-        {
-            updateLoop = 1;
-            widthCheck = atoi(settings[0][1].c_str());
-            heightCheck = atoi(settings[1][1].c_str());
-            for (int i = (numberModeEntries - 1); i >= 0; i--)
-            {
-                if (widthCheck > exportModes[i].width || (heightCheck > exportModes[i].height && widthCheck == exportModes[i].width))
-                {
-                    if (updateLoop == 1)
-                    {
-                        char intTemp[20];
-                        char buffer[255];
-                        sprintf(intTemp, "%d", exportModes[i].width);
-                        strcpy(buffer, intTemp);
-                        strcat(buffer, " x ");
-                        settings[0][1] = intTemp;
-                        sprintf(intTemp, "%d", exportModes[i].height);
-                        strcat(buffer, intTemp);
-                        settings[1][1] = intTemp;
-                        ResolutionText->SetText(buffer);
-                        updateLoop = 0;
-                        setStartPos--;
-                        if (scrollCode == SB_PAGELEFT)
-                        {
-                            ResolutionScroll->SetPosition(setStartPos);
-                        }
-
-                    }
-                }
-            }
-            break;
-        }
-        case SB_LINERIGHT:
-        case SB_PAGERIGHT:
-        {
-            updateLoop = 1;
-            widthCheck = atoi(settings[0][1].c_str());
-            heightCheck = atoi(settings[1][1].c_str());
-            for (int i = 0; i < numberModeEntries; i++)
-            {
-                if (widthCheck < exportModes[i].width || (heightCheck < exportModes[i].height && widthCheck == exportModes[i].width))
-                {
-                    if (updateLoop == 1)
-                    {
-                        char intTemp[20];
-                        char buffer[255];
-                        sprintf(intTemp, "%d", exportModes[i].width);
-                        strcpy(buffer, intTemp);
-                        strcat(buffer, " x ");
-                        settings[0][1] = intTemp;
-                        sprintf(intTemp, "%d", exportModes[i].height);
-                        strcat(buffer, intTemp);
-                        settings[1][1] = intTemp;
-                        ResolutionText->SetText(buffer);
-                        updateLoop = 0;
-                        setStartPos++;
-                        if (scrollCode == SB_PAGERIGHT)
-                        {
-                            ResolutionScroll->SetPosition(setStartPos-1);
-                        }
-                    }
-                }
-            }
-            break;
-        }
-    }
-
-    listBoxIndex = 0;
-    SendDlgItemMsg(IDC_DEPTH, LB_RESETCONTENT, 0, 0);
-
-    for (int i = 0; i < numberModeEntries; i++)
-    {
-        if (exportModes[i].width == atoi(settings[0][1].c_str()) && exportModes[i].height == atoi(settings[1][1].c_str()))
-        {
-            if (exportModes[i].depth == 8)
-            {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgS);
-                listBoxIndex++;
-            }
-            else if (exportModes[i].depth == 15)
-            {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgV);
-                listBoxIndex++;
-            }
-            else if (exportModes[i].depth == 16)
-            {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgH);
-                listBoxIndex++;
-            }
-            else if (exportModes[i].depth == 24 || exportModes[i].depth == 32)
-            {
-                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) dlgT);
-                listBoxIndex++;
-            }
-        }
-    }
-
-    TDialog::EvHScroll(scrollCode, thumbPos, hWndCtl);
-}
-
-
 void TVbesvgaDlgClient::LBNSelchange()
 {
     int listSel = 0;
-    int check = SendDlgItemMsg(IDC_DEPTH, LB_GETCURSEL,0,0);
+    long check = SendDlgItemMsg(IDC_DEPTH, LB_GETCURSEL,0,0);
     char setDepth[3];
 
     for (int i = 0; i < numberModeEntries; i++)
     {
         if (exportModes[i].width == atoi(settings[0][1].c_str()) && exportModes[i].height == atoi(settings[1][1].c_str()))
         {
-                if (listSel == check)
+            if (listSel == check)
             {
                 sprintf(setDepth, "%d", exportModes[i].depth);
                 if (exportModes[i].depth > 24)
@@ -620,5 +492,70 @@ void TVbesvgaDlgClient::BNClickedAuto()
     CheckDlgButton(IDC_RADIOBUTTON3, 0);
     CheckDlgButton(IDC_RADIOBUTTON4, 0);
     CheckDlgButton(IDC_RADIOBUTTON5, 0);
+}
+
+
+void TVbesvgaDlgClient::LBNSelchangeResolution()
+{
+    char rtext[14];
+    char setDepth[3];
+    ResolutionList->GetSelString(rtext, 14);
+    char *getWidth = strtok(rtext, " x ");
+    char *getHeight = getWidth;
+    int listBoxIndex = 0;
+    getHeight = strtok(NULL, " x ");
+    settings[0][1] = getWidth;
+    settings[1][1] = getHeight;
+    string getPreviousDepth = settings[2][1];
+
+    SendDlgItemMsg(IDC_DEPTH, LB_RESETCONTENT, 0, 0);
+
+    for (int i = 0; i < numberModeEntries; i++)
+    {
+        if (exportModes[i].width == atoi(settings[0][1].c_str()) && exportModes[i].height == atoi(settings[1][1].c_str()))
+        {
+            // Get support depths for newly selected resolution
+            if (exportModes[i].depth == 8)
+            {
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "256 (8-bit)");
+            }
+            else if (exportModes[i].depth == 15)
+            {
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "32K (15-bit)");
+            }
+            else if (exportModes[i].depth == 16)
+            {
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "64K (16-bit)");
+            }
+            else if (exportModes[i].depth == 24 || exportModes[i].depth == 32)
+            {
+                SendDlgItemMsg(IDC_DEPTH, LB_ADDSTRING, 0, (long) "True Color (24-bit)");
+            }
+            listBoxIndex++;
+
+            // Keep new depth in line with previous resolution unless not supported
+            // If not supported, use a lower depth
+            if (exportModes[i].depth <= atoi(getPreviousDepth.c_str()) ||
+                ((exportModes[i].depth == 24 || exportModes[i].depth == 32) &&
+                (getPreviousDepth == "24" || getPreviousDepth == "32")))
+            {
+                SendDlgItemMsg(IDC_DEPTH, LB_SETCURSEL, listBoxIndex-1, 0);
+                sprintf(setDepth, "%d", exportModes[i].depth);
+                settings[2][1] = setDepth;
+            }
+            else if (listBoxIndex == 1 && (exportModes[i].depth > atoi(getPreviousDepth.c_str())))
+            {
+                // Some NVIDIA cards may have a 2048x1536x32 VESA mode. Need this just in case
+                SendDlgItemMsg(IDC_DEPTH, LB_SETCURSEL, 0, 0);
+                sprintf(setDepth, "%d", exportModes[i].depth);
+                settings[2][1] = setDepth;
+            }
+        }
+    }
+
+    if (settings[2][1] == "32")
+    {
+        settings[2][1] = "24";
+    }
 }
 

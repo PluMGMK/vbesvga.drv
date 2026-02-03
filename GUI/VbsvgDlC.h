@@ -28,8 +28,7 @@
 //{{TDialog = TVbesvgaDlgClient}}
 struct TVbesvgaDlgClientXfer {
 //{{TVbesvgaDlgClientXFER_DATA}}
-    TScrollBarData    ResolutionScroll;
-    char    ResolutionText[ 255 ];
+    TListBoxData  ResolutionList;
 //{{TVbesvgaDlgClientXFER_DATA_END}}
 };
 
@@ -43,8 +42,7 @@ class TVbesvgaDlgClient : public TDialog {
 
 //{{TVbesvgaDlgClientXFER_DEF}}
   protected:
-    TScrollBar* ResolutionScroll;
-    TStatic* ResolutionText;
+    TListBox* ResolutionList;
 
 //{{TVbesvgaDlgClientXFER_DEF_END}}
 
@@ -60,7 +58,6 @@ class TVbesvgaDlgClient : public TDialog {
     void BNUnhiliteLarge();
     void BNClickedLarge();
     void EvSetFont(HFONT hFont, bool redraw);
-    void EvHScroll(uint scrollCode, uint thumbPos, THandle hWndCtl);
     void LBNSelchange();
     void BNOKClicked();
     void LBNSetfocus();
@@ -72,6 +69,7 @@ class TVbesvgaDlgClient : public TDialog {
     void BNClickedTiny();
     void BNClickedNativeDPI();
     void BNClickedAuto();
+    void LBNSelchangeResolution();
 //{{TVbesvgaDlgClientRSP_TBL_END}}
 DECLARE_RESPONSE_TABLE(TVbesvgaDlgClient);
 };    //{{TVbesvgaDlgClient}}

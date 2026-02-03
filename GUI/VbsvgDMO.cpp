@@ -76,6 +76,7 @@ bool TVbesvgaDlgMoreOptions::EvInitDialog(HWND hWndFocus)
     DACDepthComboBox->InsertString("6", 0);
     DACDepthComboBox->InsertString("8", 1);
     DACDepthComboBox->InsertString("auto", 2);
+    
     if (settings[4][1] == "6")
     {
         DACDepthComboBox->SetSelIndex(0);
