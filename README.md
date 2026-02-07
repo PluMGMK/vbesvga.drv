@@ -175,9 +175,9 @@ When I make these changes (hopefully during 2026), the version number will be bu
 
 When using high-colour modes, Program Manager may complain that there is not enough memory to convert all the icons. There is nothing I can do about this, as it is a limitation of Program Manager itself, as described [in this VOGONS post](https://www.vogons.org/viewtopic.php?t=48203). It tries to stuff all the 32×32 icon bitmaps for each program group into a single 64k segment, so the max icons you can have per group is floor(65535 / (32 × 32 × (Total bit depth / 8))). That's 31 for 16-bit modes, 21 for 24-bit modes (not accessible with `Allow3ByteMode=0`) and 15 for 32-bit modes. (This limitation doesn't come into play for 8-bit modes, because there is a hard limit of 50 icons anyway, regardless of bitmap sizes.)
 
-#### MS-DOS Prompt crashing the system in Standard Mode
+#### Can't Restart Windows / MS-DOS Prompt crashing the system
 
-On newer graphics cards, when you try to open an MS-DOS prompt in Standard Mode (not 386 Enhanced Mode), the screen may start flashing with various garbage characters appearing in quick succession, and only a reboot will fix it. This happens regardless of whether or not you use this driver. This is caused by a stack overflow in the logo code in `WIN.COM` when it tries to do an `int 10h` call.
+On newer graphics cards, when you try to restart Windows (e.g. from Calmira's shutdown menu) without rebooting or returning to DOS, the screen may start flashing with various garbage characters appearing in quick succession, and only a reboot will fix it. This happens regardless of whether or not you use this driver. This is caused by a stack overflow in the logo code in `WIN.COM` when it tries to do an `int 10h` call. This happens in both Standard and 386 Enhanced Mode. The same thing can happen when you try to open an MS-DOS Prompt, but only in Standard Mode.
 
 To work around this issue, you can try using the `AUXSTACK.COM` TSR, included in newer releases. Simply run `AUXSTACK.COM` _before_ starting Windows, and it will allocate 1 kiB of Conventional Memory to use as an auxiliary stack and prevent the overflow from occurring. You can use the tool `AUXCHECK.COM` to see if this is needed rather than using trial and error[^1].
 
