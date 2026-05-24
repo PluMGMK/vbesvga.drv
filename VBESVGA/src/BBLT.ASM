@@ -67,19 +67,22 @@ include ropdefs.blt
 include roptable.blt
 
 externW _cstods
-externW	pattern_copy_numwords		; in ROBJECT.ASM
-externW	oem_brush_size			; in ROBJECT.ASM
+externW	pattern_copy_numwords	; in ROBJECT.ASM
+externW	oem_brush_size		; in ROBJECT.ASM
+
+REDZONE_SIZE	equ 40H		; room on stack for si,di,ds + rsvrptrs + slop
 
 cProc   BITBLT,<FAR,PUBLIC,PASCAL>,<>
 cBegin  nogen
         push    bp
         mov     bp,sp
 
-        ?CHKSTKPROC BLT_STACK_SIZE+40h  ; leave room for si,di,ds + rsvrptrs + slop
+        ?CHKSTKPROC BLT_STACK_SIZE+REDZONE_SIZE
         jnc     blt_stack_ok
         jmp     blt_exit
 blt_stack_ok:
 
+	add	sp,REDZONE_SIZE	; bring SP back up so we can push these things!
         push    ds
         mov     ds,[_cstods]
         push    si
