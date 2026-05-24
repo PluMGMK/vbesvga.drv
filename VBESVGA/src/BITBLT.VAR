@@ -12,81 +12,76 @@ Rop		EQU	<[bp + 0EH]>
 lpPBrush	EQU	<[bp + 0AH]>
 lpDrawMode	EQU	<[bp + 06H]>
 
-my_data_seg		EQU	<[bp - 08H]> ;may need to access the data seg
-global_bank		EQU	<[bp - 09H]> ;last bank # set outside bitblt
-local_enable_flag	EQU	<[bp - 0AH]> ;Local copy of the enable flag
-device_flags		EQU	<[bp - 0CH]> ;tells things about src,dst devices
-rop_flags		EQU	<[bp - 0EH]> ;tells things about the ROP
-src_xExt_bytes		EQU	<[bp - 12H]> ;width of src blt rect in bytes
-dst_xExt_bytes		EQU	<[bp - 14H]> ;width of dst blt rect in bytes
-src_width_bytes 	EQU	<[bp - 16H]> ;leftover bytes in src segment
-dst_width_bytes 	EQU	<[bp - 18H]> ;leftover bytes in dst segment
-src_fill_bytes          EQU     <[bp - 1AH]> ;leftover bytes in src segment
-dst_fill_bytes		EQU	<[bp - 1CH]> ;leftover bytes in dst segment
-src_swing_bytes 	EQU	<[bp - 1EH]> ;bytes from end of blt rect on one
-dst_swing_bytes 	EQU	<[bp - 20H]> ; scanline to start of blt rect on next
-src_blt_segment 	EQU	<[bp - 22H]> ;start segment of src
-src_blt_offset		EQU	<[bp - 24H]> ;start offset of src
-dst_blt_segment 	EQU	<[bp - 26H]> ;start segment of dst
-dst_blt_offset		EQU	<[bp - 28H]> ;start offset of dst
+global_bank		EQU	<[bp - 07H]> ;last bank # set outside bitblt
+local_enable_flag	EQU	<[bp - 08H]> ;Local copy of the enable flag
+device_flags		EQU	<[bp - 0AH]> ;tells things about src,dst devices
+rop_flags		EQU	<[bp - 0CH]> ;tells things about the ROP
+src_xExt_bytes		EQU	<[bp - 10H]> ;width of src blt rect in bytes
+dst_xExt_bytes		EQU	<[bp - 12H]> ;width of dst blt rect in bytes
+src_width_bytes 	EQU	<[bp - 14H]> ;leftover bytes in src segment
+dst_width_bytes 	EQU	<[bp - 16H]> ;leftover bytes in dst segment
+src_fill_bytes          EQU     <[bp - 18H]> ;leftover bytes in src segment
+dst_fill_bytes		EQU	<[bp - 1AH]> ;leftover bytes in dst segment
+src_swing_bytes 	EQU	<[bp - 1CH]> ;bytes from end of blt rect on one
+dst_swing_bytes 	EQU	<[bp - 1EH]> ; scanline to start of blt rect on next
+src_blt_segment 	EQU	<[bp - 20H]> ;start segment of src
+src_blt_offset		EQU	<[bp - 22H]> ;start offset of src
+dst_blt_segment 	EQU	<[bp - 24H]> ;start segment of dst
+dst_blt_offset		EQU	<[bp - 26H]> ;start offset of dst
 
-src_seg_wrap	 	EQU	<[bp - 2AH]> ;loop iterations left to do if/when
-dst_seg_wrap		EQU	<[bp - 2CH]> ; we wrap to the next segment
-WorkSelector		EQU	<[bp - 2EH]>
-any_jmp_address 	EQU	<[bp - 30H]> ;temp storage for a compiled address
+src_seg_wrap	 	EQU	<[bp - 28H]> ;loop iterations left to do if/when
+dst_seg_wrap		EQU	<[bp - 2AH]> ; we wrap to the next segment
+WorkSelector		EQU	<[bp - 2CH]>
+any_jmp_address 	EQU	<[bp - 2EH]> ;temp storage for a compiled addx
 
-first_edge_mask 	EQU	<[bp - 32H]> ;used in DST_IS_MONO blts
-inner_loop_count	EQU	<[bp - 34H]> ;used in DST_IS_MONO blts
-last_edge_mask		EQU	<[bp - 36H]> ;used in DST_IS_MONO blts
-align_rotate_count	EQU	<[bp - 38H]> ;used in MONO/COLOR to MONO blts
+first_edge_mask 	EQU	<[bp - 30H]> ;used in DST_IS_MONO blts
+inner_loop_count	EQU	<[bp - 32H]> ;used in DST_IS_MONO blts
+last_edge_mask		EQU	<[bp - 34H]> ;used in DST_IS_MONO blts
+align_rotate_count	EQU	<[bp - 36H]> ;used in MONO/COLOR to MONO blts
+pattern_offset		EQU	<[bp - 38H]> ;used in blts with patterns
 bgcolour		EQU	<[bp - 3CH]> ;physical background colour
 fgcolour		EQU	<[bp - 40H]> ;physical foreground colour
-pattern_offset		EQU	<[bp - 44H]> ;used in blts with patterns
-rop_offset		EQU	<[bp - 46H]> ;offset of ropcode in roptable
-rop_length		EQU	<[bp - 48H]> ;length of the rop code
-pattern_work		EQU    <[bp - 188H]> ;temporary workspace for pattern
-pattern_space		EQU    <[bp - 2C8H]> ;pattern will be placed on 64 byte bdry
+rop_offset		EQU	<[bp - 42H]> ;offset of ropcode in roptable
+rop_length		EQU	<[bp - 44H]> ;length of the rop code
+pattern_space		EQU    <[bp - 184H]> ;pattern will be placed on 64 byte bdry, so give 100h = max pattern size + 40h = alignment space (wasted)
 
-vert_dir		EQU	<[bp - 2CAH]>
-horz_dir		EQU	<[bp - 2CCH]>
-dst_page		EQU	<[bp - 2CEH]> ;used in some "DST is SCREEN" blts
-dst_bank		EQU	<[bp - 2D0H]> ;used in some "DST is SCREEN" blts
-src_page		EQU	<[bp - 2D2H]> ;used in some "SRC is SCREEN" blts
-src_bank		EQU	<[bp - 2D4H]> ;used in some "SRC is SCREEN" blts
-first_edge_mask_count	EQU	<[bp - 2D6H]>
-pattern_row_counter	EQU	<[bp - 2DAH]>
-same_pattern_row_counter  EQU	<[bp - 2DCH]>
-src_more_than_1byte	EQU	<[bp - 2DEH]>
-bltstos_passes		EQU	<[bp - 2E0H]> ;#passes for screen-to-screen copy
+dst_page		EQU	<[bp - 186H]> ;used in some "DST is SCREEN" blts
+src_page		EQU	<[bp - 188H]> ;used in some "SRC is SCREEN" blts
+first_edge_mask_count	EQU	<[bp - 18AH]>
+pattern_row_counter	EQU	<[bp - 18CH]>
+bltstos_passes		EQU	<[bp - 18EH]> ;#passes for screen-to-screen copy
 
-color_xlat_table	EQU	<[bp - 3E0H]>	;for speed, tbl copied to stack
-cblt_code_end           EQU     <[bp - 3DEH]>   ;last byte in cblt_code
-cblt_code		EQU	<[bp - 520H]>	;space for compiled blt code
-sanitize_pattern	EQU	<[bp - 522H]>	;function to fix pattern padding bits
-src_left_edge		EQU	<[bp - 524H]>	;leftedge of srcrect after clip
-src_top_edge		EQU	<[bp - 526H]>	;topedge of srcrect after clip
-dst_left_edge		EQU	<[bp - 528H]>	;leftedge of dstrect after clip
-dst_top_edge            EQU     <[bp - 52AH]>   ;topedge of dstrect after clip
-background_mode 	EQU	<[bp - 52CH]>	;background mode for xpar blts
-dst2_page		EQU	<[bp - 52EH]> ;leftover bytes in dst segment
-first_edge_count	EQU	<[bp - 530H]>
-right_edge_count	EQU	<[bp - 532H]>
-full_byte_count 	EQU	<[bp - 534H]>
-dst2_width_bytes	EQU	<[bp - 536H]>
-dst2_blt_offset 	EQU	<[bp - 538H]>
+; can alias here since we will be finished with pattern_work before we populate
+; color_xlat_table!
+color_xlat_table	EQU	<[bp - 28EH]>	;for speed, tbl copied to stack
+pattern_work		EQU <color_xlat_table>	;temporary workspace for pattern
+cblt_code		EQU	<[bp - 38EH]>	;space for compiled blt code
+cblt_max_addx           EQU     <[bp - 390H]>   ;last allowed byte in cblt_code
+sanitize_pattern	EQU	<[bp - 392H]>	;function to fix pattern padding bits
+src_left_edge		EQU	<[bp - 394H]>	;leftedge of srcrect after clip
+src_top_edge		EQU	<[bp - 396H]>	;topedge of srcrect after clip
+dst_left_edge		EQU	<[bp - 398H]>	;leftedge of dstrect after clip
+dst_top_edge            EQU     <[bp - 39AH]>   ;topedge of dstrect after clip
+background_mode 	EQU	<[bp - 39CH]>	;background mode for xpar blts
+dst2_page		EQU	<[bp - 39EH]> ;leftover bytes in dst segment
+first_edge_count	EQU	<[bp - 3A0H]>
+right_edge_count	EQU	<[bp - 3A2H]>
+full_byte_count 	EQU	<[bp - 3A4H]>
+dst2_width_bytes	EQU	<[bp - 3A6H]>
+dst2_blt_offset 	EQU	<[bp - 3A8H]>
 
 ; old WorkSelector base/limit, to be restored for re-entrancy
-old_worksel_limit	EQU	<[bp - 53CH]>
-old_worksel_base	EQU	<[bp - 540H]>
+old_worksel_limit	EQU	<[bp - 3ACH]>
+old_worksel_base	EQU	<[bp - 3B0H]>
 
-colour_mask		EQU	<[bp - 544H]> ;mask to prevent setting padding bits
+colour_mask		EQU	<[bp - 3B4H]> ;mask to prevent setting padding bits
 
-dst_seg_index		EQU	<[bp - 546H]> ;step between segments in dest bitmap
-src_seg_index		EQU	<[bp - 548H]> ;step between segments in src bitmap
+dst_seg_index		EQU	<[bp - 3B6H]> ;step between segments in dest bitmap
+src_seg_index		EQU	<[bp - 3B8H]> ;step between segments in src bitmap
 
 
 
-BLT_STACK_SIZE		EQU	05D8H
+BLT_STACK_SIZE		EQU	03B8H
 SOURCE_PRESENT	equ	0010000000000000b
 PATTERN_PRESENT	equ	0100000000000000b
 NEGATE_NEEDED	equ	1000000000000000b

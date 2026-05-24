@@ -119,8 +119,6 @@ blt_set_directions	PROC	NEAR
 	mul	cx
 	mov	DestxOrg,ax
 @@:
-	mov	word ptr vert_dir,0
-	mov	word ptr horz_dir,0
         mov     dx,es:[di].bmWidthBytes
 	test	word ptr rop_flags,SOURCE_PRESENT
 	je	blt_set_directions_done
@@ -136,7 +134,6 @@ blt_set_directions	PROC	NEAR
 	mov	ax,SrcyOrg		;Is src_y > dst y
 	cmp	ax,DestyOrg		; then blt is Y+
 	jae	@F			; go set x direction
-	dec	word ptr vert_dir
 	neg	bx			;else negate the line lengths for src
 	neg	dx			; and dst
 	mov	ax,yExt
@@ -147,7 +144,6 @@ blt_set_directions	PROC	NEAR
 @@:	mov	ax,SrcxOrg		;Is src_x > dst_x
 	cmp	ax,DestxOrg		; then blt is X+
 	jae	blt_set_directions_done ; done
-	dec	word ptr horz_dir
 	mov	ax,src_xExt_bytes	;adjust starting x coords to
 	dec	ax			; the end of the scanline
 	add	SrcxOrg,ax

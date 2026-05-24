@@ -226,7 +226,6 @@ bitblt_prep_rop_etal	PROC	NEAR
 
 	mov	ax,ScratchSel
         mov     WorkSelector,ax
-        mov     my_data_seg,ds
         mov     al,enabled_flag
 	mov	local_enable_flag,al
 	mov	al,bank_select
@@ -442,7 +441,6 @@ bitblt_prep_src PROC	NEAR
 	shr	bx,3				; or right edge is considered
 	sub	ax,bx				; a whole byte for this purpose
 	mov	src_xExt_bytes,ax
-	mov	src_more_than_1byte,ax
 
 	mov	ax,SrcxOrg			;the align_rotate_count serves
 	and	ax,07H				; different purposes depending
@@ -612,7 +610,7 @@ final_no_exclude:
         mov     si,DataOFFSET PaletteTranslationTable
 
 bitblt_prep_copy_translate:
-        mov     ds,my_data_seg
+	mov	ds,cs:[_cstods]
         assumes ds,Data
         mov     ax,ss
 	mov	es,ax
@@ -641,8 +639,15 @@ bitblt_prep_final       ENDP
 PUBLIC	bitblt_dispatch
 bitblt_dispatch PROC	NEAR
 
-        xor     ax,ax
-        mov     cblt_code_end, ax
+	lea	ax,color_xlat_table
+	; if we're not using palette translation, then the code can flow into
+	; the palette buffer - this is useful for screen-to-screen (i.e. same
+	; bitmap --> never need translation) blits with pattern ROPs (cf. issue
+	; #89 on GitHub)
+        test    word ptr device_flags,DEVFLAG_XLAT_REQUIRED
+	jnz	@F
+	add	ax,100h
+@@:     mov     cblt_max_addx, ax
 	lea	di,cblt_code
         mov     ax,ss
         mov     es,ax
@@ -711,9 +716,8 @@ bitblt_dispatch_done:
         ; check for overflow of the cblt_code buffer, if we did
         ; then all our locals are corrupt, just get the hell out fast!
         ;
-        xor     ax,ax
-        cmp     cblt_code_end, ax
-        je      bitblt_dispatch_exit
+        cmp     di, cblt_max_addx
+        jna     bitblt_dispatch_exit
 ifdef	INT3
         int 3
 endif

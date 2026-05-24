@@ -331,9 +331,12 @@ compile_mtom_last_edge	PROC	NEAR
 	or	cx,cx
 	jne	@F
 	jmp	cmtomle_ropcode 		; proceed to the ropcode
-@@:
-	cmp	word ptr src_more_than_1byte,1	;if width of src blt rect only
-	je	cmtomle_no_last_load		; 1 byte, then skip below
+@@:	;if width of src blt rect only 1 byte, then skip below
+	mov	bx,src_xExt_bytes
+	inc	bx				;-1 (i.e. only 1 byte, R2L)
+	jz	cmtomle_no_last_load		; becomes zero
+	cmp	bx,2				;+1 (i.e. only 1 byte, L2R)
+	jbe	cmtomle_no_last_load		; likewise becomes zero
 
         mov     bx,dst_xExt_bytes
 	or	bx,bx

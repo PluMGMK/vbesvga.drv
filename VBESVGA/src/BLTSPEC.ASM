@@ -30,6 +30,7 @@ assumes ds,Nothing
 assumes es,Nothing
 assumes ss,Nothing
 
+externW	_cstods			; in CURSOR.ASM
 externW	pattern_copy_numwords	; in ROBJECT.ASM
 externNP blt_ctoc_prep		; in BLT88.ASM
 externNP bltstos_prep		; in BLTSTOS.ASM
@@ -61,7 +62,7 @@ blt_spec_pattern	PROC	NEAR
 	mov	Rop[2],ax
 
 	; get the framebuffer into ES
-	mov	es,[my_data_seg]
+	mov	es,cs:[_cstods]
 	assumes	es,Data
 	mov	es,[LinBufSel]
 	assumes	es,nothing
@@ -158,7 +159,7 @@ PUBLIC	blt_spec_stoscopy
 blt_spec_stoscopy	PROC	NEAR
 
 	; get the framebuffer into ES
-	mov	es,[my_data_seg]
+	mov	es,cs:[_cstods]
 	assumes	es,Data
 	mov	es,[LinBufSel]
 	assumes	es,nothing

@@ -347,26 +347,11 @@ stack_ok:
 @@:
 	lea	ax,word ptr yExt
 	mov	es:[di - STOS_SRC2_YEXT],ax
-        mov     bx,vert_dir
 	mov	ax,src_swing_bytes
         mov     cx,dst_swing_bytes
 	mov	es:[di - STOS_SRC2_SRC_SWING_BYTES],ax
         mov     es:[di - STOS_SRC2_DST_SWING_BYTES],cx
-	; DON'T DO THIS because there's a whole chunk of hard-coded stuff
-	; in stos_src1_template which handles segment wrapping in the middle
-	; of a scanline whether it's needed or not. So if we do this next bit,
-	; we'll be over-compensating in that case. Ideally should refactor
-	; so that stuff can be excluded altogether in the non-scanxseg case,
-	; then we can put these lines back.
-;	test	word ptr [device_flags],DEVFLAG_SCAN_X_SEG
-;	jnz	@F
-;	mov	ax,src_width_bytes
-;	mov	cx,dst_width_bytes
-;	or	bx,bx
-;	je	@F
-;	neg	ax
-;	neg	cx
-@@:	mov	es:[di - STOS_SRC2_SRC_CMP - 2],ax
+	mov	es:[di - STOS_SRC2_SRC_CMP - 2],ax
 	mov	es:[di - STOS_SRC2_DST_CMP - 2],cx
 
 	pop	ax
