@@ -2004,6 +2004,14 @@ foundwindir_nadj:
 	lea	si, [sysfonttable]
 	xor	cl, cl			; Bit index counter
 	cld				; Am I being paranoid?
+	;If Win95 or later, the auxstackmsg will be truncated, and
+	;the fonts are instead in %WINDIR%\FONTS
+	cmp	auxstackmsg, "$"
+	jne	foundwindir_fontloop
+	push	si
+	lea	si, [dotdotfonts]
+	call	stpcpy0			; Point at %WINDIR%\SYSTEM\..\FONTS\
+	pop	si
 foundwindir_fontloop:
 	lodsw
 	push	si
@@ -2271,6 +2279,7 @@ nomorepathentry:
 	
 cwindows	db	"C:\WINDOWS\", 0
 systemdir	db	"SYSTEM\", 0
+dotdotfonts	db	"..\FONTS\", 0
 dosxexe		db	"DOSX.EXE", 0
 vmm32vxd	db	"VMM32.VXD", 0
 auxstack	db	"AUXSTACK.COM", 0
