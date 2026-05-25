@@ -1,6 +1,6 @@
 LIBRARY	 VDDVGA
 
-DESCRIPTION 'Win386 VDDVGA Device  (Version 1.0)'
+DESCRIPTION 'VBESVGA Virtual Device (Uncontrolled)'
 
 EXETYPE	 DEV386
 

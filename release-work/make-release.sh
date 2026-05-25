@@ -51,7 +51,7 @@ sed -e 's/-DDEBUGAUX//' -e 's/-DDEBUG/-DOFFICIAL/' -e '/rcv/a\
 
 rm -rfv WIN16DDK/386/VDDVBE
 ln -sfnv ../../../VDDVBE WIN16DDK/386/VDDVBE
-sed '/^Debug=/d' WIN16DDK/386/VDDVBE/MAKEFILE > WIN16DDK/386/VDDVBE/MAKEREL
+sed -e '/^Debug=/d' -e 's/vddvga.lnk/vddgit.lnk/g' WIN16DDK/386/VDDVBE/MAKEFILE > WIN16DDK/386/VDDVBE/MAKEREL
 
 rm -rfv WIN16DDK/386/VBEGRAB
 ln -sfnv ../../../VBEGRAB WIN16DDK/386/VBEGRAB

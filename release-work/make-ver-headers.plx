@@ -15,6 +15,7 @@ my $gitprod = build_hdr($overall_verstring, "PRODUCT");
 # been tagged since each one was last touched...
 my $vbesvga_verstring = path_verstring("../VBESVGA");
 my $vbegrab_verstring = path_verstring("../VBEGRAB");
+my $vddvbe_verstring = path_verstring("../VDDVBE");
 
 open GITPROD, ">", "../VBESVGA/res31/gitprod.h" or die "Unable to write product version header for driver";
 print GITPROD $gitprod;
@@ -29,6 +30,9 @@ close GITPROD;
 open GITGRB, ">", "../VBEGRAB/gitgrb.h" or die "Unable to write file version header for grabber";
 print GITGRB build_hdr($vbegrab_verstring, "FILE");
 close GITGRB;
+
+system("sed 's/Uncontrolled/$vddvbe_verstring/g' ../VDDVBE/VDDVGA.DEF > ../VDDVBE/VDDGIT.DEF") and die "Unable to write file version header for VDD";
+system("sed 's/vddvga.def/vddgit.def/g' ../VDDVBE/VDDVGA.LNK > ../VDDVBE/VDDGIT.LNK") and die "Unable to write link file with pointer to file version header for VDD";
 
 # Usage: build_hdr(verstring, "FILE" or "PRODUCT")
 # Returns the contents of a header file to be included in an RCV,
