@@ -672,18 +672,19 @@ ext_colour_contribution	proc near
 ext_colour_contribution	endp
 
 ; Restore a colour component in AL to its full eight bits, by left-shifting CL
-; bits; rounds up if result >= 80h
+; bits; replicates LSB in lower bits, to ensure well-known values FFh, C0h, 80h
+; come out as expected
 rest_colour_8bit	proc near
-	; need to shift left; use resulting sign bit to decide value of LSBs
-	inc	cl	;shift one too far to get the sign bit into CF
-	shl	al,cl
+	shr	al,1	;get LSB into CF
+	inc	cl	;prep to shift into correct position
 	jnc	@F
-	shr	al,cl	;go back
-	inc	al	;add one to round up
-	shl	al,cl	;shift again
-	dec	al	;fill all the LSBs with ones
-@@:	ror	al,1	;if we jumped to here, MSB will get zero by default
-	dec	cl
+	inc	al	;if LSB was set, round UP by incrementing next-lowest
+	or	cl,80h	;remember CF...
+@@:	shl	al,cl	;shift into correct position (80h in CL is masked out)
+	shl	cl,1	;get back CF
+	sbb	al,0
+	shr	cl,1	;restore CL bit positions
+	dec	cl	;and value
 	ret
 rest_colour_8bit	endp
 
