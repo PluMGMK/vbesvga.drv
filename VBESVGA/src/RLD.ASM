@@ -1095,9 +1095,9 @@ decode_abs_8_xlat_loop:
         call	[fn_stos_checked]
 
         loop    decode_abs_8_xlat_loop
+	pop	dx
 
 decode_abs_8_xlat_exit:
-	pop	dx
         ret
 
 decode_abs_8_xlat_ack:
