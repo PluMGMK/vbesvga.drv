@@ -722,7 +722,21 @@ rgb_load_loop:
 	jz	@F
 	; load fourth byte into AL if needed
 	lodsb
-@@:	;Now we have:
+@@:	; first, let's check the cache...
+	cmp	ax,[previous_rgb].lo
+	jne	@F
+	cmp	dx,[previous_rgb].hi
+	jne	@F
+
+	mov	ax,[previous_ipc].lo
+	mov	dx,[previous_ipc].hi
+	jmp	short store_ipc
+
+@@:	;OK, we didn't use the cache, but set it for the next round:
+	mov	[previous_rgb].lo,ax
+	mov	[previous_rgb].hi,dx
+
+	;Now we have:
 	; DL = red (or blue)
 	; DH = green
 	; AH = blue (or red)
@@ -739,22 +753,6 @@ rgb_load_loop:
 	; if we're NOT swapping red and blue, then we DO need to swap AL/DL!
 	xchg	al,dl
 @@:	;Now we're ready to call rgb_to_ipc
-	; but first, let's check the cache...
-	cmp	ax,[previous_rgb].lo
-	jne	@F
-	cmp	dx,[previous_rgb].hi
-	jne	@F
-
-	mov	ax,[previous_ipc].lo
-	mov	dx,[previous_ipc].hi
-	jmp	short store_ipc
-
-@@:
-	;OK, we didn't use the cache, but set it for the next round:
-	mov	[previous_rgb].lo,ax
-	mov	[previous_rgb].hi,dx
-
-	;Convert the colour!
 	call	rgb_to_ipc
 	;Save the MONO_BIT in the MSB of BL, and rotate the mono output flag
 	; out into CF
