@@ -100,6 +100,7 @@ anpfnPreProc	label	word
 	dw	eti_8			; 8 bits per pel format
 	dw	eti_24			; 24 bits per pel format
 	dw	eti_32			; 32 bits per pel format
+	dw	eti_16			; 16 bits per pel format
 
 
 	assumes	ds, nothing
@@ -154,6 +155,10 @@ WriteAux <'bmc_eti'>                    ; ***** DEBUG *****
 	inc	cx			; try next index
 	cmp	ax, 32			; 32 bits per pel ?
 	je	cbmi_have_format	; index	= 4
+
+	inc	cx			; try next index
+	cmp	ax, 16			; 16 bits per pel ?
+	je	cbmi_have_format	; index	= 5
 
 cbmi_invalid_format:
 	mov	cx, 0ffffh		; want CX to be	made zero below
@@ -971,6 +976,50 @@ eti_32_mono:
 	mov	full_byte_proc, ax
 	mov	ax, DIMapSegOFFSET copy_e32i1_partial
 	mov	partial_byte_proc, ax
+	jmp	eti_hi_mono
+
+eti_32	endp
+
+	page
+;--------------------------Private-Routine-----------------------------------;
+; eti_16								     ;
+;									     ;
+;   Bitmap conversion, external	16 bit RGB to internal format		     ;
+;									     ;
+;   This routine is responsible	for all	preprocessing for converting	     ;
+;   from external 16 bit RGB format to our internal formats		     ;
+;									     ;
+; Entry:								     ;
+;	None								     ;
+; Returns:								     ;
+;	None								     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub   eti_16
+eti_16	proc	near
+;
+; setup the color conversion processing
+;
+	sub	ax,ax			; flush the starting RGB, IPC = index 0
+	mov	wptr LastRGB[0],ax
+	mov	wptr LastRGB[2],ax
+;
+        push    ds
+	mov	ax, _DATA
+	mov	ds,ax
+	assumes ds,Data
+	lds	ax,ds:[GetColor_addr]	; fetch the GDI vector
+	assumes	ds,nothing
+	mov	wptr DeviceColorMatch[0],ax
+	mov	wptr DeviceColorMatch[2],ds
+	pop	ds
+
+	mov	mono_shift_align_count,0
+        mov     num_pels_per_src_byte,1	; For use in huge source case
+	mov	bx, bitmap_width	; Number of source pixels per scan
 
 ; Compute the number of	source pixels to convert.
 ; Each becomes one bit in the destination
@@ -979,18 +1028,43 @@ eti_32_mono:
 	shr	ax, cl			; Divide by 8 (pels per dest byte)
 	mov	int_move_count, ax	; Integral number of dest bytes per scan
 
-; Compute number of bit pels to output to the last dest byte
-        and     bx, 00000111b           ; Can have up to 7 bits in the last
-	mov	int_remaining_pixel_count, bx  ; byte to convert
-	jz	eti_32tx
-	sub	bx, 8
-	neg	bx			  ; shift the last byte
-	mov	mono_shift_align_count,bx ; align for internal 1 bit/pixel mode
+; Compute number of source bytes per scan
+; (each source scan starts on a doubleword boundary).
+	mov	ax,bx			; Number of source pixels per scan
+	inc	ax			; Need to round up to a double word
+	and	al, NOT 1
+	xor	dx, dx
+	shl	ax, 1			; Two bytes per source pixel!
+	rcl	dx, 1
+        mov     scan_length.lo, ax      ; Set # bytes of user buffer required
+	mov	scan_length.hi, dx
+	mov	ax, bx			; BX needs to be left alone for eti_hi_*
+	and	ax, 00000001b		; Compute number of padding pixels
+	shl	al, 1			; Again, two bytes each!
+	mov	ext_dword_adjust, ax
 
-eti_32tx:
-	ret
+	test	fbsd, SD_COLOR	; Monochrome destination?
+	jz	eti_16_mono	; Yes
 
-eti_32	endp
+eti_16_color:
+; 16-bit-per-pixel source, one byte per pixel (color) destination
+
+	mov	ax, DIMapSegOFFSET copy_e16i8
+	mov	full_byte_proc, ax
+	mov	ax, DIMapSegOFFSET copy_e16i8_partial
+	mov	partial_byte_proc, ax
+	jmp	eti_hi_color
+
+eti_16_mono:
+; 16-bit-per-pixel source, one bit per pixel (mono) destination
+
+	mov	ax, DIMapSegOFFSET copy_e16i1
+	mov	full_byte_proc, ax
+	mov	ax, DIMapSegOFFSET copy_e16i1_partial
+	mov	partial_byte_proc, ax
+	jmp	eti_hi_mono
+
+eti_16	endp
 
 	page
 ;--------------------------Private-Routine-----------------------------------;
@@ -1800,6 +1874,198 @@ ce32i1p_next_seg:
 	jmp	ce32i1p_have_source
 
 copy_e32i1_partial endp
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_e16i1								     ;
+;									     ;
+;   copy external 16 bit RGB to	internal 1 plane			     ;
+;									     ;
+;   The	source is copied to the	destination, with the RGB triplet	     ;
+;   being converted into black/white.					     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings.       ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of destination	bytes to xlate			     ;
+; Returns:								     ;
+;	DS:SI --> next source byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub   copy_e16i1
+copy_e16i1	proc near
+
+ce16i1_store:
+	mov	bh, 8			; 8 pels/byte output
+
+ce16i1_fetch:
+;
+; take the RGB & convert it into an index
+;
+        lodsw
+;
+; if already done, skip the conversion
+;
+        cmp     ax,wptr LastRGB[0]
+	jz	ce16i1skipit
+;
+ce16i1convertit:
+	mov	wptr LastRGB[0],ax
+	xor	dx,dx
+;
+        push    cx
+        push    bx
+	push	es
+;
+	cmp	wptr lpColorInfo[2],0
+	jz	@F
+;
+        push    dx
+	push	ax
+	push	wptr lpColorInfo[2]
+	push	wptr lpColorInfo[0]
+	; still need to use this GDI one for the monochrome case...
+        call    DeviceColorMatch
+	jmp	ce16i1converted
+@@:
+	mov	dl,al
+	shl	dl,3			; now DL[7:3] = blue
+	shr	ax,2			; now AH[4:0] = red, AL[7:3] = green
+	xchg	ah,al			; now AH[7:3] = green
+	shl	al,3			; now AL[7:3] = red
+	call	sum_RGB_alt_far
+	or	ax,dx			; collapse it into one byte for
+	or	al,ah			; the simple zero-check code below
+;
+ce16i1converted:
+        pop     es
+	pop	bx
+	pop	cx
+;
+	mov	bptr LastRGB[3],al
+;
+ce16i1skipit:
+	mov	al,bptr LastRGB[3]
+;
+; take the index & convert it into a single bit, then store it in a byte
+;
+        cmp     al, 1                   ; carry set if al 0
+	rcl	bl, 1
+	dec	bh
+	jnz	ce16i1_fetch
+;
+; store the byte in the map
+;
+        mov     al, bl
+	not	al
+	stosb
+	loop	ce16i1_store
+	ret
+
+copy_e16i1	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_e16i1_partial							     ;
+;									     ;
+;   copy external 16 bit RGB to	internal 1 plane, partial byte		     ;
+;									     ;
+;   The	source is copied to the	destination, with color	conversion	     ;
+;   via	the actual RGB triplet.						     ;
+;									     ;
+;   This code handles crossing the segment boundary			     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CL     =  number of destination	bits to	accumulate		     ;
+;	BX     =  mask and alignment control				     ;
+; Returns:								     ;
+;	DS:SI --> next source byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+copy_e16i1_partial proc	near
+	push	bx
+
+ce16i1p_next_byte:
+	lodsw
+	test	si, si
+	jz	ce16i1p_next_seg
+
+ce16i1p_have_source:
+;
+; if already done, skip the conversion
+;
+        cmp     ax,wptr LastRGB[0]
+	jz	ce16i1pskipit
+;
+ce16i1pconvertit:
+	mov	wptr LastRGB[0],ax
+	xor	dx,dx
+;
+; convert the RGB to an index
+;
+        push    cx
+	push	bx
+	push	es
+
+	cmp	wptr lpColorInfo[2],0
+	jz	@F
+;
+	push	dx
+	push	ax
+	push	wptr lpColorInfo[2]
+	push	wptr lpColorInfo[0]
+	; still need to use this GDI one for the monochrome case...
+        call    DeviceColorMatch        ; get the color for this pel
+	jmp	ce16i1pconverted
+@@:
+	mov	dl,al
+	shl	dl,3			; now DL[7:3] = blue
+	shr	ax,2			; now AH[4:0] = red, AL[7:3] = green
+	xchg	ah,al			; now AH[7:3] = green
+	shl	al,3			; now AL[7:3] = red
+	call	sum_RGB_alt_far
+	or	ax,dx			; collapse it into one byte for
+	or	al,ah			; the simple zero-check code below
+;
+ce16i1pconverted:
+        pop     es
+        pop     bx
+	pop	cx
+;
+	mov	bptr LastRGB[3],al
+;
+ce16i1pskipit:
+	mov	al,bptr LastRGB[3]
+;
+	cmp	al, 1			; make it a single bit
+	rcl	ch, 1
+	dec	cl
+	jnz	ce16i1p_next_byte	; process all the left over pels
+
+ce16i1p_save_byte:
+	mov	al, ch
+	not	al
+	pop	bx
+        call    align_and_store
+	ret
+
+ce16i1p_next_seg:
+	mov	dx, ds			; get current segment
+	add	dx, __NEXTSEG		; move on to next segment
+	mov	ds, dx
+	assumes	ds, nothing
+	jmp	ce16i1p_have_source
+
+copy_e16i1_partial endp
 
 ;============================================================================;
 page
@@ -2583,6 +2849,203 @@ ce32i8p_next_seg:
 
 
 copy_e32i8_partial	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_e16i8								     ;
+;									     ;
+;   copy external 16 bit RGB to	internal one byte per pixel                  ;
+;									     ;
+;   The	source is copied to all	four planes of the destination,	with	     ;
+;   color conversion via the actual RGB	triplet.			     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings.       ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of destination	bytes to xlate			     ;
+; Returns:								     ;
+;	DS:SI --> next source byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub	copy_e16i8
+copy_e16i8	proc near
+	; check if we have a colour info table.
+	cmp	wptr lpColorInfo[2],0
+	jnz	@F
+
+	; if not, we just have a list of RGB555s to deal with
+	mov	bh,100b	; RGB555
+	mov	bl,[total_depth_bytes]
+	shl	bl,3	; convert back to bits
+	call	rgb_to_ipc_seq
+	ret
+
+@@:	push	es
+
+ce16i8_next_pixel:
+;
+; take the RGB & convert it into an index
+;
+        lodsw
+;
+; if already done, skip the conversion
+;
+        cmp     ax,wptr LastRGB[0]
+	jz	ce16i8skipit
+;
+ce16i8convertit:
+	mov	wptr LastRGB[0],ax
+	xor	dx,dx
+;
+        push    cx
+        push    bx
+;
+	mov	dl,al
+	shl	dl,3			; now DL[7:3] = blue
+	shr	ax,2			; now AH[4:0] = red, AL[7:3] = green
+	xchg	ah,al			; now AH[7:3] = green
+	shl	al,3			; now AL[7:3] = red
+	push	wptr lpColorInfo[2]
+	push	wptr lpColorInfo[0]
+        call    OurDeviceColourMatch
+	mov	bptr LastRGB[3],al
+;
+	pop	bx
+	pop	cx
+;
+ce16i8skipit:
+	mov	al,bptr LastRGB[3]
+
+;
+; store the color
+;
+        stosb                           ; Save C0
+  
+	loop	ce16i8_next_pixel	; complete all the target pixels
+	pop	es
+        ret
+
+copy_e16i8	endp
+
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_e16i8_partial							     ;
+;									     ;
+;   copy external 16 bit RGB to	internal X bytes per pixel                   ;
+;									     ;
+;   The	source is copied to all	four planes of the destination,	with	     ;
+;   color conversion via the actual RGB	triplet.			     ;
+;									     ;
+;   This code handles crossing the segment boundary.                         ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of pixels to xlate				     ;
+; Returns:								     ;
+;	DS:SI --> next source byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub	copy_e16i8_partial
+copy_e16i8_partial	proc near
+	push	es
+	push	bx
+
+ce16i8_next_pixel_p:
+;
+; take the RGB & convert it into an index
+;
+	mov	bl,[total_depth_bytes]
+;
+; check if we have a colour info table
+;
+	cmp	wptr lpColorInfo[2],0
+	jnz	ce16i8usetable_p
+
+	push	cx
+	mov	cx,1
+	mov	bh,100b	; RGB555
+	shl	bl,3	; convert back to bits
+	; not ideal, since this gets called for every single pixel on any input
+	; scanline that crosses a segment...
+	call	rgb_to_ipc_seq
+	pop	cx
+	test	si,si
+	jnz	short ce16i8done_p
+
+	mov	ax, ds			; get current segment
+	add	ax, __NEXTSEG		; move on to next segment
+	mov	ds, ax
+	assumes	ds, nothing
+	jmp	short ce16i8done_p
+
+ce16i8usetable_p:
+
+	lodsw
+	test	si, si
+	jz	ce16i8p_next_seg
+
+ce16i8p_have_source:
+;
+; if already done, skip the conversion
+;
+        cmp     ax,wptr LastRGB[0]
+	jz	ce16i8skipit_p
+;
+ce16i8convertit_p:
+	mov	wptr LastRGB[0],ax
+	xor	dx,dx
+;
+        push    cx
+        push    bx
+;
+	mov	dl,al
+	shl	dl,3			; now DL[7:3] = blue
+	shr	ax,2			; now AH[4:0] = red, AL[7:3] = green
+	xchg	ah,al			; now AH[7:3] = green
+	shl	al,3			; now AL[7:3] = red
+	push	wptr lpColorInfo[2]
+	push	wptr lpColorInfo[0]
+        call    OurDeviceColourMatch
+	mov	bptr LastRGB[3],al
+;
+	pop	bx
+	pop	cx
+;
+ce16i8skipit_p:
+	mov	al,bptr LastRGB[3]
+
+;
+; store the color
+;
+        stosb                           ; Save C0
+
+ce16i8done_p:
+	loop	ce16i8_next_pixel_p	; complete all the target pixels
+	pop	bx
+	pop	es
+        ret
+
+ce16i8p_next_seg:
+	push	ax
+	mov	ax, ds			; get current segment
+	add	ax, __NEXTSEG		; move on to next segment
+	mov	ds, ax
+	assumes	ds, nothing
+	pop	ax
+	jmp	ce16i8p_have_source
+
+
+copy_e16i8_partial	endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;

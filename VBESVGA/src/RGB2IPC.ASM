@@ -695,11 +695,14 @@ cProc	rgb_to_ipc_seq, <FAR,PUBLIC,NODATA>
 	localD	previous_rgb
 	localD	previous_ipc
 cBegin
+
 	; Call rgb_to_ipc_seq as follows:
 	; * DS:SI -> sequence of RGB colours
 	; * ES:DI -> output sequence of physical colours
 	; * CX = number of colours to process
-	; * BH = input flags (1 = 4 bytes per pixel, 2 = swap red/blue)
+	; * BH = input flags:
+	;	1 = 4 bytes per pixel, 2 = swap red/blue, OR:
+	;	4 = 2 bytes per pixel (RGB555), always swap red/blue!
 	; * BL = output bits per pixel | flag (LSB indicates monochrome value)
 
 	; initialize "previous" values as -1, to be overwritten immediately
@@ -715,6 +718,9 @@ rgb_load_loop:
 	cwd
 
 	lodsw
+	test	bh,4	; if 16-bit DIB, go straight to cache check
+	jnz	@F
+
 	mov	dx,ax
 	lodsb
 	shl	ax,8	; get AL into AH, and zero out AL itself
@@ -736,6 +742,40 @@ rgb_load_loop:
 	mov	[previous_rgb].lo,ax
 	mov	[previous_rgb].hi,dx
 
+	test	bh,4
+	jz	rgb_ipc_not555
+
+	;Now we have:
+	; AL[4:0] = blue
+	; AX[9:5] = green
+	; AH[6:2] = red
+	; AH[7] = DX[15:0] = 0
+	;We want:
+	; AL[7:0] = red
+	; AH[7:0] = green
+	; DL[7:0] = blue
+	; DH[7:0] = 0
+	mov	dl,al
+	shl	dl,3
+	test	dl,1000b
+	jz	@F
+	or	dl,0111b
+@@:	; now DL[7:0] = blue, as needed
+	shr	ax,2	;now AH[4:0] = red, AL[7:3] = green
+	xchg	ah,al
+	and	ah,NOT 111b
+	test	ah,1000b
+	jz	@F
+	or	ah,0111b
+@@:	; now AH[7:0] = green, as needed
+	shl	al,3
+	test	al,1000b
+	jz	@F
+	or	al,0111b
+@@:	; now AL[7:0] = red, as needed
+	jmp	short rgb_ipc_doit
+
+rgb_ipc_not555:
 	;Now we have:
 	; DL = red (or blue)
 	; DH = green
@@ -749,10 +789,11 @@ rgb_load_loop:
 	xchg	al,ah	;get blue (or red) in AL
 	xchg	ah,dh	;get green in AH as needed
 	test	bh,2
-	jnz	@F
+	jnz	rgb_ipc_doit
 	; if we're NOT swapping red and blue, then we DO need to swap AL/DL!
 	xchg	al,dl
-@@:	;Now we're ready to call rgb_to_ipc
+rgb_ipc_doit:
+	;Now we're ready to call rgb_to_ipc
 	call	rgb_to_ipc
 	;Save the MONO_BIT in the MSB of BL, and rotate the mono output flag
 	; out into CF
@@ -784,8 +825,10 @@ store_next_word:
 	jz	@F
 	stosb
 @@:
-	loop	rgb_load_loop
-
+	dec	cx
+	jz	@F
+	jmp	rgb_load_loop
+@@:
 cEnd
 
 cProc	ipc_to_rgb_seq, <FAR,PUBLIC,NODATA>
@@ -797,7 +840,9 @@ cBegin
 	; * DS:SI -> sequence of physical colours
 	; * ES:DI -> output sequence of RGB colours
 	; * CX = number of colours to process
-	; * BH = output flags (1 = 4 bytes per pixel, 2 = swap red/blue)
+	; * BH = output flags:
+	;	1 = 4 bytes per pixel, 2 = swap red/blue, OR:
+	;	4 = 2 bytes per pixel (RGB555), always swap red/blue!
 	; * BL = input bits per pixel | flag (LSB indicates monochrome value)
 
 	; initialize "previous" values as -1, to be overwritten immediately
@@ -863,7 +908,29 @@ load_next_word:
 
 @@:	;Convert the colour!
 	call	ipc_to_rgb
-	test	bh,2	; swapping red/blue?
+	test	bh,4
+	jz	@F
+
+	;Convert to RGB555 - Now we have:
+	; AL[7:0] = red
+	; AH[7:0] = green
+	; DL[7:0] = blue
+	; DH[7:0] = 0
+	;We want:
+	; AL[4:0] = blue
+	; AX[9:5] = green
+	; AH[6:2] = red
+	; AH[7] = DX[15:0] = 0
+	xchg	al,ah
+	shr	ah,3		; now AH[4:0] = red, AL[7:0] = green
+	and	al,NOT 111b	; AL[7:3] = green
+	shl	ax,2		; AH[6:2] = red, AX[9:5] = green
+	shr	dl,3		; DL[4:0] = blue
+	or	al,dl
+	xor	dx,dx
+	jmp	short cache_rgb
+
+@@:	test	bh,2	; swapping red/blue?
 	jz	cache_rgb
 	xchg	al,dl
 cache_rgb:
@@ -871,6 +938,8 @@ cache_rgb:
 	mov	[previous_rgb].hi,dx
 store_rgb:
 	stosw
+	test	bh,4	; only two bytes?
+	jnz	@F
 	mov	al,dl
 	stosb
 	test	bh,1	; storing four bytes?
@@ -878,8 +947,10 @@ store_rgb:
 	mov	al,dh
 	stosb
 @@:
-	loop	ipc_load_loop
-
+	dec	cx
+	jz	@F
+	jmp	ipc_load_loop
+@@:
 cEnd
 
 sEnd	Code
