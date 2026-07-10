@@ -848,9 +848,9 @@ ite_32_have_proc:
 	mov	ax, bx			;1 source bit =	4 dest bytes
 	xor	dx, dx
 	shl	ax, 1
-	rcl	dx, 1
+	rcl	dl, 1
 	shl	ax, 1
-	rcl	dx, 1
+	rcl	dl, 1
 	mov	scan_length.lo, ax	;Set # bytes of	user buffer required
 	mov	scan_length.hi, dx
 	and	bx, 00000111b		;Can have up to	7 bits in the last
@@ -1293,12 +1293,10 @@ swsc_e1_exit:
 	je	@F
 
 	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
 	pop	ax
 
 @@:     ret
@@ -1459,12 +1457,10 @@ swsc_e4_exit:
 	je	swsc_e4_x
 
 @@:	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
 	pop	ax
 
 swsc_e4_x:
@@ -1616,12 +1612,10 @@ swsc_e8_exit:
 	je	swsc_e8_x
 
 @@:     push    ax
-        push    dx
-        mov     dx, es
-        add     dx, __NEXTSEG
-        mov     es, dx
+        mov     ax, es
+        add     ax, __NEXTSEG
+        mov     es, ax
         assumes es, nothing
-        pop     dx
         pop     ax
 
 swsc_e8_x:
@@ -1718,12 +1712,10 @@ swsc_e24a_exit:
 	je	swsc_e24a_x
 
 @@:     push    ax
-        push    dx
-        mov     dx, es
-        add     dx, __NEXTSEG
-        mov     es, dx
+        mov     ax, es
+        add     ax, __NEXTSEG
+        mov     es, ax
         assumes es, nothing
-        pop     dx
         pop     ax
 
 swsc_e24a_x:
@@ -1824,12 +1816,10 @@ swsc_e24_exit:
 	je	swsc_e24_x
 
 @@:     push    ax
-        push    dx
-        mov     dx, es
-        add     dx, __NEXTSEG
-        mov     es, dx
+        mov     ax, es
+        add     ax, __NEXTSEG
+        mov     es, ax
         assumes es, nothing
-        pop     dx
         pop     ax
 
 swsc_e24_x:
@@ -1906,14 +1896,10 @@ ci1e32_next_sel:
         cmp     scanline_count,1
 	je	ci1e32_minor_check
 
-@@:     push    ax
-        push    dx
-        mov     dx, es
-        add     dx, __NEXTSEG
-        mov     es, dx
+@@:     mov     ax, es
+        add     ax, __NEXTSEG
+        mov     es, ax
         assumes es, nothing
-        pop     dx
-        pop     ax
 	jmp	short  ci1e32_minor_check
 
 copy_i1e32	endp
@@ -1991,14 +1977,10 @@ ci1e32p_next_sel:
         cmp     scanline_count,1
 	je	ci1e32p_minor_check
 
-@@:     push    ax
-        push    dx
-        mov     dx, es
-        add     dx, __NEXTSEG
-        mov     es, dx
+@@:     mov     ax, es
+        add     ax, __NEXTSEG
+        mov     es, ax
         assumes es, nothing
-        pop     dx
-        pop     ax
 	jmp	short  ci1e32p_minor_check
 
 copy_i1e32_partial endp
@@ -2030,12 +2012,10 @@ store_with_seg_check proc near
 swsc_exit:
 
 	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
 	pop	ax
 	ret
 
@@ -2171,12 +2151,10 @@ swsc_i1_exit:
 	je	@F
 
 	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
 	pop	ax
 @@:
 	ret
@@ -2434,12 +2412,10 @@ swsc_i4_exit:
 
 @@:
 	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
 	pop	ax
 
 swsc_i4_x:
@@ -2575,14 +2551,10 @@ ciXe4p_store:
         cmp     scanline_count,1
 	je	ciXe4p_done		; based on CMP above
 @@:
-	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
-	pop	ax
 
 ciXe4p_check_counter:
 	test	cl,cl
@@ -2696,12 +2668,10 @@ swsc_i8_exit:
 
 @@:
 	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
 	pop	ax
 
 swsc_i8_x:
@@ -2820,14 +2790,10 @@ ciXe8p_next_pixel:
         cmp     scanline_count,1
 	je	ciXe8p_check_counter	; based on CMP above
 @@:
-	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
+	mov	ax, es
+	add	ax, __NEXTSEG
+	mov	es, ax
 	assumes	es, nothing
-	pop	dx
-	pop	ax
 
 ciXe8p_check_counter:
 	dec	cl
@@ -3181,14 +3147,10 @@ ci8e32p_next_sel:
         cmp     scanline_count,1
 	je	ci8e32p_loop_next
 
-@@:     push    ax
-        push    dx
-        mov     dx, es
-        add     dx, __NEXTSEG
-        mov     es, dx
+@@:     mov     ax, es
+        add     ax, __NEXTSEG
+        mov     es, ax
         assumes es, nothing
-        pop     dx
-        pop     ax
 	jmp	ci8e32p_loop_next
 
 copy_i8e32_partial endp

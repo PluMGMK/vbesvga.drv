@@ -150,6 +150,7 @@ WriteAux <'bmc_eti'>                    ; ***** DEBUG *****
 	cmp	ax, 24			; 24 bits per pel ?
 	je	cbmi_have_format	; index	= 3
 
+	; formats introduced in Win9x:
 	inc	cx			; try next index
 	cmp	ax, 32			; 32 bits per pel ?
 	je	cbmi_have_format	; index	= 4
@@ -857,7 +858,7 @@ eti_24_color:
 	mov	full_byte_proc, ax
 	mov	ax, DIMapSegOFFSET copy_e24i8_partial
 	mov	partial_byte_proc, ax
-@@:
+eti_hi_color:
 	xor	ax,ax
 	mov	int_remaining_pixel_count, ax
 	mov	int_move_count, bx	; Number of dest bytes per scan
@@ -870,7 +871,7 @@ eti_24_mono:
 	mov	full_byte_proc, ax
 	mov	ax, DIMapSegOFFSET copy_e24i1_partial
 	mov	partial_byte_proc, ax
-
+eti_hi_mono:
 ; Compute the number of	source pixels to convert.
 ; Each becomes one bit in the destination
         mov     cx, 3			; 3 source bytes per pixel
@@ -961,11 +962,7 @@ eti_32_color:
 	mov	full_byte_proc, ax
 	mov	ax, DIMapSegOFFSET copy_e32i8_partial
 	mov	partial_byte_proc, ax
-@@:
-	xor	ax,ax
-	mov	int_remaining_pixel_count, ax
-	mov	int_move_count, bx	; Number of dest bytes per scan
-	jmp	eti_32tx
+	jmp	eti_hi_color
 
 eti_32_mono:
 ; 32-bit-per-pixel source, one bit per pixel (mono) destination
@@ -2288,6 +2285,7 @@ page
         ?_pub	copy_e24i8_partial
 copy_e24i8_partial	proc near
 	push	es
+	push	bx
 
 	; make CX count source bytes so that load_with_seg_check doesn't
 	; erroneously think it's on the last one
@@ -2304,7 +2302,6 @@ ce24i8_next_pixel_p:
 ;	mov	dl, [si]	; Byte 2 in dl
 ;	inc	si
 ;
-	push	bx
 	mov	bl,[total_depth_bytes]
 
 	call	load_with_seg_check	; load a byte with segment test
@@ -2377,8 +2374,8 @@ ce24i8skipit_p:
         stosb                           ; Save C0
 
 ce24i8done_p:
-	pop	bx
 	loop	ce24i8_next_pixel_p	; complete all the target pixels
+	pop	bx
 	pop	es
         ret
 
@@ -2493,12 +2490,12 @@ page
         ?_pub	copy_e32i8_partial
 copy_e32i8_partial	proc near
 	push	es
+	push	bx
 
 ce32i8_next_pixel_p:
 ;
 ; take the RGB & convert it into an index
 ;
-	push	bx
 	mov	bl,[total_depth_bytes]
 
 	lodsw
@@ -2570,8 +2567,8 @@ ce32i8skipit_p:
         stosb                           ; Save C0
 
 ce32i8done_p:
-	pop	bx
 	loop	ce32i8_next_pixel_p	; complete all the target pixels
+	pop	bx
 	pop	es
         ret
 
