@@ -863,14 +863,13 @@ load_next_word:
 
 @@:	;Convert the colour!
 	call	ipc_to_rgb
+	test	bh,2	; swapping red/blue?
+	jz	cache_rgb
+	xchg	al,dl
 cache_rgb:
 	mov	[previous_rgb].lo,ax
 	mov	[previous_rgb].hi,dx
 store_rgb:
-	test	bh,2	; swapping red/blue?
-	jz	@F
-	xchg	al,dl
-@@:
 	stosw
 	mov	al,dl
 	stosb
