@@ -136,7 +136,7 @@ WriteAux <'bmc_eti'>                    ; ***** DEBUG *****
 	je	cbmi_have_format	; index	= 2
 
 	inc	cx			; try next index
-	cmp	ax, 24			; 4 bits per pel ?
+	cmp	ax, 24			; 24 bits per pel ?
 	je	cbmi_have_format	; index	= 3
 
 cbmi_invalid_format:

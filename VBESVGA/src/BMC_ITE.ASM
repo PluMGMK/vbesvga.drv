@@ -132,7 +132,7 @@ ENDIF
 	cmp	ax, 8			; 8 bits per pel ?
 	je	cbmi_have_format	; index	= 2
 	inc	cx			; try next index
-	cmp	ax, 24			; 4 bits per pel ?
+	cmp	ax, 24			; 24 bits per pel ?
 	je	cbmi_have_format	; index	= 3
 cbmi_invalid_format:
 	mov	cx, 0ffffh		; want CX to be	made zero below
@@ -2757,11 +2757,11 @@ ci8e24p_loop_next:
 	ret
 
 ci8e24p_next_sel:
-	call	store_i24_with_seg_check
+	call	store_e24_with_seg_check
 	xchg	al, ah
-	call	store_i24_with_seg_check
+	call	store_e24_with_seg_check
 	xchg	ax, bx
-	call	store_i24_with_seg_check
+	call	store_e24_with_seg_check
 	jmp	ci8e24p_loop_next
 
 copy_i8e24_partial endp
