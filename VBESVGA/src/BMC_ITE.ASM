@@ -26,6 +26,16 @@ page	,132
 ;	plane formats are standard, but	it is very easy	to convert these     ;
 ;	to any multiple	plane format used internally by	a device.	     ;
 ;									     ;
+;	The following new formats were introduced in Win9x:		     ;
+;									     ;
+;			      Bitcount	      Planes			     ;
+;			      --------	      ------			     ;
+;				 16		 1			     ;
+;				 32		 1			     ;
+;									     ;
+;	https://upload.wikimedia.org/wikipedia/commons/d/da/AllBMPformats.png;
+;	gives the bit assignments for those, in the second and third columns.;
+;									     ;
 ;	For both the device independent	format and the device specific format;
 ;	the origin of the bitmap is at the top left hand corner	of the bitmap;
 ;	X axis extends to the right and	Y towards the bottom, both moving to-;
@@ -87,6 +97,7 @@ anpfnPreProc	label	word
 	dw	ite_4
 	dw	ite_8
 	dw	ite_24
+	dw	ite_32
 
 	assumes	ds, nothing
 	assumes	es, nothing
@@ -134,6 +145,10 @@ ENDIF
 	inc	cx			; try next index
 	cmp	ax, 24			; 24 bits per pel ?
 	je	cbmi_have_format	; index	= 3
+	; formats introduced in Win9x:
+	inc	cx			; try next index
+	cmp	ax, 32			; 32 bits per pel ?
+	je	cbmi_have_format	; index	= 4
 cbmi_invalid_format:
 	mov	cx, 0ffffh		; want CX to be	made zero below
 	xor	ax, ax			; error	code
@@ -732,28 +747,7 @@ ite_24	proc	near
         test    fbsd, SD_COLOR          ;Monochrome source?
 	jnz	ite_24_have_proc	;  No
 
-	; check if we have a colour table - if not, create one:
-	xor	ax,ax
-	cwd				;default: colour 0 = black
-	mov	cx,0FFFFh
-	mov	bx,0FFh			;default: colour 1 = white
-	cmp	[lpColorInfo.sel],0
-	jz	@F
-
-	push	es
-	les	bx,lpColorInfo
-	; load the table provided by GDI:
-	mov	ax,es:[bx+0]
-	mov	dx,es:[bx+2]
-	mov	cx,es:[bx+4]
-	mov	bx,es:[bx+6]
-	pop	es
-
-@@:	; store colour table
-	mov	color_xlate[0],ax
-	mov	color_xlate[2],dx
-	mov	color_xlate[4],cx
-	mov	color_xlate[6],bx
+	call	make_i1e24e32_table
 
 	mov	ax, DIMapSegOFFSET copy_i1e24
 	mov	bx, DIMapSegOFFSET copy_i1e24_partial
@@ -780,6 +774,91 @@ ite_24_have_proc:
 	ret
 
 ite_24	endp
+
+; common function to make a two-colour translation table for 24-bit or 32-bit
+; output (the colour format is the same, only padding bits differ)
+make_i1e24e32_table	proc	near
+	; check if we have a colour table - if not, create one:
+	xor	ax,ax
+	cwd				;default: colour 0 = black
+	mov	cx,0FFFFh
+	mov	bx,0FFh			;default: colour 1 = white
+	cmp	[lpColorInfo.sel],0
+	jz	@F
+
+	push	es
+	les	bx,lpColorInfo
+	; load the table provided by GDI:
+	mov	ax,es:[bx+0]
+	mov	dx,es:[bx+2]
+	mov	cx,es:[bx+4]
+	mov	bx,es:[bx+6]
+	pop	es
+
+@@:	; store colour table
+	mov	color_xlate[0],ax
+	mov	color_xlate[2],dx
+	mov	color_xlate[4],cx
+	mov	color_xlate[6],bx
+	ret
+make_i1e24e32_table	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; ite_32								     ;
+;									     ;
+;   Bitmap conversion, internal	format to external 32 bit RGB		     ;
+;									     ;
+;   This routine is responsible	for all	preprocessing for converting	     ;
+;   from our internal formats to external 32 bit RGB format		     ;
+;									     ;
+; Entry:								     ;
+;	ES:DI --> where	color table would go				     ;
+; Returns:								     ;
+;	None								     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+        ?_pub   ite_32
+ite_32	proc	near
+
+	mov	num_pels_per_src_byte,8 ; actually .3, but we want a min of 1
+
+	mov	ax, DIMapSegOFFSET copy_i8e32
+	mov	bx, DIMapSegOFFSET copy_i8e32_partial
+
+        test    fbsd, SD_COLOR          ;Monochrome source?
+	jnz	ite_32_have_proc	;  No
+
+	call	make_i1e24e32_table
+
+	mov	ax, DIMapSegOFFSET copy_i1e32
+	mov	bx, DIMapSegOFFSET copy_i1e32_partial
+
+ite_32_have_proc:
+	mov	full_byte_proc, ax
+	mov	partial_byte_proc, bx
+	mov	cx, 3
+	mov	ax, bitmap_width	;Compute the number of source bytes
+	mov	bx, ax			;  to convert.	Each bit becomes
+	shr	ax, cl			;  three bytes in the destination
+	mov	int_move_count, ax
+	mov	ax, bx			;1 source bit =	4 dest bytes
+	xor	dx, dx
+	shl	ax, 1
+	rcl	dx, 1
+	shl	ax, 1
+	rcl	dx, 1
+	mov	scan_length.lo, ax	;Set # bytes of	user buffer required
+	mov	scan_length.hi, dx
+	and	bx, 00000111b		;Can have up to	7 bits in the last
+	mov	int_remaining_pixel_count, bx  ;  byte to convert
+	mov	ext_dword_adjust,0	;Dest is always dword-aligned!
+	ret
+
+ite_32	endp
 
 page
 ;--------------------------Private-Routine-----------------------------------;
@@ -1757,6 +1836,172 @@ swsc_e24_x:
 	ret
 
 store_e24_with_seg_check endp
+
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_i1e32								     ;
+;									     ;
+;   copy internal 1 bit	to external 32 bit RGB				     ;
+;									     ;
+;   The	destination is filled with the source data, with each source	     ;
+;   bit	expanded to a full RGB triplet in the destination.  The	colors	     ;
+;   being translated are black and white, so no	color lookup is	required.    ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings,       ;
+;   and	to ensure that there are 32 bytes of destination available to	     ;
+;   hold each source byte of data.					     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal mono to external RGB (32-bit packed pixels)		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of bytes to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+public	copy_i1e32
+copy_i1e32      proc    near
+;
+ci1e32_next_byte:
+	mov	dl,8
+        lodsb
+	mov	dh,al
+;
+ci1e32_next_bit:
+	shl	dh,1
+	sbb	al,al			; 0 or ff
+	xor	ah,ah
+
+	lea	bx,color_xlate
+	and	ax,4			; convert 0 to 0, FF to 4
+	add	bx,ax			; BX+0 = "black", BX+4 = "white"
+	mov	ax,ss:[bx]
+	mov	bx,ss:[bx+2]
+
+	stosw				; dump 4 bytes
+	xchg	ax,bx
+        stosw
+
+	test	di,di
+	jz	ci1e32_next_sel
+;
+ci1e32_minor_check:
+	dec	dl
+	jnz	ci1e32_next_bit
+	loop	ci1e32_next_byte
+	ret
+;
+ci1e32_next_sel:
+	cmp	dl,1
+        jne     @F
+	cmp	cl,1
+	jne	@F
+        cmp     scanline_count,1
+	je	ci1e32_minor_check
+
+@@:     push    ax
+        push    dx
+        mov     dx, es
+        add     dx, __NEXTSEG
+        mov     es, dx
+        assumes es, nothing
+        pop     dx
+        pop     ax
+	jmp	short  ci1e32_minor_check
+
+copy_i1e32	endp
+
+
+
+
+page
+;--------------------------Private-Routine-----------------------------------;
+; copy_i1e32_partial							     ;
+;									     ;
+;   copy internal 1 bit	to external 32 bit RGB,	partial	byte		     ;
+;									     ;
+;   The	destination is filled with the source data, with each source	     ;
+;   bit	expanded to a full RGB triplet in the destination.  The	colors	     ;
+;   being translated are black and white, so no	color lookup is	required.    ;
+;									     ;
+;   This routine handles partial bytes where some portion of the first	     ;
+;   or last byte needs to be saved.					     ;
+;									     ;
+;   This routine will handle the destination (user's buffer) crossing        ;
+;   a segment boundary during the translation of the source byte.	     ;
+;   The	source will never cross	a segment boundary since it is an	     ;
+;   internal bitmap and	all scans are allocated	to fit within a		     ;
+;   segment.								     ;
+;									     ;
+;   This routine shouldn't be called very often, so a short loop will        ;
+;   be sufficient for our needs.					     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal mono to external RGB (32-bit packed pixels)		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CL     =  number of pixels to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+copy_i1e32_partial proc	near
+
+        lodsb
+	mov	dh,al
+;
+ci1e32p_next_bit:
+	shl	dh,1
+	sbb	al,al			; 0 or ff
+	xor	ah,ah
+
+	lea	bx,color_xlate
+	and	ax,4			; convert 0 to 0, FF to 4
+	add	bx,ax			; BX+0 = "black", BX+4 = "white"
+	mov	ax,ss:[bx]
+	mov	bx,ss:[bx+2]
+
+	stosw				; dump 4 bytes
+	xchg	ax,bx
+        stosw
+
+	test	di,di
+	jz	ci1e32p_next_sel
+;
+ci1e32p_minor_check:
+	dec	cl
+	jnz	ci1e32p_next_bit
+	ret
+;
+ci1e32p_next_sel:
+	cmp	cl,1
+	jne	@F
+        cmp     scanline_count,1
+	je	ci1e32p_minor_check
+
+@@:     push    ax
+        push    dx
+        mov     dx, es
+        add     dx, __NEXTSEG
+        mov     es, dx
+        assumes es, nothing
+        pop     dx
+        pop     ax
+	jmp	short  ci1e32p_minor_check
+
+copy_i1e32_partial endp
 
 
 
@@ -2767,36 +3012,186 @@ ci8e24p_next_sel:
 copy_i8e24_partial endp
 
 
-store_i24_with_seg_check proc near
-	stosb				;Save the byte
-	or	di, di			;If in the next segment
-	jz	swsc_i24_exit		    ;  then update the selector
-	ret
-;
-swsc_i24_exit:
 
+page
+;--------------------------Private-Routine-----------------------------------;
+;									     ;
+; copy_i8e32								     ;
+;									     ;
+;   copy internal 1 8-bit pixel	to external 32 bit RGB			     ;
+;									     ;
+;   The	destination is filled with the source data.  All four planes	     ;
+;   of the source byte are used	to form	the RGB	triplet	for the		     ;
+;   destination.							     ;
+;									     ;
+;   It is the caller's responsibility to handle all segment crossings,       ;
+;   and	to ensure that there are enough	bytes of destination available	     ;
+;   to hold the	data.							     ;
+;									     ;
+;   Since there	will be	information loss in going from four color to	     ;
+;   one	color, all colors which	match the !!!??? background color	     ;
+;   will be mapped to 1, and all other colors will be mapped to	the	     ;
+;   !!!??? forground color.  This is the same strategy used in color	     ;
+;   to mono bitblts.							     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	RGB (32-bit packed)		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CX     =  number of bytes to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+public	copy_i8e32
+copy_i8e32      proc near
+
+	; check if we have a colour info table.
+	cmp	[lpColorInfo.sel],0
+	jnz	ci8e32_next_byte
+
+	; if not, we just have to convert back to a list of RGBQUADs
+	mov	bh,11b	; swap red/blue, four bytes per pixel
+	mov	bl,[total_depth_bytes]
+	shl	bl,3	; convert back to bits
+	shl	cx,3	; deal with the "8 pixels/byte" concept
+	call	ipc_to_rgb_seq
+	ret
+
+ci8e32_next_byte:
+	mov	dl, 8			;8 pixels/byte
+
+ci8e32_next_pixel:
+	lodsb
+	xor	ah, ah
+
+        push    es
+	les	bx, lpColorInfo
+	shl	ax, 1			;index to table (4 bytes/entry)
+	shl	ax, 1
+        add     bx, ax
+	mov	ax, es:[bx]
+	mov	bx, es:[bx+2]
+	pop	es
+
+        stosw
+	xchg	ax,bx
+        stosw
+	dec	dl
+	jne	ci8e32_next_pixel
+
+	loop	ci8e32_next_byte
+	ret
+
+copy_i8e32	endp
+
+page
+;--------------------------Private-Routine-----------------------------------;
+;									     ;
+; copy_i8e32_partial							     ;
+;									     ;
+;   copy internal 1 8-bit pixel	to external 32 bit RGB,	partial	byte	     ;
+;									     ;
+;   The	destination is filled with the source data.  All four planes	     ;
+;   of the source byte are used	to form	the RGB	triplet	for the		     ;
+;   destination.							     ;
+;									     ;
+;   This routine handles partial bytes where some portion of the first	     ;
+;   or last byte needs to be saved.					     ;
+;									     ;
+;   This routine will handle the destination (user's buffer) crossing        ;
+;   a segment boundary during the translation of the source byte.	     ;
+;   The	source will never cross	a segment boundary since it is an	     ;
+;   internal bitmap and	all scans are allocated	to fit within a		     ;
+;   segment.								     ;
+;									     ;
+;   This routine is used for:						     ;
+;	internal four-plane to external	RGB (32-bit packed)		     ;
+;									     ;
+; Entry:								     ;
+;	DS:SI --> source						     ;
+;	ES:DI --> destination						     ;
+;	CL     =  number of pixels to xlate				     ;
+; Returns:								     ;
+;	ES:DI --> next destination byte					     ;
+;----------------------------------------------------------------------------;
+
+	assumes	ds, nothing
+	assumes	es, nothing
+
+copy_i8e32_partial proc	near
+
+ci8e32p_next_pixel:
+	cmp	[lpColorInfo.sel],0
+	jnz	@F
+
+	push	es
+	push	cx
+	push	di
+	;stick the RGB colour on the stack
+	sub	sp,4
+	push	ss
+	pop	es
+	mov	di,sp
+	mov	cx,1			;one colour at a time
+	mov	bh,11b	; swap red/blue, four bytes per pixel
+	mov	bl,[total_depth_bytes]
+	shl	bl,3	; convert back to bits
+	call	ipc_to_rgb_seq
+	;get it from the stack
+	pop	ax
+	pop	bx
+	pop	di
+	pop	cx
+	pop	es
+	jmp	ci8e32p_store
+
+@@:	lodsb
+	xor	ah, ah
+
+        push    es
+	les	bx, lpColorInfo
+	shl     ax, 1                   ;index to table (3 bytes/entry)
+        shl     ax, 1
+        add     bx, ax
+	mov	ax, es:[bx]
+	mov	bx, es:[bx+2]
+	pop	es
+ci8e32p_store:
+        stosw
+	xchg	ax, bx
+	stosw
+
+	test	di, di
+	jz	ci8e32p_next_sel
+
+ci8e32p_loop_next:
+	dec	cl
+	jne	ci8e32p_next_pixel
+	ret
+
+ci8e32p_next_sel:
 	cmp	cl,1
 	jne	@F
         cmp     scanline_count,1
-	je	swsc_i24_x
+	je	ci8e32p_loop_next
 
-@@:
-	push	ax
-	push	dx
-	mov	dx, es
-	add	dx, __NEXTSEG
-	mov	es, dx
-	assumes	es, nothing
-	pop	dx
-	pop	ax
+@@:     push    ax
+        push    dx
+        mov     dx, es
+        add     dx, __NEXTSEG
+        mov     es, dx
+        assumes es, nothing
+        pop     dx
+        pop     ax
+	jmp	ci8e32p_loop_next
 
-swsc_i24_x:
-	ret
-
-store_i24_with_seg_check endp
-
-
-
+copy_i8e32_partial endp
 
 
 sEnd	code
