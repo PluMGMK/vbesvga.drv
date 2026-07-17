@@ -592,11 +592,14 @@ fix_width_bytes:
 	mov	al,0FFh
 
 and_mask_loop:
+	inc	si	; word-align SI, since the bitmap we're copying should
+	and	si,NOT 1; always have word-aligned scanlines...
 	mov	bp,CURSOR_WIDTH
 	cmp	dx,bp
 	jae	@F	; if cursor width correct or too wide, go copy 32 cols
 	mov	bp,dx	; if too narrow, only copy as many cols as given
-@@:	sar	bp,3	; convert to mono bytes
+	add	bp,7	; round UP to nearest byte!
+@@:	shr	bp,3	; convert to mono bytes
 	xchg	bp,cx	; use CX for the actual REP instruction
 	rep	movsb
 	mov	cx,bp	; get back outer loop counter
@@ -609,7 +612,8 @@ and_mask_loop:
 	ja	and_mask_skip_src
 	; BP negative --> we need to pad -BP pixels in the destination with ones
 	neg	bp
-	sar	bp,3	; convert to mono bytes
+	shr	bp,3	; convert to mono bytes:
+			; round DOWN since we rounded up above!
 	xchg	bp,cx	; use CX for the actual REP instruction
 	rep	stosb
 	mov	cx,bp	; get back outer loop counter
@@ -617,7 +621,8 @@ and_mask_loop:
 	jmp	short and_mask_loop
 and_mask_skip_src:
 	; BP positive --> we need to skip +BP pixels in the source
-	sar	bp,3	; convert to mono bytes
+	add	bp,7	; round UP since we didn't do any rounding above!
+	shr	bp,3	; convert to mono bytes
 	lea	si,[bp+si]
 	jcxz	and_mask_copy_done
 	jmp	short and_mask_loop
@@ -665,6 +670,8 @@ and_mask_done:
 	jb	and_mask_loop		; go do the same thing we did before!
 
 xor_mask_loop:
+	inc	si	; word-align SI, since the bitmap we're copying should
+	and	si,NOT 1; always have word-aligned scanlines...
 	mov	ax,CURSOR_WIDTH
 	cmp	dx,ax
 	jae	@F	; if cursor width correct or too wide, go copy 32 cols
