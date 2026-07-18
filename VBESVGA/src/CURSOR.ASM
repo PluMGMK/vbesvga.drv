@@ -112,10 +112,17 @@ SetCursor_locally:
 	lea	di,cursor_data
 	mov	ax,ds
 	or	ax,si
-	je	SetCursor_Busy
+	je	@F
+
+	xor	ax,ax
+	cmp	ds:[si].csHeight,ax
+        je      @F
+	cmp	ds:[si].csWidth,ax
+        je      @F
+
 	call	cursor_sanitize			;convert to internal format
 	or	es:cursor_flags,LOCAL_LOAD + YES_CURSOR
-	jmp	SetCursor_Busy
+@@:	jmp	SetCursor_Busy
 
 SetCursor_enabled:
 	sub	ax,ax				;prepare to return zero (fail)
@@ -141,7 +148,14 @@ SetCursor_OldXY:
 	mov	ax,es
         or      ax,si
         je      SetCursor_Exit
-	mov	exclude_global,0
+
+	xor	ax,ax
+	cmp	es:[si].csHeight,ax
+        je      SetCursor_Exit
+	cmp	es:[si].csWidth,ax
+        je      SetCursor_Exit
+
+	mov	exclude_global,ax
         or      cursor_flags,YES_CURSOR
 
 	call	cursor_check_sane		;check if we need to sanitize
