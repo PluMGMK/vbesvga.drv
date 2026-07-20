@@ -594,6 +594,10 @@ msd_vbe_mode:
 	mov	ax,[ebp.Client_BX]	;   Y: get the mode
 
 	inc	ax			; Store mode+1 so zero always means "invalid"
+	; First check if the mode hasn't actually changed, e.g. due to a bounce.
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
+	; In that case, we already have up-to-date info, no need to go checking!
+	je	msd_not_vbe
 	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
 	dec	ax
 
