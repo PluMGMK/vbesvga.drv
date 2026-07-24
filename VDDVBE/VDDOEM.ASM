@@ -593,14 +593,6 @@ msd_vbe_mode:
 	jnz	msd_not_vbe		;   N: do nothing
 	mov	ax,[ebp.Client_BX]	;   Y: get the mode
 
-	inc	ax			; Store mode+1 so zero always means "invalid"
-	; First check if the mode hasn't actually changed, e.g. due to a bounce.
-	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
-	; In that case, we already have up-to-date info, no need to go checking!
-	je	msd_not_vbe
-	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
-	dec	ax
-
 	bt	ax,bVESA_UCRTC		;Q: custom CRTC info block?
 	jnc	short @F		;   N: skip this bit
 
@@ -618,7 +610,15 @@ msd_vbe_mode:
 	pop	eax
 	pop	edi
 
-@@:	; get the mode info struct
+@@:	inc	ax	; Store mode+1 so zero always means "invalid"
+	; Check if the mode hasn't actually changed, e.g. due to a bounce.
+	cmp	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
+	; In that case, we already have up-to-date info, no need to go checking!
+	je	msd_not_vbe
+	mov	[edi.VDD_Stt.V_Extend.VBE_VidModeP1],ax
+	dec	ax
+
+	; get the mode info struct
 	VMMcall	Begin_Nest_V86_Exec
 	Push_Client_State
 	mov	[ebp.Client_AX],4F01h	; Get mode info
