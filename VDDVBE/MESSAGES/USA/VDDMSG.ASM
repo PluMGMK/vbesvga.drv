@@ -394,6 +394,12 @@ VMB_Str_CvtFullScrn DB	"This application was unable to allocate necessary "
 		    DB	"Check the PIF video memory settings to ensure they "
 		    DB	"are correct.", 0
 
+IFDEF	DEBUG
+PUBLIC VMB_Str_BadStack
+VMB_Str_BadStack    DB	"Int 2F foreground notification being sent with "
+		    DB	"illegal NULL V86 stack segment. Probably OS bug!", 0
+ENDIF
+
 ;************************************************************
 ; The following are not used in the 3.1 VDDVGA
 

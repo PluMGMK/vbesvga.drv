@@ -86,6 +86,10 @@ Vid_VM_Idle_Chain    DD  ?
 EXTRN	VDD_Time_Ini:BYTE
 EXTRN	VDD_VM_Scroll_Freq_Ini:BYTE
 
+IFDEF	DEBUG
+EXTRN	VMB_Str_BadStack:BYTE
+ENDIF
+
 VxD_DATA_ENDS
 
 VxD_CODE_SEG
@@ -334,7 +338,7 @@ IFDEF	VRTCTIMER
 	; goes back to being windowed)...
 	xor	ecx,ecx
 	TestMem	[edi.VDD_Stt.C_VRTCEnd],fVRTCEndIRQEna
-	jz	VDD_Set_VRTC_Time_Out		; JZ since zero means enabled
+	jz	short VDD_Set_VRTC_Time_Out	; JZ since zero means enabled
 ENDIF
 	ret
 EndProc VDD_Set_VM_Time_Out
@@ -749,6 +753,13 @@ bn_no_saved_state:
 	mov	ebp, [ebx.CB_Client_Pointer]
 	Push_Client_State
 	VMMcall Begin_Nest_Exec
+IFDEF	DEBUG
+	cmp	[ebp.Client_Alt_SS],0
+	jnz	short @F
+	mov	ax,[ebp.Client_Alt_SP]
+	Debug_Out 'int 2Fh callout with illegal V86 stack pointer 0000:#ax'
+@@:
+ENDIF
 	mov	[ebp.Client_AX], 4001h
 	mov	eax,2Fh
 	VMMcall Exec_Int			; VM detaches from display
@@ -785,13 +796,47 @@ IFDEF DEBUG
 	Trace_Out 'BGrnd cancelled need for FGrnd notify'
 fn_D00:
 ENDIF
-	jnz	short fn_skip_notify		;   N:
+	jnz	DEBFAR fn_skip_notify		;   N:
 	push	ebp
 	mov	ebp, [ebx.CB_Client_Pointer]
 	Push_Client_State
 	VMMcall Begin_Nest_Exec
 fn_simulate_2f:
 	Trace_Out 'VDD fgrnd notify #ebx'
+IFDEF	DEBUG
+	cmp	[ebp.Client_Alt_SS],0
+	jnz	short @F
+
+	mov	ax,[ebp.Client_Alt_SP]
+	Debug_Out 'int 2Fh callout with illegal V86 stack pointer 0000:#ax'
+	; To help identify this issue without a serial connection, throw up a
+	; BSoD here. This WILL trigger an int 10h on the illegal stack, which
+	; MAY banjax the system - but in that case, VBESVGA.DRV would have done
+	; that from dev_to_foreground anyway, so there's nothing to lose!
+	;
+	; On the off-chance that the system can survive the IVT being trashed,
+	; we need to make sure we don't end up with infinite recursion, where
+	; every time the user dismisses the BSoD this code gets called AGAIN
+	; and triggers another BSoD... Reuse / abuse InInt2F flag for this.
+	bts	[edi.VDD_Flags], bVDD_InInt2F
+	jc	short @F
+	push	edi
+	push	esi
+	push	eax
+	push	ecx
+
+	xor	edi, edi			; use VM caption
+	xor	esi, esi			; no callback
+	mov	eax, MB_OK+MB_ICONEXCLAMATION+MB_ASAP+MB_SYSTEMMODAL+MB_NOWINDOW
+	mov	ecx, OFFSET32 VMB_Str_BadStack
+	VxDCall	SHELL_SYSMODAL_Message
+
+	pop	ecx
+	pop	eax
+	pop	esi
+	pop	edi
+@@:
+ENDIF
 	mov	[ebp.Client_AX], 4002h
 	mov	eax,2Fh
 	SetFlag [edi.VDD_Flags], fVDD_InInt2F
