@@ -70,6 +70,7 @@ incDevice	= 1
 	externFP FreeResource
 	externFP LockResource
 	externFP GlobalUnlock
+	externFP DoInt10h		;in int10.asm
 
 ifdef PALETTES
 	externFP SetPaletteTranslate    ;in color\ega\vga\palette.asm
@@ -577,7 +578,7 @@ enable_read_profile_fail:
 	; * FatalExit, which may not do anything...
 	; * Exit to DOS
 	mov	ax,3	; text mode
-	int	10h
+	call	DoInt10h
 	mov	dx,[fail_reason]
 	mov	ah,9	; write string to stdout
 	int	21h

@@ -391,8 +391,7 @@ blue_shr	db 0FFh	; how far right to shift blue byte (8-BFieldSize)
 ; (for whatever reason...)
 BankSwitchInt10	proc far
 	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_BANKSWITCH
-	int	10h
-	ret
+	jmp	near ptr DoInt10h
 BankSwitchInt10	endp
 
 ; This function emulates bank-switching for linear modes.
@@ -586,7 +585,7 @@ cBegin
 	; start with an installation check
 	mov	ax,(VBE_INT10_FN SHL 8) OR VBE_GETEDID
 	xor	bl,bl
-	int	10h
+	call	DoInt10h
 	cmp	ax,VBE_INT10_FN	; success?
 	je	@F
 	; ensure we don't try to free a DOS memory block
@@ -1600,7 +1599,7 @@ check_last_resort	proc near
 
 	; check for VGA or MCGA to make sure the mode is actually supported!
 	mov	ax,1A00h	; GET DISPLAY COMBINATION CODE
-	int	10h
+	call	DoInt10h
 	cmp	al,1Ah		; function supported?
 	jne	@F		; nope, don't set HWSUPPORT flag!
 
@@ -1991,7 +1990,7 @@ common_vesafun:
 	; there's no point in messing around with VM86 redirects or PMIDs here
 	; since this is a really simple operation that doesn't use any data
 	; segments - and anyway, this way it's easier for the VxD to trap it!
-	int	10h
+	call	DoInt10h
 	ret
 
 setmode	endp

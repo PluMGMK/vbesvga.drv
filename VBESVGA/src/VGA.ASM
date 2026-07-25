@@ -101,6 +101,7 @@ sel     dw      ?
 FARPOINTER      ends
 endif
 
+	externFP DoInt10h		;Do an int 10h on our own V86 stack
 	externFP init_hw_regs		;Initialize ega state code
         externFP SetPalette             ;loads palette
 	externNP set_dacsize		;in VESAFNS.ASM
@@ -642,7 +643,7 @@ physical_enable proc near
 	push	bp
 	mov	ax,1130h
 	mov	bh,0
-	int	10h
+	call	DoInt10h
 	mov	NumOfLines,dl		; save the # of lines on the screen
 
 	mov	ax,040h 		; bogus for keyboard !!!
@@ -791,7 +792,7 @@ physical_disable proc near
 	mov	enabled_flag,ah 	;Show disabled
 
         mov     ax,0003h
-	int	10h
+	call	DoInt10h
 	cmp	es:[NumOfLines],25-1	; 25 line display?
 	jz	phdi_exit
 ;
@@ -805,10 +806,10 @@ physical_disable proc near
 ;
 @@:
 	mov	bx,30h
-	int	10h
+	call	DoInt10h
 	mov	ax,1112h
 	mov	bx,0h
-	int	10h
+	call	DoInt10h
 ;
 phdi_exit:
 
