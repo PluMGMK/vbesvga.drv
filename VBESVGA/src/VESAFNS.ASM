@@ -1923,34 +1923,37 @@ vesa_gdi_fixup	endp
 ;       ds      Data
 ;       bx      1 = set 8 bit mode, 0 = set 6 bits mode
 
-PUBLIC	far_set_dacsize
-far_set_dacsize 	PROC	FAR
-
-	call	set_dacsize
-	ret
-
-far_set_dacsize 	ENDP
-
-
-; TODO: Fall back to port I/O if VBE < 1.2 ??
 PUBLIC  set_dacsize
 set_dacsize	PROC	NEAR
+	; switch from RETN to RETF frame
+	pop	ax
+	push	cs
+	push	ax
+	; then fallthrough to far_set_dacsize
+set_dacsize	ENDP
+
+; TODO: Fall back to port I/O if VBE < 1.2 ??
+PUBLIC	far_set_dacsize
+far_set_dacsize 	PROC	FAR
 	assumes ds,Data
 	assumes es,nothing
 
 	mov	ax,(VBE_INT10_FN SHL 8) + VBE_DACSIZE
 	test	bx,bx
 	mov	bh,6		; just go set it to six
-	jz	common_vesafun
+	jz	@F
 
 	mov	bx,800h		; prepare to set (BL=0) to eight (BH=8)
 	cmp	[dac_size],2	; does the user not want 8-bit DAC?
-	jne	common_vesafun	; they do, go set it
+	jne	@F		; they do, go set it
 
 	; if we're here, dac_size was 2, so there's no need to set it
 	ret
 
-set_dacsize	ENDP
+@@:	; go call the BIOS
+	jmp	DoInt10h
+
+far_set_dacsize 	ENDP
 
 
 ;---------------------------Public-Routine------------------------------;
@@ -1977,6 +1980,15 @@ set_dacsize	ENDP
 ;-----------------------------------------------------------------------;
 public	setmode
 setmode	proc near
+	; switch from RETN to RETF frame
+	pop	ax
+	push	cs
+	push	ax
+	; then fallthrough to farsetmode
+setmode	endp
+
+public	farsetmode
+farsetmode	proc far
 	assumes ds,Data
 	assumes es,nothing
 
@@ -1986,14 +1998,9 @@ endif
 	mov	ax,[ModeSetFn]
 	mov	bx,[Vmode]
 
-common_vesafun:
-	; there's no point in messing around with VM86 redirects or PMIDs here
-	; since this is a really simple operation that doesn't use any data
-	; segments - and anyway, this way it's easier for the VxD to trap it!
-	call	DoInt10h
-	ret
+	jmp	DoInt10h
 
-setmode	endp
+farsetmode	endp
 
 ;--------------------------------------------------------------------------;
 ; FixupFarPtr

@@ -840,12 +840,6 @@ page
 	assumes ds,Data
 	assumes es,nothing
 	externNP setmode	; in VESAFNS.ASM
-	public	farsetmode
-
-farsetmode     proc    far
-	call	setmode
-	ret
-farsetmode      endp
 
 
 	; take a calculated DPI value (or one from a font) in AX,
