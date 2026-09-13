@@ -349,6 +349,10 @@ stack_ok:
 	mov	es:[di - STOS_SRC2_YEXT],ax
 	mov	ax,src_swing_bytes
         mov     cx,dst_swing_bytes
+	; signed row stride
+	mov	bx,ax
+	add	bx,src_xExt_bytes
+	sar	bx,15		; shift 16-bit BX by 15: sign fills every bit (0 or -1)
 	mov	es:[di - STOS_SRC2_SRC_SWING_BYTES],ax
         mov     es:[di - STOS_SRC2_DST_SWING_BYTES],cx
 	mov	es:[di - STOS_SRC2_SRC_CMP - 2],ax
