@@ -1,0 +1,225 @@
+//----------------------------------------------------------------------------
+//  Project Vbesvga
+//  
+//  Copyright 2026. All Rights Reserved.
+//
+//  SUBSYSTEM:    Vbesvga Application
+//  FILE:         vbsvgapp.h
+//  AUTHOR:       
+//
+//  OVERVIEW
+//  ~~~~~~~~
+//  Constant definitions for all resources defined in vbsvgapp.rc.
+//
+//----------------------------------------------------------------------------
+//#if !defined(vbsvgapp_rh)   // Sentry use file only if it's not already included.
+//#define vbsvgapp_rh
+
+
+//
+// Application specific definitions:
+//
+#define IDD_DIALOG2	2
+#define IDABOUTOK	1
+#define IDC_STATICTEXT4	101
+#define IDD_DIALOG1	1
+#define IDD_EXTRAOPT	1
+#define IDC_CHECKBOX1	101
+#define IDC_BANKEDMODES	101
+#define IDC_CHECKBOX2	102
+#define IDC_GARISH	102
+#define IDC_CHECKBOX3	103
+#define IDC_THREEBYTE	103
+#define IDC_CHECKBOX4	104
+#define IDC_BOUNCE	104
+#define IDC_EDIT1	105
+#define IDC_SBITEXT	105
+#define IDC_COMBOBOX1	106
+#define IDC_STATICTEXT3	107
+#define IDC_DACTEXT	107
+#define IDC_EDIT2	108
+#define IDC_SBIEDIT	108
+#define IDC_CHECKBOX5	109
+#define IDC_LINEARBLITS	109
+#define IDC_DACDEPTHOPT	106
+#define IDC_SBI	105
+#define IDC_STATICTEXT2	106
+#define IDI_SDIAPPLICATION      1001            // Application icon
+
+#define IDM_SDI                 100             // Menu resource ID and Accelerator IDs
+#define CM_MOREOPTIONSITEM	11847
+#define CM_HELPLOAD	11846
+#define CM_HELPITEM1	18875
+#define CM_ITEM1	18875
+#define CM_MOREOPTIONSITEM3	18874
+#define CM_HOTKEY	11845
+#define CM_MOREOPTIONSITEM2	18873
+#define CM_DPMS	11844
+#define CM_MOREOPTIONSITEM1	18873
+#define CM_CURSORCOLOR	11843
+#define CM_MONITOR	11842
+
+//
+// CM_FILEnnnn commands (include/owl/editfile.rh except for CM_FILEPRINTPREVIEW)
+//
+#define CM_FILENEW              24331           // SDI New
+#define CM_FILEOPEN             24332           // SDI Open
+#define CM_FILECLOSE            24339
+#define CM_FILESAVE             24333
+#define CM_FILESAVEAS           24334
+
+
+//
+// Window commands (include/owl/window.rh)
+//
+#define CM_EXIT                 24310
+
+
+//
+// CM_EDITnnnn commands (include/owl/window.rh)
+//
+#define CM_EDITUNDO             24321
+#define CM_EDITCUT              24322
+#define CM_EDITCOPY             24323
+#define CM_EDITPASTE            24324
+#define CM_EDITDELETE           24325
+#define CM_EDITCLEAR            24326
+#define CM_EDITADD              24327
+#define CM_EDITEDIT             24328
+
+
+//
+// Search menu commands (include/owl/editsear.rh)
+//
+#define CM_EDITFIND             24351
+#define CM_EDITREPLACE          24352
+#define CM_EDITFINDNEXT         24353
+
+
+//
+// Help menu commands.
+//
+#define CM_HELPABOUT            2009
+
+
+//
+// Client Dialog
+//
+#define IDD_CLIENT               2000
+#define IDC_RADIOBUTTON1	101
+#define IDC_RADIOBUTTON2	102
+#define IDC_SCROLLBAR1	103
+#define IDC_GROUPBOX3	104
+#define IDC_STATICTEXT1	105
+#define IDC_BUTTON1	107
+#define IDC_GROUPBOX2	108
+#define IDC_LISTBOX1	109
+#define IDC_DEPTH	109
+#define IDC_RADIOBUTTON3	110
+#define IDC_RADIOBUTTON4	111
+#define IDC_RADIOBUTTON5	112
+#define IDC_RESOLUTION	105
+#define IDC_GROUPBOX1	106
+#define IDC_FONTSIZE	106
+
+
+//
+// OWL defined strings
+//
+
+//
+// Statusbar
+//
+#define IDS_MODES               32530
+#define IDS_MODESOFF            32531
+
+//
+// EditFile
+//
+#define IDS_UNTITLED            32550
+#define IDS_UNABLEREAD          32551
+#define IDS_UNABLEWRITE         32552
+#define IDS_FILECHANGED         32553
+#define IDS_FILEFILTER          32554
+
+//
+// EditSearch
+//
+#define IDS_CANNOTFIND          32540
+
+
+//
+// General & application exception messages (include/owl/except.rh)
+//
+#define IDS_UNKNOWNEXCEPTION    32767
+#define IDS_OWLEXCEPTION        32766
+#define IDS_OKTORESUME          32765
+#define IDS_UNHANDLEDXMSG       32764
+#define IDS_UNKNOWNERROR        32763
+#define IDS_NOAPP               32762
+#define IDS_OUTOFMEMORY         32761
+#define IDS_INVALIDMODULE       32760
+#define IDS_INVALIDMAINWINDOW   32759
+#define IDS_VBXLIBRARYFAIL      32758
+
+//
+// Owl 1 compatibility messages
+//
+#define IDS_INVALIDWINDOW       32709
+#define IDS_INVALIDCHILDWINDOW  32708
+#define IDS_INVALIDCLIENTWINDOW 32707
+
+//
+// TXWindow messages
+//
+#define IDS_CLASSREGISTERFAIL   32749
+#define IDS_CHILDREGISTERFAIL   32748
+#define IDS_WINDOWCREATEFAIL    32747
+#define IDS_WINDOWEXECUTEFAIL   32746
+#define IDS_CHILDCREATEFAIL     32745
+
+#define IDS_MENUFAILURE         32744
+#define IDS_VALIDATORSYNTAX     32743
+#define IDS_PRINTERERROR        32742
+
+#define IDS_LAYOUTINCOMPLETE    32741
+#define IDS_LAYOUTBADRELWIN     32740
+
+//
+// TXGdi messages
+//
+#define IDS_GDIFAILURE          32739
+#define IDS_GDIALLOCFAIL        32738
+#define IDS_GDICREATEFAIL       32737
+#define IDS_GDIRESLOADFAIL      32736
+#define IDS_GDIFILEREADFAIL     32735
+#define IDS_GDIDELETEFAIL       32734
+#define IDS_GDIDESTROYFAIL      32733
+#define IDS_INVALIDDIBHANDLE    32732
+
+
+//
+// TInputDialog DIALOG resource (include/owl/inputdia.rh)
+//
+#define IDD_INPUTDIALOG         32514
+#define ID_PROMPT               4091
+#define ID_INPUT                4090
+
+
+//
+// TSlider bitmaps (horizontal and vertical) (include/owl/slider.rh)
+//
+#define IDB_HSLIDERTHUMB        32000
+#define IDB_VSLIDERTHUMB        32001
+
+
+//
+// Validation messages (include/owl/validate.rh)
+//
+#define IDS_VALPXPCONFORM       32520
+#define IDS_VALINVALIDCHAR      32521
+#define IDS_VALNOTINRANGE       32522
+#define IDS_VALNOTINLIST        32523
+
+
+//#endif  // vbsvgapp_rh
