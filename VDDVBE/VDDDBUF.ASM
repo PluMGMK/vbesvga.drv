@@ -333,7 +333,7 @@ BeginProc VDD_DblBuf_Service, PUBLIC
 
 	VMMcall	Simulate_Far_Ret
 	movzx	ecx,[ebp.Client_AX]
-	cmp	cl,DB_Stop
+	cmp	ecx,DB_Last
 	ja	SHORT VDBS_Exit
 	VMMCall Validate_VM_Handle
 	jmp	DWORD PTR DblBuf_JumpTable[ecx*4]
