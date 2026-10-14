@@ -65,6 +65,14 @@ Shared_Cursor_Data	STRUC
 
 	; flags, used to specify whether or not to draw the cursor
 	cursor_flags	DW ?
+	; Appended: old display drivers keep their existing cursor layout.
+	drawing_active	DW 0
+	; Optional host publication: existing display drivers leave this zero.
+	host_publish_enabled DW 0
+	publish_pending DW 0
+	; Only timer-owned snapshots are revocable at the next outer GDI begin.
+	; 0: unowned, 1: revocable timer, 2: completed text until next begin.
+	timer_snapshot_pending DW 0
 Shared_Cursor_Data	ENDS
 
 ; we can expose a copy of this structure to userspace via a small LDT segment
@@ -82,6 +90,23 @@ MemWidth	DW 0
 ; how often to swap buffers
 PUBLIC	sb_period_ms
 sb_period_ms	DB 0
+
+; DOSBox integration device frame-publication protocol, version 1.
+HostPublishCapability EQU 00684582h
+HostPublishSubmit EQU 00684583h
+HostPublishCancel EQU 00684584h
+HostPublishVersion EQU 57333101h
+HostFastUsed    DD 0
+HostPublishDesc LABEL DWORD
+    DD 40,1
+HostDescBack    DD 0
+    DD 0                       ; reserved front pointer must be zero
+    DD OFFSET32 SharedCurSeg
+HostDescBytes   DD 0
+HostDescStride  DD 0
+HostDescWidth   DD 0
+HostDescHeight  DD 0
+    DD 8
 
 VxD_LOCKED_DATA_ENDS
 
@@ -111,11 +136,33 @@ VxD_LOCKED_CODE_SEG
 ;
 ;==============================================================================
 BeginProc VDD_SwapBuffers,High_Freq
+	cmp	[SharedCurSeg.drawing_active],0
+	je	short @@idle
+	cmp	[Vid_SB_Timeout],0
+	je	short @@done
+	mov	[SharedCurSeg.publish_pending],1
+	jmp	short @@done
+@@idle:
+	mov	[SharedCurSeg.publish_pending],0
+	call	VDD_PublishFrame
+	jnc	short @@done
+	; Refreshing completed pixels must not make them revocable again.
+	cmp	[SharedCurSeg.timer_snapshot_pending],2
+	je	short @@done
+	mov	[SharedCurSeg.timer_snapshot_pending],1
+@@done:
+	call	VDD_Schedule_SwapBuffers
+	ret
+EndProc VDD_SwapBuffers
 
-	pushad	; we will use all the 386 registers!
+; Copy one complete generic frame without owning or rescheduling its timer.
+BeginProc VDD_CopyBuffers,High_Freq
+	pushad
 	push	es
 	push	fs
 	push	gs
+	; Timer callbacks supply EDX; protected completion clients do not.
+	mov	edx,[Vid_BBuf_Size]
 
 	; We will use the registers like so:
 	; EAX = Current dword of graphics data (or word of cursor data)
@@ -221,7 +268,7 @@ BeginProc VDD_SwapBuffers,High_Freq
 
 @@:	; copy loop done - any cursor scanlines left?
 	test	bh,bh
-	jz	short @@done
+	jz	short copy_done
 
 	; right, switch over to loading the cursor data
 	; 16-bit source address and counter registers are sufficient for this!
@@ -262,16 +309,14 @@ BeginProc VDD_SwapBuffers,High_Freq
 	sub	ecx,edi
 	jnz	@@copy_loop
 
-@@done:	pop	gs
+copy_done:
+	pop	gs
 	pop	fs
 	pop	es
 	assume	es:FLAT
 	popad
-
-	; schedule the next call
-	call	VDD_Schedule_SwapBuffers
 	ret
-EndProc VDD_SwapBuffers
+EndProc VDD_CopyBuffers
 
 ;******************************************************************************
 ;VDD_Schedule_SwapBuffers
@@ -300,6 +345,224 @@ BeginProc VDD_Schedule_SwapBuffers,High_Freq
 	ret
 EndProc VDD_Schedule_SwapBuffers
 
+; Service one request missed during a GDI primitive. Nested child text exits
+; leave it pending; the outermost completed text consumes it exactly once.
+BeginProc VDD_DblBuf_Complete, PUBLIC
+	pushad
+	cmp	[SharedCurSeg.publish_pending],0
+	je	short cp_done
+	cmp	[SharedCurSeg.drawing_active],0
+	jne	short cp_done
+	mov	[SharedCurSeg.publish_pending],0
+	cmp	[Vid_SB_Timeout],0
+	je	short cp_done
+	call	VDD_PublishFrame
+	jnc	short cp_done
+	mov	[SharedCurSeg.timer_snapshot_pending],2
+cp_done:
+	popad
+	ret
+EndProc VDD_DblBuf_Complete
+
+; Publish one complete frame without owning its periodic timer. CF reports
+; an accepted host snapshot; the generic path leaves it clear.
+BeginProc VDD_PublishFrame,High_Freq
+	call	VDD_HostPublish
+	jc	short pf_done
+	cmp	[HostFastUsed],0
+	je	short pf_generic
+	call	VDD_HostCancel
+	jnc	short pf_unresolved
+	mov	[HostFastUsed],0
+pf_unresolved:
+	call	VDD_InvalidateFront
+pf_generic:
+	call	VDD_CopyBuffers
+	clc
+pf_done:
+	ret
+EndProc VDD_PublishFrame
+
+; A new outer GDI draw supersedes an uncommitted timer snapshot. Completed-text
+; ownership survives periodic refreshes until this first begin consumes it,
+; leaving the completed snapshot valid while the next operation is underway.
+BeginProc VDD_DblBuf_BeginDraw, PUBLIC
+	pushad
+	cmp	[SharedCurSeg.timer_snapshot_pending],0
+	je	short bd_done
+	cmp	[SharedCurSeg.drawing_active],1
+	jne	short bd_done
+	cmp	[SharedCurSeg.host_publish_enabled],0
+	je	short bd_done
+	cmp	[HostFastUsed],0
+	je	short bd_done
+	cmp	[Vid_SB_Timeout],0
+	je	short bd_done
+	cmp	[SharedCurSeg.timer_snapshot_pending],2
+	jne	short bd_cancel
+	mov	[SharedCurSeg.timer_snapshot_pending],0
+	jmp	short bd_done
+bd_cancel:
+	call	VDD_HostCancel
+	mov	[SharedCurSeg.publish_pending],1
+bd_done:
+	popad
+	ret
+EndProc VDD_DblBuf_BeginDraw
+
+; A successful PUSH_STATE must be paired with POP_STATE. Return CF set only
+; when the host has accepted an owned snapshot. No I/O without explicit opt-in.
+BeginProc VDD_HostPublish,High_Freq
+	pushad
+	cmp [SharedCurSeg.host_publish_enabled],0
+	je hp_fail
+	cmp [pxbytes],1
+	jne hp_fail
+	mov al,20h
+	out 2Ah,al
+	in al,2Ah
+	test al,2
+	jnz hp_fail              ; failed push: do not pop someone else's state
+	mov eax,HostPublishCapability
+	out 28h,eax
+	in eax,29h
+	cmp eax,HostPublishVersion
+	jne hp_pop_fail
+	mov eax,HostPublishSubmit
+	out 28h,eax
+	mov eax,OFFSET32 HostPublishDesc
+	out 29h,eax
+	in eax,29h              ; read preserves the SUBMIT write response
+	test eax,eax
+	jnz hp_pop_fail
+	in al,2Ah
+	test al,2
+	jnz hp_pop_fail
+	mov al,21h
+	out 2Ah,al
+	mov [HostFastUsed],1
+	popad
+	stc
+	ret
+hp_pop_fail:
+	mov al,21h
+	out 2Ah,al
+hp_fail:
+	popad
+	clc
+	ret
+EndProc VDD_HostPublish
+
+; CF reports confirmed cancellation. Failed transport keeps ownership so a
+; later begin, timer or successful replacement can recover without losing it.
+BeginProc VDD_HostCancel,High_Freq
+	pushad
+	cmp [HostFastUsed],0
+	je hc_success
+	mov al,20h
+	out 2Ah,al
+	in al,2Ah
+	test al,2
+	jnz hc_fail
+	mov eax,HostPublishCancel
+	out 28h,eax
+	xor eax,eax
+	out 29h,eax
+	in eax,29h
+	test eax,eax
+	jnz hc_pop_fail
+	in al,2Ah
+	test al,2
+	jnz hc_pop_fail
+	mov al,21h
+	out 2Ah,al
+hc_success:
+	mov [SharedCurSeg.timer_snapshot_pending],0
+	popad
+	stc
+	ret
+hc_pop_fail:
+	mov al,21h
+	out 2Ah,al
+hc_fail:
+	popad
+	clc
+	ret
+EndProc VDD_HostCancel
+
+; Front cache was bypassed while the host published. Make it unequal to the
+; complete desired image, including an inverting cursor, before legacy diffing.
+BeginProc VDD_InvalidateFront,High_Freq
+	pushad
+	push es
+	push fs
+	mov es,[FrontBufSel]
+	mov fs,[BackBufSel]
+	assume es:nothing,fs:nothing
+	cld
+	xor esi,esi
+	xor edi,edi
+	mov ecx,[Vid_BBuf_Size]
+	shr ecx,2
+	jecxz short if_tail
+if_dwords:
+	lods dword ptr fs:[esi]
+	not eax
+	stosd
+	loop if_dwords
+if_tail:
+	mov ecx,[Vid_BBuf_Size]
+	and ecx,3
+	jecxz short if_cursor
+if_bytes:
+	lods byte ptr fs:[esi]
+	not al
+	stosb
+	loop if_bytes
+if_cursor:
+	test [SharedCurSeg.cursor_flags],YES_CURSOR
+	jz if_done
+	movzx ebx,[SharedCurSeg.screen_width]
+	test ebx,ebx
+	jz if_done
+	movzx ebp,[SharedCurSeg.screen_height]
+	test ebp,ebp
+	jz if_done
+	movzx esi,[SharedCurSeg.screen_yclip]
+	shl esi,5
+	movzx eax,[SharedCurSeg.screen_xclip]
+	add esi,eax
+	shl esi,1
+	add esi,OFFSET32 SharedCurSeg.cursor_data
+	mov edx,[SharedCurSeg.screen_longaddr]
+if_cursor_row:
+	mov edi,edx
+	mov ecx,ebx
+if_cursor_pixel:
+	mov al,fs:[edi]
+	and al,[esi]
+	xor al,[esi+1]
+	not al
+	mov es:[edi],al
+	inc edi
+	add esi,2
+	loop if_cursor_pixel
+	movzx eax,[MemWidth]
+	add edx,eax
+	mov eax,32
+	sub eax,ebx
+	shl eax,1
+	add esi,eax
+	dec ebp
+	jnz if_cursor_row
+if_done:
+	pop fs
+	pop es
+	assume es:FLAT
+	popad
+	ret
+EndProc VDD_InvalidateFront
+
 VxD_LOCKED_CODE_ENDS
 
 VxD_CODE_SEG
@@ -327,13 +590,15 @@ EndDoc
 DB_Setup EQU 0
 DB_Start EQU 1
 DB_Stop  EQU 2
-DB_Last  EQU DB_Stop
+DB_Complete EQU 3
+DB_BeginDraw EQU 4
+DB_Last  EQU DB_BeginDraw
 
 BeginProc VDD_DblBuf_Service, PUBLIC
 
 	VMMcall	Simulate_Far_Ret
 	movzx	ecx,[ebp.Client_AX]
-	cmp	cl,DB_Stop
+	cmp	ecx,DB_Last
 	ja	SHORT VDBS_Exit
 	VMMCall Validate_VM_Handle
 	jmp	DWORD PTR DblBuf_JumpTable[ecx*4]
@@ -350,6 +615,8 @@ DblBuf_JumpTable	LABEL DWORD
 DblBufEntry DB_Setup, VDD_DblBuf_Setup	; Create buffers and selectors
 DblBufEntry DB_Start, VDD_DblBuf_Start	; Start periodic swap-buffers loop
 DblBufEntry DB_Stop, VDD_DblBuf_Stop	; Stop periodic swap-buffers loop
+DblBufEntry DB_Complete, VDD_DblBuf_Complete ; One requested complete frame
+DblBufEntry DB_BeginDraw, VDD_DblBuf_BeginDraw ; Cancel a timer-owned pending frame
 EndProc VDD_DblBuf_Service
 
 
@@ -381,6 +648,7 @@ BeginDoc
 EndDoc
 
 BeginProc VDD_DblBuf_Setup
+	call	VDD_HostCancel
 
 	; first of all check if double-buffering is already set up
 	cmp	[VramSel],dx	; DX == 0
@@ -410,6 +678,19 @@ Trace_Out   "VDD: double buffer API version mismatch"
 	mov	eax,[ebp.Client_EDI]
 	mov	[Vid_BBuf_Size],esi
 	mov	[MemWidth],dx
+	mov	[HostDescBytes],esi
+	movzx	ecx,dx
+	mov	[HostDescStride],ecx
+	mov	[HostDescWidth],ecx ; accelerated only for the packed 8-bit mode
+	test	ecx,ecx
+	jz	setup_done
+	push	eax
+	mov	eax,esi
+	xor	edx,edx
+	div	ecx
+	mov	[HostDescHeight],eax
+	pop	eax
+
 
 	; map VRAM into linear memory
 	VMMcall	_MapPhysToLinear, <eax,esi,0>
@@ -436,6 +717,7 @@ Trace_Out   "VDD: double buffer API version mismatch"
 	or	eax,edx
 	jz	setup_done
 	mov	[ebp.Client_ESI],edx
+	mov	[HostDescBack],edx
 
 	; Allocate selectors for front and back buffer
 	mov	ecx,esi		; get buffer size again
@@ -592,6 +874,8 @@ BeginDoc
 EndDoc
 
 BeginProc VDD_DblBuf_Stop
+	mov	[SharedCurSeg.publish_pending],0
+	call	VDD_HostCancel
 
 	; check if swap_buffers is actually set to run
 	mov	esi,[Vid_SB_Timeout]

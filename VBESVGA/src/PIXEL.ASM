@@ -171,6 +171,7 @@ cProc   Pixel,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
         parmW   y                       ; Y coordinate of pixel.
         parmD   p_color                 ; Physical color to set pixel to.
         parmD   lp_draw_mode            ; Drawing mode to use, or null if Get.
+        localB  exclusion_acquired     ; independent of color dispatch flag
         localB  is_device               ; set non-zero if the device.
         localB  PCurVidSel              ; current video bank select
 	localW	colour_format		; copy of this on stack
@@ -178,6 +179,7 @@ cProc   Pixel,<FAR,PUBLIC,WIN,PASCAL>,<si,di,es,ds>
 cBegin
 ;
 WriteAux        <'PIXEL'>
+	mov	exclusion_acquired,0
 ;
 ;----------------------------------------------------------------------------;
 ; if the palette manager is supported, do the on-the-fly translation now     ;
@@ -247,6 +249,7 @@ ifdef   EXCLUSION                       ; If exclusion required
         mov     si,cx                   ; right
         mov     di,dx                   ; bottom
         call    exclude_far             ; Exclude the area
+	mov	exclusion_acquired,1
 endif
         lds     si,lp_device            ; --> physical device
         assumes ds,nothing
@@ -662,8 +665,8 @@ pixel_250:
 	mov	dh,[si+2]
 ;
 pixel_300:
-        test    is_device,0FFh
-        jz      pixel_exit
+        cmp     exclusion_acquired,0
+        je      pixel_exit
 
 ifdef   EXCLUSION
         call    unexclude_far           ; Clear any exclude rectangle

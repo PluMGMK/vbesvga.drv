@@ -145,6 +145,7 @@ height_member	db	"Height",0
 depth_member	db	"Depth",0
 
 interval_member	db	"SwapBuffersInterval",0
+publish_member	db	"DOSBoxPublish",0
 
 allow3b_member	db	"Allow3ByteMode",0
 
@@ -178,6 +179,7 @@ SpecialBlit_member	db	"EnableSpecialCaseLinearBlits",0
         externW ScratchSel              ; the free selector
 
 	externW	sb_period_ms		; in DBLBUF.ASM
+	externW EnableHostPublish
 	externB	ThreeByte		; in VESAFNS.ASM
 
 sEnd	Data
@@ -469,6 +471,13 @@ enable_read_profile	PROC	NEAR
 	mov	[fail_reason],offset bad_interval
 	jmp	enable_read_profile_fail
 @@:	mov	[sb_period_ms],ax
+
+	; Explicit opt-in: never probe integration ports on other hardware.
+	lea	ax,boot_category
+	lea	bx,publish_member
+	lea	cx,aszSystemIni
+        cCall   GetPrivateProfileInt,<ds,ax,ds,bx,0,ds,cx>
+	mov	[EnableHostPublish],ax
 
 	lea	ax,boot_category
 	lea	bx,allow3b_member

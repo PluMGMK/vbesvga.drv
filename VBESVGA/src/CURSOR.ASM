@@ -88,6 +88,10 @@ sBegin	Code
 	assumes cs,Code
 	assumes ds,Data
 
+externNP dblbuf_begin_draw
+externNP dblbuf_end_draw
+externNP dblbuf_complete_pending
+
 externW	pxbytes				;lives in SWCURS.ASM, set in VESAFNS.ASM
 
 ;
@@ -300,13 +304,24 @@ exclude_far	ENDP
 
 PUBLIC	exclude
 exclude PROC	NEAR
+	stc	; ordinary GDI exclusion also guards publication
+	jmp	short exclude_common
+exclude ENDP
+
+; Direct DCI clients own the surface until EndAccess, potentially for
+; an entire video. They exclude the cursor without stopping publication.
+exclude_cursor PROC NEAR
+	clc
+exclude_common:
 
 	push	ds
 	push	ax
 	mov	ax,_cstods
 	mov	ds,ax
 
-	mov	screen_busy,0			;lock the screen
+	jnc	short @F
+	call	dblbuf_begin_draw	; also required when the cursor is hidden
+@@:	mov	screen_busy,0			;lock the screen
 	mov	exclude_rect_valid,1		;these variables are used
 	mov	exclude_rect_left,cx		; by interrupt time code
 	mov	exclude_rect_right,si		; so they need to be set
@@ -322,7 +337,7 @@ exclude PROC	NEAR
 	pop	ds
 	ret
 
-exclude ENDP
+exclude_cursor ENDP
 
 
 ; helper function for DCI
@@ -336,7 +351,7 @@ cBegin
 	mov	dx,[si.top]
 	mov	di,[si.bottom]
 	mov	si,[si.right]
-	call	exclude
+	call	exclude_cursor
 	; return zero status
 	xor	ax,ax
 	cwd
@@ -349,6 +364,23 @@ cEnd
 ;
 ;	This routine dispatches to the hwcurs or swcurs routine.
 
+; A text operation, unlike a standalone background clear, is a useful
+; completed-frame boundary for a publication missed by the periodic timer.
+PUBLIC complete_text_draw
+complete_text_draw PROC NEAR
+	pushf
+	push ds
+	push ax
+	mov ax,_cstods
+	mov ds,ax
+	assumes ds,Data
+	call dblbuf_complete_pending
+	pop ax
+	pop ds
+	popf
+	ret
+complete_text_draw ENDP
+
 PUBLIC	unexclude_far
 unexclude_far	PROC	FAR
 
@@ -360,10 +392,18 @@ unexclude_far	ENDP
 
 PUBLIC	unexclude
 unexclude	PROC	NEAR
+	stc
+	jmp	short unexclude_common
+unexclude ENDP
+
+unexclude_cursor PROC NEAR
+	clc
+unexclude_common:
 
 	push	ds
 	push	ax
 	push	dx
+	pushf	; remember whether this is GDI or cursor-only DCI cleanup
 	mov	ax,_cstods
 	mov	ds,ax
 	assumes	ds,Data
@@ -373,6 +413,9 @@ unexclude	PROC	NEAR
         test    cursor_flags,YES_CURSOR
         jz      @F
 	call	cursor_funcs.CURSFUNC_UNEXCLUDE
+@@:	popf
+	jnc	short @F
+	call	dblbuf_end_draw
 @@:	mov	screen_busy,1
 
 	pop	dx
@@ -380,7 +423,7 @@ unexclude	PROC	NEAR
 	pop	ds
 	ret
 
-unexclude	ENDP
+unexclude_cursor ENDP
 
 
 ; helper function for DCI
@@ -388,7 +431,7 @@ cProc   unexclude_rect,<FAR,PUBLIC,PASCAL,NODATA>
 	parmD	lpSurface
 cBegin
 	assumes	ds,nothing
-	call	unexclude
+	call	unexclude_cursor
 cEnd
 
 

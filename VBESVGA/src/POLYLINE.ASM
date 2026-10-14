@@ -511,6 +511,7 @@ cProc   do_polylines,<FAR,PUBLIC,NODATA,WIN,PASCAL>,<es,ds,si,di>
         localB  cRotation               ; no of bits to rotate on sidestep
         localW  davidw
 	localB	bank_select		; VRAM VGA's current bank
+        localB  exclusion_acquired     ; this invocation called exclude
         localB  TempBank
 
 ; the following variables define the clipping rectangle
@@ -527,8 +528,9 @@ WriteAux <'do_polylines'>
         assumes ds,Data
 
         jnc     stack_space_ok
-	jmp	error_exit		; exit with error on stack overflow
+	jmp	polyline_stack_error	; locals unavailable: no exclusion acquired
 stack_space_ok:
+	mov	exclusion_acquired,0
         cld
 ;----------------------------------------------------------------------------;
 ; if palette manager is supported do the on-the-fly object translations now  ;
@@ -674,6 +676,7 @@ do_no_clipping:
 
 ifdef   EXCLUSION
         call    exclude_far             ; exclude the scan from the screen
+	mov	exclusion_acquired,1
 endif
 
 ; now load the pen color
@@ -795,9 +798,14 @@ error_exit:
         errn$   exit
 exit:
 ifdef   EXCLUSION
-        call    unexclude_far              ; remove any exclusion area
+	cmp	exclusion_acquired,0
+	je	short polyline_return
+        call    unexclude_far              ; remove this invocation's exclusion
 endif
 
+	jmp	short polyline_return
+polyline_stack_error:
+	xor	ax,ax
 polyline_return:
 cEnd
 
