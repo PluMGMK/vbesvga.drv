@@ -88,6 +88,7 @@ blt_stack_ok:
         push    si
         push    di
 
+	mov	byte ptr blt_excluded,0
         WriteAux    <'Bitblt'>
 	call	bitblt_prep_rop_etal
  	jc	bitblt_error
@@ -147,7 +148,10 @@ bitblt_error:
 	and	al,DEVFLAG_BOTH_SCREEN
 	je	short bitblt_noreg_restore
 
+	cmp	byte ptr blt_excluded,0
+	je	short bitblt_no_unexclude
 	call	unexclude
+bitblt_no_unexclude:
 
 	mov	dl,global_bank
 	SET_BANK
@@ -591,6 +595,7 @@ bitblt_prep_final	PROC	NEAR
 	mov	dx,ax
 	xchg	si,di
 	call	exclude
+	mov	byte ptr blt_excluded,1
         pop     ax                              ;remove device flags parm
 
 final_no_exclude:

@@ -81,7 +81,8 @@ src_seg_index		EQU	<[bp - 3B8H]> ;step between segments in src bitmap
 
 
 
-BLT_STACK_SIZE		EQU	03B8H
+blt_excluded		EQU	<[bp - 3BAH]> ; per-invocation acquisition flag
+BLT_STACK_SIZE		EQU	03BAH
 SOURCE_PRESENT	equ	0010000000000000b
 PATTERN_PRESENT	equ	0100000000000000b
 NEGATE_NEEDED	equ	1000000000000000b

@@ -65,6 +65,11 @@ Shared_Cursor_Data	STRUC
 
 	; flags, used to specify whether or not to draw the cursor
 	cursor_flags	DW ?
+	; Appended: old display drivers keep their existing cursor layout.
+	drawing_active	DW 0
+	; Reserved extension WORD; not accessed by the generic publisher.
+	reserved_extension DW 0
+	publish_pending DW 0
 Shared_Cursor_Data	ENDS
 
 ; we can expose a copy of this structure to userspace via a small LDT segment
@@ -111,11 +116,28 @@ VxD_LOCKED_CODE_SEG
 ;
 ;==============================================================================
 BeginProc VDD_SwapBuffers,High_Freq
+	cmp	[SharedCurSeg.drawing_active],0
+	je	short @@idle
+	cmp	[Vid_SB_Timeout],0
+	je	short @@done
+	mov	[SharedCurSeg.publish_pending],1
+	jmp	short @@done
+@@idle:
+	mov	[SharedCurSeg.publish_pending],0
+	call	VDD_CopyBuffers
+@@done:
+	call	VDD_Schedule_SwapBuffers
+	ret
+EndProc VDD_SwapBuffers
 
-	pushad	; we will use all the 386 registers!
+; Copy one complete generic frame without owning or rescheduling its timer.
+BeginProc VDD_CopyBuffers,High_Freq
+	pushad
 	push	es
 	push	fs
 	push	gs
+	; Timer callbacks supply EDX; protected completion clients do not.
+	mov	edx,[Vid_BBuf_Size]
 
 	; We will use the registers like so:
 	; EAX = Current dword of graphics data (or word of cursor data)
@@ -221,7 +243,7 @@ BeginProc VDD_SwapBuffers,High_Freq
 
 @@:	; copy loop done - any cursor scanlines left?
 	test	bh,bh
-	jz	short @@done
+	jz	short copy_done
 
 	; right, switch over to loading the cursor data
 	; 16-bit source address and counter registers are sufficient for this!
@@ -262,16 +284,14 @@ BeginProc VDD_SwapBuffers,High_Freq
 	sub	ecx,edi
 	jnz	@@copy_loop
 
-@@done:	pop	gs
+copy_done:
+	pop	gs
 	pop	fs
 	pop	es
 	assume	es:FLAT
 	popad
-
-	; schedule the next call
-	call	VDD_Schedule_SwapBuffers
 	ret
-EndProc VDD_SwapBuffers
+EndProc VDD_CopyBuffers
 
 ;******************************************************************************
 ;VDD_Schedule_SwapBuffers
@@ -300,6 +320,23 @@ BeginProc VDD_Schedule_SwapBuffers,High_Freq
 	ret
 EndProc VDD_Schedule_SwapBuffers
 
+; Service one request missed during a GDI primitive. Nested child text exits
+; leave it pending; the outermost completed text consumes it exactly once.
+BeginProc VDD_DblBuf_Complete, PUBLIC
+	pushad
+	cmp	[SharedCurSeg.publish_pending],0
+	je	short cp_done
+	cmp	[SharedCurSeg.drawing_active],0
+	jne	short cp_done
+	mov	[SharedCurSeg.publish_pending],0
+	cmp	[Vid_SB_Timeout],0
+	je	short cp_done
+	call	VDD_CopyBuffers
+cp_done:
+	popad
+	ret
+EndProc VDD_DblBuf_Complete
+
 VxD_LOCKED_CODE_ENDS
 
 VxD_CODE_SEG
@@ -327,13 +364,14 @@ EndDoc
 DB_Setup EQU 0
 DB_Start EQU 1
 DB_Stop  EQU 2
-DB_Last  EQU DB_Stop
+DB_Complete EQU 3
+DB_Last  EQU DB_Complete
 
 BeginProc VDD_DblBuf_Service, PUBLIC
 
 	VMMcall	Simulate_Far_Ret
 	movzx	ecx,[ebp.Client_AX]
-	cmp	cl,DB_Stop
+	cmp	ecx,DB_Last
 	ja	SHORT VDBS_Exit
 	VMMCall Validate_VM_Handle
 	jmp	DWORD PTR DblBuf_JumpTable[ecx*4]
@@ -350,6 +388,7 @@ DblBuf_JumpTable	LABEL DWORD
 DblBufEntry DB_Setup, VDD_DblBuf_Setup	; Create buffers and selectors
 DblBufEntry DB_Start, VDD_DblBuf_Start	; Start periodic swap-buffers loop
 DblBufEntry DB_Stop, VDD_DblBuf_Stop	; Stop periodic swap-buffers loop
+DblBufEntry DB_Complete, VDD_DblBuf_Complete ; One requested generic copy
 EndProc VDD_DblBuf_Service
 
 
@@ -592,6 +631,7 @@ BeginDoc
 EndDoc
 
 BeginProc VDD_DblBuf_Stop
+	mov	[SharedCurSeg.publish_pending],0
 
 	; check if swap_buffers is actually set to run
 	mov	esi,[Vid_SB_Timeout]

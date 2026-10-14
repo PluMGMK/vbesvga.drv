@@ -206,6 +206,7 @@ endif
 ;
 ifdef	 EXCLUSION
 	externNP exclude		; Exclude area from screen
+	externNP complete_text_draw
 	externNP unexclude		; Clear excluded area
 endif
 
@@ -575,6 +576,10 @@ strblt_clean_up:
 ;
 ifdef	EXCLUSION
 	call	unexclude
+	; TEXT_VISIBLE marks positive-count text that survived quick clipping.
+	test	excel,TEXT_VISIBLE
+	jz	exit_strblt_null
+	call	complete_text_draw
 endif
 ;
 exit_strblt_null:

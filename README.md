@@ -328,6 +328,15 @@ When using a linear framebuffer, on a 386 or newer, the driver also attempts to 
 
 Basically, if you have a modern graphics card and a decent amount of system RAM, then the driver will probably enable Double Buffering. In that case, you can adjust how often the screen is redrawn using the `SwapBuffersInterval=` setting in `SYSTEM.INI`. The default is 16 ms, which means that the screen is redrawn just over sixty times a second. Unfortunately I haven't found a way to synchronize it to your monitor's blanking interval, meaning that "sixty times a second" and "60fps" won't necessarily line up as well as one might hope (see discussion [here](https://github.com/PluMGMK/vbesvga.drv/issues/55)). Shorter intervals lead to smoother drawing - as long as your CPU can keep up!
 
+Buffer swaps wait until the current GDI drawing primitive has completed, including
+recursive text rendering across framebuffer segments. If a timer misses a large
+text draw, the outermost text operation that survives quick clipping can copy
+one overdue frame when
+it completes. DCI clients can continue updating the display while holding direct
+surface access. Applications can still construct a window through several
+separate drawing primitives. The [double-buffering interface](docs/double-buffering.md)
+describes the driver/VDD completion extension.
+
 If you suspect there are problems with Double Buffering, you can force-disable it by setting `SwapBuffersInterval=0`. This can **significantly** degrade performance for certain operations on large screens, but may be useful for debugging...
 
 Note that the DCI Provider (which is a [minimum implementation](https://library.thedatadungeon.com/msdn-2000-04/specs/html/S1CE07.HTM)), used by Video for Windows and certain games, only works in linear modes. The VxD `DVA.386` (or `VFLATD` on Win9x) does provide a mechanism to make a bank-switched framebuffer look like a linear one for DCI, but this only works when the driver provides a snippet of 32-bit code to switch the bank. `VBESVGA.DRV` is not in a position to do this, since it does bank switching by calling out to a 16-bit function provided by the Video BIOS.

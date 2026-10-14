@@ -42,6 +42,11 @@ BackBufSel	dw ?
 FrontBufSel	dw ?
 VramSel		dw ?
 VDDCursorSel	dw ?
+; New VDDs append a drawing nesting count to the shared cursor data.
+DrawingStateSel	dw 0
+DrawingCompletionSel dw 0
+VDD_PUBLISH_PENDING EQU 16406
+DrawingActive	dw 0
 ; this one should always point at what is currently being
 ; drawn on the screen (either the back buffer or VRAM), or
 ; else be NULL to indicate that no linear framebuffer is
@@ -112,6 +117,85 @@ externFP	enable_wrcomb		; in MTRR.ASM
 externFP	enable_wrthru		; in MTRR.ASM
 externFP	disable_wrcomb		; in MTRR.ASM
 externFP	find_mtrrs		; in MTRR.ASM
+
+; Signal complete GDI primitives to an enhanced-mode buffer publisher.
+; DS is our data segment; preserve all registers used by the caller.
+public dblbuf_begin_draw, dblbuf_end_draw
+dblbuf_begin_draw proc near
+	assumes ds,Data
+	push	ax
+	mov	ax,[DrawingActive]
+	inc	ax
+	call	dblbuf_set_drawing
+	pop	ax
+	ret
+dblbuf_begin_draw endp
+
+dblbuf_end_draw proc near
+	push	ax
+	mov	ax,[DrawingActive]
+	test	ax,ax
+	jz	short @F
+	dec	ax
+@@:	call	dblbuf_set_drawing
+	pop	ax
+	ret
+dblbuf_end_draw endp
+
+; The timer requests this call only when it missed a guarded primitive.
+; Preserve the complete client state across the protected VDD entry point.
+public dblbuf_complete_pending
+dblbuf_complete_pending proc near
+	assumes ds,Data
+	pushf
+	push es
+	push ax
+	mov ax,[DrawingCompletionSel]
+	test ax,ax
+	jz short dcp_done
+	mov es,ax
+	cmp word ptr es:[VDD_PUBLISH_PENDING],0
+	je short dcp_done
+	.386
+	pushad
+	push ds
+	push fs
+	push gs
+	mov ax,3
+	call [VDDDBEntry]
+	pop gs
+	pop fs
+	pop ds
+	popad
+	.286
+dcp_done:
+	pop ax
+	pop es
+	popf
+	ret
+dblbuf_complete_pending endp
+
+dblbuf_set_drawing proc near
+	assumes ds,Data
+	mov	[DrawingActive],ax
+	push	dx
+	push	di
+	push	es
+	mov	dx,[DrawingStateSel]
+	test	dx,dx
+	jz	short @F
+	mov	es,dx
+	; screen_* words, cursor image/mask words, cursor_flags word.
+	mov	di,SaveScreenNumWords
+	shl	di,1
+	add	di,CURSOR_WIDTH*CURSOR_HEIGHT*4*4+2
+	mov	es:[di],ax
+@@:	pop	es
+	pop	di
+	pop	dx
+	ret
+dblbuf_set_drawing endp
+
 
 ; cursor functions
 dbcursor_set	proc near
@@ -250,6 +334,10 @@ dbcursor_check	endp
 ; Its job is to copy the entire back buffer onto the front buffer,
 ; while putting the cursor over it.
 swap_buffers	proc near
+	cmp	[DrawingActive],0
+	jz	short @F
+	ret
+@@:
 	.386	; if we get this far we have a 386
 	pushad	; we will use all the 386 registers!
 	push	es
@@ -600,7 +688,9 @@ cBegin
 	; What we do next depends on the presence / absence of the VDD
 	; double-buffering API...
 	cmp	[VDDDBEntry.sel],0
-	jz	setup_no_vddapi
+	jnz	short @F
+	jmp	setup_no_vddapi
+@@:
 
 	.386
 	pushad
@@ -628,6 +718,24 @@ cBegin
 	; check if we got a selector back
 	test	ax,ax
 	mov	[VDDCursorSel],ax
+	pushf	; preserve the existing success/fallback decision
+	mov	[DrawingStateSel],0
+	mov	[DrawingCompletionSel],0
+	; LSL is encoded explicitly for the original MASM toolchain.
+	db	0Fh,03h,0D0h	; lsl dx,ax
+	jnz	short @F
+	mov	si,SaveScreenNumWords
+	shl	si,1
+	add	si,CURSOR_WIDTH*CURSOR_HEIGHT*4*4+3
+	cmp	dx,si
+	jb	short @F
+	mov	[DrawingStateSel],ax
+	; Leave the intervening reserved extension WORD untouched.
+	add	si,4
+	cmp	dx,si
+	jb	short @F
+	mov	[DrawingCompletionSel],ax
+@@:	popf
 	; set linear address of VRAM (NOT back buffer since we're not ready
 	; to write to it yet!)
 	mov	[VESALinearBuf],edi
