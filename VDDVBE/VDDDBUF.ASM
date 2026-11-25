@@ -314,7 +314,7 @@ BeginDoc
 ;ENTRY: EBX = current VM handle
 ;	EDX = 0
 ;	EBP = current VM client regs
-;	Client_AX = function number
+;	Client_AL = function number
 ;
 ;EXIT:	dispatch to double-buffer service routines
 ;
@@ -332,8 +332,8 @@ DB_Last  EQU DB_Stop
 BeginProc VDD_DblBuf_Service, PUBLIC
 
 	VMMcall	Simulate_Far_Ret
-	movzx	ecx,[ebp.Client_AX]
-	cmp	cl,DB_Stop
+	movzx	ecx,[ebp.Client_AL]
+	cmp	cl,DB_Last
 	ja	SHORT VDBS_Exit
 	VMMCall Validate_VM_Handle
 	jmp	DWORD PTR DblBuf_JumpTable[ecx*4]
