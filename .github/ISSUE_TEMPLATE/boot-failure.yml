@@ -1,0 +1,105 @@
+name: Boot failure
+description: Report a situation where Windows fails to boot with the driver installed
+title: "[BOOTFAIL]"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: drvver
+    attributes:
+      label: Driver version
+      description: Please specify the version number, or Git commit if you built it yourself, and whether you're using a debug or release build
+  - type: dropdown
+    id: winver
+    attributes:
+      label: Windows version
+      options:
+        - Windows 3.1
+        - Windows for Workgroups 3.11
+        - Other Windows 3.x (e.g. pre-releases, please specify in additional context)
+        - Windows 95
+        - Windows 98 FE
+        - Windows 98 SE
+        - Windows Me
+        - Other Windows 9x (e.g. pre-releases, please specify in additional context)
+  - type: dropdown
+    id: opmode
+    attributes:
+      label: Windows Operating mode
+      description: Does the failure occur when booting in Standard or Enhanced Mode, or both? For Windows 9x, the answer is always Enhanced, as Standard Mode was removed.
+      options:
+        - Standard
+        - Enhanced
+        - Both
+  - type: dropdown
+    id: integ
+    attributes:
+      label: Have you checked the integrity of the driver files as per instructions in `README.md`?
+      description: If the answer is no, please try that first, if you can, just to make sure
+      options:
+        - No
+        - Yes
+  - type: dropdown
+    id: alsostdvga
+    attributes:
+      label: Does boot failure also occur with standard VGA driver?
+      description: If the answer is yes, maybe this shouldn't be filed as an issue here! Depending on your hardware configuration, you may want to try `patcher9x` and/or `ahcifix.386` to make these old Windows versions boot.
+      options:
+        - No
+        - Yes
+  - type: dropdown
+    id: machine
+    attributes:
+      label: Type of Machine
+      description: Are you running on real hardware, a VM, or an emulator? Note that emulation and virtualization are not quite the same, which is why QEMU is listed as an option for both…
+      options:
+        - Real machine, BIOS firmware
+        - Real machine, UEFI firmware
+        - Virtual machine, VMware
+        - Virtual machine, VirtualBox
+        - Virtual machine, QEMU
+        - Virtual machine, other (please specify in additional context)
+        - Emulated machine, QEMU
+        - Emulated machine, 86Box
+        - Emulated machine, Dosbox or DOSBox-X
+        - Emulated machine, PCem
+        - Emulated machine, other (please specify in additional context)
+  - type: dropdown
+    id: emm
+    attributes:
+      label: Are you running a DOS memory manager?
+      description: For example, EMM386, QEMM, etc. Does the issue also occur if the memory manager is disabled?
+      options:
+        - No memory manager
+        - Memory manager running, issue doesn't occur if it is disabled
+        - Memory manager running, issue still occurs without it
+  - type: textarea
+    id: vidmodes
+    attributes:
+      label: `VIDMODES.COM` output
+      description: Please paste your VIDMODES output in here
+      render: shell
+  - type: dropdown
+    id: failtype
+    attributes:
+      label: Type of Boot Failure
+      options:
+        - Freeze on Windows logo
+        - Freeze on blank screen
+        - Error message and crash to DOS
+        - Silent crash to DOS
+        - Immediate reboot
+  - type: dropdown
+    id: keyboard
+    attributes:
+      label: Is keyboard responsive after attempting to boot?
+      description: For example, does the Num Lock light respond to the key? Does Ctrl+Alt+Del do anything?
+      options:
+        - No
+        - Yes
+        - N/A (computer reboots)
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.
+      render: markdown

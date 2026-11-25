@@ -1,0 +1,94 @@
+name: Graphical artefact
+description: Report anything that doesn't look right in a Windows program while using the driver
+title: "[ARTEFACT]"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: drvver
+    attributes:
+      label: Driver version
+      description: Please specify the version number, or Git commit if you built it yourself, and whether you're using a debug or release build
+  - type: dropdown
+    id: winver
+    attributes:
+      label: Windows version
+      options:
+        - Windows 3.1
+        - Windows for Workgroups 3.11
+        - Other Windows 3.x (e.g. pre-releases, please specify in additional context)
+        - Windows 95
+        - Windows 98 FE
+        - Windows 98 SE
+        - Windows Me
+        - Other Windows 9x (e.g. pre-releases, please specify in additional context)
+  - type: dropdown
+    id: opmode
+    attributes:
+      label: Windows Operating mode
+      description: Does the artefact occur when running in Standard or Enhanced Mode, or both? For Windows 9x, the answer is always Enhanced, as Standard Mode was removed.
+      options:
+        - Standard
+        - Enhanced
+        - Both
+  - type: dropdown
+    id: integ
+    attributes:
+      label: Have you checked the integrity of the driver files as per instructions in `README.md`?
+      description: If the answer is no, please try that first, if you can, just to make sure
+      options:
+        - No
+        - Yes
+  - type: dropdown
+    id: machine
+    attributes:
+      label: Type of Machine
+      description: Are you running on real hardware, a VM, or an emulator? Note that emulation and virtualization are not quite the same, which is why QEMU is listed as an option for both…
+      options:
+        - Real machine, BIOS firmware
+        - Real machine, UEFI firmware
+        - Virtual machine, VMware
+        - Virtual machine, VirtualBox
+        - Virtual machine, QEMU
+        - Virtual machine, other (please specify in additional context)
+        - Emulated machine, QEMU
+        - Emulated machine, 86Box
+        - Emulated machine, Dosbox or DOSBox-X
+        - Emulated machine, PCem
+        - Emulated machine, other (please specify in additional context)
+  - type: textarea
+    id: badmodes
+    attributes:
+      label: What mode(s) does this issue occur in?
+      description: E.g. 1024×768×24 – if you've tried more than one, please list them all
+  - type: textarea
+    id: goodmodes
+    attributes:
+      label: Is/are there any mode(s) where this issue does not occur?
+      description: E.g. 800×600×8 – if you've tried more than one, please list them all
+  - type: textarea
+    id: steps
+    attributes:
+      label: To Reproduce
+      placeholder: | Steps to reproduce the behavior:
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+  - type: upload
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem.
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.
+      render: markdown
