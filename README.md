@@ -13,6 +13,16 @@ Issue templates were added to this repository in November 2025. **Please use the
 * Because my AMD Radeon RX 5500 XT doesn't support 256-colour modes, rendering the old [VESA Patch](http://www.win3x.org/win3board/viewtopic.php?t=5408&hilit=svga) useless for me
 * To help out any fellow enthusiasts who like running old software on new hardware!
 
+### Note on (lack of) AI assistance
+
+With the rise of "vibe-coded" projects all over the ecosystem, it seems we've reached a point where I need to address this explicitly: Generative AI was not used and will not be used in this project. Of course, I cannot claim to have built this suite of drives from scratch. They're based on samples from the Windows 3.1 DDK, and careful study of how other contemporary drivers worked. But the people writing those drivers, almost forty years ago, didn't have AI assistance, meaning that the starting point for this project was a body of handwritten assembly. My love of retrocomputing and tinkering inspired me to follow this tradition and continue to handwrite assembly, as anachronistic as this may now seem. Yes, I've adopted Git for source control, and the world wide web makes it much easier to put my hands on docs for random APIs and data structures – but the process of writing, assembling and debugging the code remains manual, using the same (or similar) tools that were available in Windows 3.1's heyday.
+
+Of course this takes a lot of dedication, and so progress on the roadmap laid out in early 2026 has been slow. This is a mere hobby project, and I've had a pretty hectic year both personally and professionally, which has limited my headspace to work on this. But it's not dead, and sooner or later I will find the time and motivation to work my way through the `TODO` list, even if it does take quite a bit longer than it might with the assistance of an LLM.
+
+I'm not really trying to say that this project is somehow "better" for not using AI – again, I can't even claim to have written it from scratch. But it's my hobby project, i.e. something I work on for enjoyment. I enjoy getting my hands dirty with assembly code, whereas I definitely don't enjoy interacting with or reviewing the output of LLMs.
+
+The upshot of it all is that **AI-assisted pull requests will not be accepted.** I know policies like this have failed on some prominent open-source projects, but I'm adopting it for now since I don't get that many PRs anyway, and this is a fairly niche project overall.
+
 ## Screenshots
 
 ### Using standard Program Manager shell
