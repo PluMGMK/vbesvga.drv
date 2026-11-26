@@ -72,8 +72,8 @@ body:
   - type: textarea
     id: vidmodes
     attributes:
-      label: `VIDMODES.COM` output
-      description: Please paste your VIDMODES output in here
+      label: VIDMODES output
+      description: Please paste your `VIDMODES.COM` output in here
       render: shell
   - type: textarea
     id: context
