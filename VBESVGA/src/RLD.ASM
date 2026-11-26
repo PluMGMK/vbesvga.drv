@@ -87,38 +87,22 @@ sBegin DIMapSeg
 ifdef XDEBUG
 
 debug_str_table label word
-        dw      str_8
-        dw      str_4
         dw      str_8_clip
         dw      str_4_clip
-        dw      str_8_xlat
-        dw      str_4_xlat
         dw      str_8_clip_xlat
         dw      str_4_clip_xlat
-        dw      str_8_huge
-        dw      str_4_huge
         dw      str_8_clip_huge
         dw      str_4_clip_huge
-        dw      str_8_xlat_huge
-        dw      str_4_xlat_huge
         dw      str_8_clip_xlat_huge
         dw      str_4_clip_xlat_huge
 
-        str_8:                  db "RleBlt: RLE8 noxlat noclip <64K",13,10,0
-        str_4:                  db "RleBlt: RLE4 noxlat noclip <64K",13,10,0
         str_8_clip:             db "RleBlt: RLE8 noxlat   clip <64K",13,10,0
         str_4_clip:             db "RleBlt: RLE4 noxlat   clip <64K",13,10,0
-        str_8_xlat:             db "RleBlt: RLE8   xlat noclip <64K",13,10,0
-        str_4_xlat:             db "RleBlt: RLE4   xlat noclip <64K",13,10,0
         str_8_clip_xlat:        db "RleBlt: RLE8   xlat   clip <64K",13,10,0
         str_4_clip_xlat:        db "RleBlt: RLE4   xlat   clip <64K",13,10,0
 
-        str_8_huge:             db "RleBlt: RLE8 noxlat noclip >64K",13,10,0
-        str_4_huge:             db "RleBlt: RLE4 noxlat noclip >64K",13,10,0
         str_8_clip_huge:        db "RleBlt: RLE8 noxlat   clip >64K",13,10,0
         str_4_clip_huge:        db "RleBlt: RLE4 noxlat   clip >64K",13,10,0
-        str_8_xlat_huge:        db "RleBlt: RLE8   xlat noclip >64K",13,10,0
-        str_4_xlat_huge:        db "RleBlt: RLE4   xlat noclip >64K",13,10,0
         str_8_clip_xlat_huge:   db "RleBlt: RLE8   xlat   clip >64K",13,10,0
         str_4_clip_xlat_huge:   db "RleBlt: RLE4   xlat   clip >64K",13,10,0
 endif
@@ -138,30 +122,18 @@ endif
 ;     +------------------   huge      (1=rle data greater than 64k)
 ;
 decode_abs_table label word
-        dw      decode_abs_8
-        dw      decode_abs_4
         dw      decode_abs_8_clip
         dw      decode_abs_4_clip
-        dw      decode_abs_8_xlat
-        dw      decode_abs_4_xlat
         dw      decode_abs_8_clip_xlat
         dw      decode_abs_4_clip_xlat
-        dw      decode_abs_8_huge
-        dw      decode_abs_4_huge
         dw      decode_abs_8_clip_huge
         dw      decode_abs_4_clip_huge
-        dw      decode_abs_8_xlat_huge
-        dw      decode_abs_4_xlat_huge
         dw      decode_abs_8_clip_xlat_huge
         dw      decode_abs_4_clip_xlat_huge
 
 decode_rle_table label word
-        dw      decode_rle_8
-        dw      decode_rle_4
         dw      decode_rle_8_clip
         dw      decode_rle_4_clip
-        dw      decode_rle_8_xlat
-        dw      decode_rle_4_xlat
         dw      decode_rle_8_clip_xlat
         dw      decode_rle_4_clip_xlat
 
@@ -197,13 +169,9 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
 
             RLE_RLE8    equ     0001h   ; RLE8 format
             RLE_RLE4    equ     0002h   ; RLE4 format
-            RLE_CLIPX   equ     0004h   ; x clipping is needed
-            RLE_XLAT    equ     0008h   ; palette xlat is needed
-            RLE_HUGE    equ     0010h   ; RLE data > 64k
-            RLE_DEVICE  equ     0020h   ; output is to the device
-            RLE_CLIPY   equ     0040h   ; y clipping is needed
-            RLE_DIB     equ     0080h   ; output is to a DIB bitmap
-            RLE_CLIPPED equ     RLE_CLIPX+RLE_CLIPY
+            RLE_XLAT    equ     0004h   ; palette xlat is needed
+            RLE_HUGE    equ     0008h   ; RLE data > 64k
+            RLE_DEVICE  equ     0010h   ; output is to the device
 
         localW  WidthBytes              ; width of a scanline
         localW  FillBytes               ; segment fill bytes
@@ -237,6 +205,8 @@ cProc   RleBlt,<NEAR,PUBLIC,PASCAL>,<si,di,es,ds>
 
 	localW	DstXBytes		;ClipRect.left * bytes per pixel
 	localW	CurX_clip		;current X (maybe <0) for clip calcs
+
+	localW	checked_pair_count	;spilled variable...
 cBegin
         cld
 
@@ -339,13 +309,11 @@ RleBltDelta:
         jnz     RleBltDeltaXY
 
 RleBltDeltaX:
-        test    BltFlags, RLE_CLIPPED
 	mov	cx,ax
-	jz	@F
 	; Clip the delta too - we increase CurX by the full delta, but
 	; clip the adjustment to the actual destination pointer
 	call	clip_rle
-@@:     call	[fn_adv_dest_checked]
+        call	[fn_adv_dest_checked]
         jmp     short RleBltNext
 
 RleBltDeltaXY:
@@ -354,14 +322,12 @@ RleBltDeltaXY:
         mov     al,ah
         mov     ah,ch               ; ax = deltaY
 
-        test    BltFlags, RLE_CLIPPED
-	jz	@F
 	; Clip the delta too - we increase CurX by the full delta, but
 	; clip the adjustment to the actual destination pointer
 	push	ax
 	call	clip_rle
 	pop	ax
-@@:	; NOT checked since we're not actually going to draw here!
+	; NOT checked since we're not actually going to draw here!
         call	[fn_adv_dest]       ; adjust curX
 ;
         mov     dx,DstY
@@ -563,7 +529,7 @@ rle_init_huge:
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
 ;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
         mov     bl,BltFlags
-        and     bx,011110b
+        and     bx,RLE_RLE4 OR RLE_XLAT OR RLE_HUGE
 
         mov     ax,decode_abs_table[bx]
         mov     fn_decode_abs,ax
@@ -574,7 +540,7 @@ rle_init_huge:
 
 ifdef XDEBUG
         mov     bl,BltFlags
-        and     bx,011110b
+        and     bx,RLE_RLE4 OR RLE_XLAT OR RLE_HUGE
 
         mov     ax,debug_str_table[bx]
         cCall   OutputDebugString,<cs,ax>
@@ -803,33 +769,34 @@ init_clip proc near
         mov     cx,[si].right
         mov     dx,[si].bottom
 
-        mov     ClipRect.left  ,ax
-        mov     ClipRect.top   ,bx
-        mov     ClipRect.right ,cx
-        mov     ClipRect.bottom,dx
-
+	; if the clip rectangle is outside the area the DIB
+	; is supposed to occupy, then shrink it to fit...
         cmp     ax,DstX
-        jg      init_clip_clipped
+        jnl	@F
+	mov	ax,DstX
+@@:     mov     ClipRect.left  ,ax
 
         mov     ax,DstX
         add     ax,xExt
         cmp     cx,ax
-        jl      init_clip_clipped
+        jng     @F
+	mov	cx,ax
+@@:     mov     ClipRect.right ,cx
 
-        mov     ax,DstY
-        cmp     ax,dx
-        jge     init_clip_clipped
+	mov	ax,DstY
+        cmp     dx,ax
+        jng     @F
+	mov	dx,ax
+	inc	dx
+@@:     mov     ClipRect.bottom,dx
 
         sub     ax,yExt
         inc     ax
-        cmp     ax,bx
-        jl      init_clip_clipped
+        cmp     bx,ax
+        jnl	@F
+	mov	bx,ax
+@@:     mov     ClipRect.top   ,bx
 
-init_clip_exit:
-        ret
-
-init_clip_clipped:
-        or      BltFlags, RLE_CLIPPED
         ret
 
 init_clip_null:
@@ -838,9 +805,10 @@ init_clip_null:
 	test	ax,ax
 	jns	@F
 	xor	ax,ax	; DO NOT INCLUDE negative coordinates!
-        or      BltFlags, RLE_CLIPPED
 @@:     mov     ClipRect.left,ax
         add     dx,xExt
+	; TODO: should we also make sure this is within the dest bitmap
+	; extent? Not sure how crazy callers are allowed to be...
         mov     ClipRect.right,dx
 
         mov     ax,DstY
@@ -849,7 +817,6 @@ init_clip_null:
         sub     ax,yExt
 	jnc	@F
 	xor	ax,ax	; DO NOT INCLUDE negative coordinates!
-        or      BltFlags, RLE_CLIPPED
 @@:     mov     ClipRect.top,ax
         ret
 
@@ -1315,14 +1282,6 @@ decode_rle_8_clip:
         call	[fn_rep_stos_checked]
 @@:	ret
 
-;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
-;- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -;
-decode_rle_8_xlat:
-        call	load_xlated_colour
-decode_rle_8:
-        call	[fn_rep_stos_checked]
-        ret
-
 decode_rle8  endp
 
 ;--------------------------Private-Routine-------------------------------;
@@ -1366,8 +1325,11 @@ decode_rle_4_clip:
         ; no need to advance DI because it always starts at the left of the
 	; clip rectangle (not at DstX itself)
 
+	; check if we've clipped an odd number of pixels
+	test	ax,1
         pop     ax
-        jnc     @f
+        jz      @f
+	; if so, we need to swap the pixels in the pair
         rol     al,4
 @@:     jcxz    @f
         call    decode_rle_4_xlat
@@ -1907,10 +1869,12 @@ rep_stos_colpair4_386	proc near
 	xchg	ax,dx	; restore the upper half of EAX from DX
 	ror	eax,10h
 	.286
-	ret
+@@:	ret
 rep_stos_colpair4_386	endp
 
 rep_stos_colpair3	proc near
+	jcxz	@B	; go back to the ret above
+
 	; We want to store DL:AX followed by SIL:BX (SIL is not a thing on IA-32)...
 	; Let's turn it into BX:DX:AX so it can be a nice stream of STOSWs
 	mov	dh,bl
@@ -2060,8 +2024,7 @@ rep_stos_colpair_checked	proc near
 
 @@:	; if we get here, it means advancing DI by CX pixels moves past
 	; the end of the current bank, so we need to handle that!
-	push	ax
-	push	cx
+	mov	[checked_pair_count],cx
 
 	; figure out how many pixels will fit in the rest of the
 	; current bank...
@@ -2082,8 +2045,9 @@ rep_stos_colpair_checked	proc near
 
 	; and save the pixel count, and the flags so we remember whether
 	; or not there was a remainder:
-	push	cx
+	jcxz	rem_only
 	pushf
+	push	cx
 	; fill the rest of the bank
 	push	ax
 	push	dx
@@ -2094,33 +2058,37 @@ rep_stos_colpair_checked	proc near
 	pop	si
 	pop	dx
 	pop	ax
-	; get back flags and count
-	popf
+	; get back count
 	pop	cx
-
-	; if there was a remainder, then do an extra pair of checked pixels...
+	; if count was odd, then swap the colours!
+	test	cx,1
 	jz	@F
+	xchg	ax,bx
+	xchg	dx,si
+@@:	; get back flags so we can check if there was a remainder
+	popf
+
+rem_only:
+	; if there was a remainder, then do an extra single checked pixel...
+	jz	rep_stos_pair_norem
 	push	ax
 	push	dx
-	call	[fn_stos_checked] ; destroys AX/DX
-	mov	ax,bx
-	mov	dx,si
 	call	[fn_stos_checked] ; destroys AX/DX
 	pop	dx
 	pop	ax
 	inc	cx
+	; we've done one pixel, so need to swap these for sure:
+	xchg	ax,bx
+	xchg	dx,si
 	jmp	rep_stos_pair_checked_innextbank
 
-@@:	call	adv_bank
+rep_stos_pair_norem:
+	call	adv_bank
 rep_stos_pair_checked_innextbank:
-	pop	ax	; get back the original count
-	sub	ax,cx	; subtract the pixels we've done so far
-	mov	cx,ax	; make that our new count
-	pop	ax	; get back the colour
-	jz	@F	; if no colours left, then return
-	; and go!
-	jmp	[fn_rep_stos_pair]
-
+	sub	cx,[checked_pair_count]	; subtract the pixels we've done so far
+	neg	cx			; make that our new count
+	jz	@F			; if no colours left, then return
+	jmp	[fn_rep_stos_pair]	; and go!
 @@:	ret
 rep_stos_colpair_checked	endp
 
