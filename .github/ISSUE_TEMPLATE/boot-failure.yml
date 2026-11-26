@@ -3,11 +3,13 @@ description: Report a situation where Windows fails to boot with the driver inst
 title: "[BOOTFAIL]"
 labels: ["bug"]
 body:
-  - type: textarea
+  - type: input
     id: drvver
     attributes:
       label: Driver version
       description: Please specify the version number, or Git commit if you built it yourself, and whether you're using a debug or release build
+    validations:
+      required: true
   - type: dropdown
     id: winver
     attributes:
@@ -21,6 +23,8 @@ body:
         - Windows 98 SE
         - Windows Me
         - Other Windows 9x (e.g. pre-releases, please specify in additional context)
+    validations:
+      required: true
   - type: dropdown
     id: opmode
     attributes:
@@ -30,6 +34,8 @@ body:
         - Standard
         - Enhanced
         - Both
+    validations:
+      required: true
   - type: dropdown
     id: integ
     attributes:
@@ -38,6 +44,8 @@ body:
       options:
         - 'No'
         - 'Yes'
+    validations:
+      required: true
   - type: dropdown
     id: alsostdvga
     attributes:
@@ -46,6 +54,8 @@ body:
       options:
         - 'No'
         - 'Yes'
+    validations:
+      required: true
   - type: dropdown
     id: machine
     attributes:
@@ -63,6 +73,8 @@ body:
         - Emulated machine, Dosbox or DOSBox-X
         - Emulated machine, PCem
         - Emulated machine, other (please specify in additional context)
+    validations:
+      required: true
   - type: dropdown
     id: emm
     attributes:
@@ -72,12 +84,16 @@ body:
         - No memory manager
         - Memory manager running, issue doesn't occur if it is disabled
         - Memory manager running, issue still occurs without it
+    validations:
+      required: true
   - type: textarea
     id: vidmodes
     attributes:
       label: VIDMODES output
       description: Please paste your `VIDMODES.COM` output in here
       render: shell
+    validations:
+      required: true
   - type: dropdown
     id: failtype
     attributes:
@@ -88,6 +104,8 @@ body:
         - Error message and crash to DOS
         - Silent crash to DOS
         - Immediate reboot
+    validations:
+      required: true
   - type: dropdown
     id: keyboard
     attributes:
@@ -97,9 +115,10 @@ body:
         - 'No'
         - 'Yes'
         - N/A (computer reboots)
+    validations:
+      required: true
   - type: textarea
     id: context
     attributes:
       label: Additional context
       description: Add any other context about the problem here.
-      render: markdown

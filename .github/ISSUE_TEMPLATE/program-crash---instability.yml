@@ -3,11 +3,13 @@ description: Report a Windows program crashing or behaving erratically while usi
 title: "[PROGRAMCRASH]"
 labels: ["bug"]
 body:
-  - type: textarea
+  - type: input
     id: drvver
     attributes:
       label: Driver version
       description: Please specify the version number, or Git commit if you built it yourself, and whether you're using a debug or release build
+    validations:
+      required: true
   - type: dropdown
     id: winver
     attributes:
@@ -21,6 +23,8 @@ body:
         - Windows 98 SE
         - Windows Me
         - Other Windows 9x (e.g. pre-releases, please specify in additional context)
+    validations:
+      required: true
   - type: dropdown
     id: opmode
     attributes:
@@ -30,6 +34,8 @@ body:
         - Standard
         - Enhanced
         - Both
+    validations:
+      required: true
   - type: dropdown
     id: alsostdvga
     attributes:
@@ -38,6 +44,8 @@ body:
       options:
         - 'No'
         - 'Yes'
+    validations:
+      required: true
   - type: dropdown
     id: integ
     attributes:
@@ -46,6 +54,8 @@ body:
       options:
         - 'No'
         - 'Yes'
+    validations:
+      required: true
   - type: dropdown
     id: machine
     attributes:
@@ -63,16 +73,22 @@ body:
         - Emulated machine, Dosbox or DOSBox-X
         - Emulated machine, PCem
         - Emulated machine, other (please specify in additional context)
+    validations:
+      required: true
   - type: textarea
     id: badmodes
     attributes:
       label: What mode(s) does this issue occur in?
       description: E.g. 1024×768×24 – if you've tried more than one, please list them all
+    validations:
+      required: true
   - type: textarea
     id: goodmodes
     attributes:
       label: Is/are there any mode(s) where this issue does not occur?
       description: E.g. 800×600×8 – if you've tried more than one, please list them all
+    validations:
+      required: false
   - type: textarea
     id: steps
     attributes:
@@ -83,11 +99,15 @@ body:
         2. Click on '....'
         3. Scroll down to '....'
         4. See error
+    validations:
+      required: true
   - type: textarea
     id: expected
     attributes:
       label: Expected behavior
       description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
   - type: upload
     id: screenshots
     attributes:
@@ -100,4 +120,3 @@ body:
     attributes:
       label: Additional context
       description: Add any other context about the problem here.
-      render: markdown
