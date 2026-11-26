@@ -36,16 +36,16 @@ body:
       label: Have you checked the integrity of the driver files as per instructions in `README.md`?
       description: If the answer is no, please try that first, if you can, just to make sure
       options:
-        - No
-        - Yes
+        - 'No'
+        - 'Yes'
   - type: dropdown
     id: alsostdvga
     attributes:
       label: Does boot failure also occur with standard VGA driver?
       description: If the answer is yes, maybe this shouldn't be filed as an issue here! Depending on your hardware configuration, you may want to try `patcher9x` and/or `ahcifix.386` to make these old Windows versions boot.
       options:
-        - No
-        - Yes
+        - 'No'
+        - 'Yes'
   - type: dropdown
     id: machine
     attributes:
@@ -94,8 +94,8 @@ body:
       label: Is keyboard responsive after attempting to boot?
       description: For example, does the Num Lock light respond to the key? Does Ctrl+Alt+Del do anything?
       options:
-        - No
-        - Yes
+        - 'No'
+        - 'Yes'
         - N/A (computer reboots)
   - type: textarea
     id: context

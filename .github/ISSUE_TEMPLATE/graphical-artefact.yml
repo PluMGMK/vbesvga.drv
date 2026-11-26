@@ -36,8 +36,8 @@ body:
       label: Have you checked the integrity of the driver files as per instructions in `README.md`?
       description: If the answer is no, please try that first, if you can, just to make sure
       options:
-        - No
-        - Yes
+        - 'No'
+        - 'Yes'
   - type: dropdown
     id: machine
     attributes:

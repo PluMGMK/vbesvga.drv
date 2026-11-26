@@ -36,16 +36,16 @@ body:
       label: Does crash also occur with standard VGA driver?
       description: If the answer is yes, maybe this shouldn't be filed as an issue here! Depending on your hardware configuration, you may want to try `patcher9x` to fix instabilities with these old Windows versions.
       options:
-        - No
-        - Yes
+        - 'No'
+        - 'Yes'
   - type: dropdown
     id: integ
     attributes:
       label: Have you checked the integrity of the driver files as per instructions in `README.md`?
       description: If the answer is no, please try that first, if you can, just to make sure
       options:
-        - No
-        - Yes
+        - 'No'
+        - 'Yes'
   - type: dropdown
     id: machine
     attributes:
